@@ -176,7 +176,7 @@ if [ -f "$GHOSTTY_CONFIG" ]; then
   echo -e "  ${BOLD}1)${NC} Merge — add the wrapper command to your existing config"
   echo -e "  ${BOLD}2)${NC} Backup & replace — save current config and use ours"
   echo ""
-  read -rn1 -p "$(echo -e "${BLUE}Choose (1/2):${NC} ")" config_choice
+  read -rn1 -p "$(echo -e "${BLUE}Choose (1/2):${NC} ")" config_choice </dev/tty
   echo ""
 
   case "$config_choice" in
@@ -212,12 +212,12 @@ PROJECTS_FILE="$PROJECTS_DIR/projects"
 mkdir -p "$PROJECTS_DIR"
 
 echo ""
-read -rn1 -p "$(echo -e "${BLUE}Add a project? (y/n):${NC} ")" add_project
+read -rn1 -p "$(echo -e "${BLUE}Add a project? (y/n):${NC} ")" add_project </dev/tty
 echo ""
 
 while [[ "$add_project" =~ ^[yY]$ ]]; do
-  read -rp "$(echo -e "${BLUE}Project name:${NC} ")" proj_name
-  read -rp "$(echo -e "${BLUE}Project path:${NC} ")" proj_path
+  read -rp "$(echo -e "${BLUE}Project name:${NC} ")" proj_name </dev/tty
+  read -rp "$(echo -e "${BLUE}Project path:${NC} ")" proj_path </dev/tty
 
   # Expand ~ to $HOME for validation
   expanded_path="${proj_path/#\~/$HOME}"
@@ -231,7 +231,7 @@ while [[ "$add_project" =~ ^[yY]$ ]]; do
   fi
 
   echo ""
-  read -rn1 -p "$(echo -e "${BLUE}Add another? (y/n):${NC} ")" add_project
+  read -rn1 -p "$(echo -e "${BLUE}Add another? (y/n):${NC} ")" add_project </dev/tty
   echo ""
 done
 
