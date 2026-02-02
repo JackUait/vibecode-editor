@@ -55,22 +55,41 @@ SESSION_NAME="dev-$(basename "$PROJECT_DIR")-$$"
 WATCHER_PID=$!
 
 # Kill all processes in the tmux session when the terminal closes
-cleanup() {
-  # Get PIDs of all pane shell processes in this session, then kill their entire process trees
-  for pane_pid in $("$TMUX_CMD" list-panes -s -t "$SESSION_NAME" -F '#{pane_pid}' 2>/dev/null); do
-    pkill -TERM -P "$pane_pid" 2>/dev/null
+kill_tree() {
+  local pid=$1
+  local sig=${2:-TERM}
+  # Kill children first (depth-first), then the process itself
+  for child in $(pgrep -P "$pid" 2>/dev/null); do
+    kill_tree "$child" "$sig"
   done
+  kill -"$sig" "$pid" 2>/dev/null
+}
+
+cleanup() {
   kill $WATCHER_PID 2>/dev/null
+
+  # SIGTERM the full process tree of every pane
+  for pane_pid in $("$TMUX_CMD" list-panes -s -t "$SESSION_NAME" -F '#{pane_pid}' 2>/dev/null); do
+    kill_tree "$pane_pid" TERM
+  done
+
+  # Brief grace period, then SIGKILL any survivors
+  sleep 0.3
+  for pane_pid in $("$TMUX_CMD" list-panes -s -t "$SESSION_NAME" -F '#{pane_pid}' 2>/dev/null); do
+    kill_tree "$pane_pid" KILL
+  done
+
   "$TMUX_CMD" kill-session -t "$SESSION_NAME" 2>/dev/null
 }
 trap cleanup EXIT HUP TERM INT
 
 "$TMUX_CMD" new-session -s "$SESSION_NAME" -e "PATH=$PATH" -c "$PROJECT_DIR" \
+  set-option destroy-unattached on \; \
   "$LAZYGIT_CMD; exec bash" \; \
   split-window -h -p 50 -c "$PROJECT_DIR" \
   "$CLAUDE_CMD $*; exec bash" \; \
   select-pane -t 0 \; \
   split-window -v -p 50 -c "$PROJECT_DIR" \
-  "while true; do $BROOT_CMD $PROJECT_DIR; done" \; \
-  split-window -v -p 30 -c "$PROJECT_DIR" \; \
+  "trap exit TERM; while true; do $BROOT_CMD $PROJECT_DIR; done" \; \
+  split-window -v -p 60 -c "$PROJECT_DIR" \; \
   select-pane -t 3
