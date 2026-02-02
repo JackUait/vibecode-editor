@@ -18,7 +18,9 @@ That's it. The script installs all dependencies, sets up Ghostty, and walks you 
 
 ## Usage
 
-Open a new Ghostty window. You'll see a project picker:
+**Step 1.** Open a new **Ghostty window** (Cmd+N)
+
+**Step 2.** Pick a project from the list:
 
 ```
 Select project:
@@ -28,13 +30,12 @@ Select project:
 >
 ```
 
-Pick a project and the four-pane tmux session launches with Claude Code auto-focused.
+**Step 3.** The four-pane tmux session launches automatically with **Claude Code already focused** — start typing your prompt right away.
 
-To open a specific directory directly:
-
-```sh
-~/.config/ghostty/claude-wrapper.sh /path/to/project
-```
+> **Tip:** You can also open a specific project directly from the terminal:
+> ```sh
+> ~/.config/ghostty/claude-wrapper.sh /path/to/project
+> ```
 
 ## Layout
 
