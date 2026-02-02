@@ -16,6 +16,26 @@ That's it. The script installs all dependencies, sets up Ghostty, and walks you 
 
 > **Only requirement:** macOS with [Ghostty](https://ghostty.org) installed. Everything else (Homebrew, tmux, lazygit, broot, Claude Code) is installed automatically.
 
+## Usage
+
+Open a new Ghostty window. You'll see a project picker:
+
+```
+Select project:
+  1) my-app
+  2) another-project
+  0) current directory
+>
+```
+
+Pick a project and the four-pane tmux session launches with Claude Code auto-focused.
+
+To open a specific directory directly:
+
+```sh
+~/.config/ghostty/claude-wrapper.sh /path/to/project
+```
+
 ## Layout
 
 ```
@@ -57,26 +77,6 @@ another-project:/path/to/another-project
 ```
 
 Lines starting with `#` are ignored. If the file doesn't exist or is empty, the wrapper opens in the current directory.
-
-## Usage
-
-Open a new Ghostty window. You'll see a project picker:
-
-```
-Select project:
-  1) my-app
-  2) another-project
-  0) current directory
->
-```
-
-Pick a project and the four-pane tmux session launches with Claude Code auto-focused.
-
-To open a specific directory directly:
-
-```sh
-~/.config/ghostty/claude-wrapper.sh /path/to/project
-```
 
 ## Process Cleanup
 
