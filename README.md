@@ -80,7 +80,9 @@ Lines starting with `#` are ignored. If the file doesn't exist or is empty, the 
 
 When you close the Ghostty window, the wrapper automatically:
 
-1. Kills all child processes in every tmux pane (including Claude Code and any subprocesses it spawned)
-2. Destroys the tmux session
+1. Recursively kills the full process tree of every tmux pane (including deeply nested subprocesses spawned by Claude Code, lazygit, etc.)
+2. Waits briefly, then force-kills (`SIGKILL`) any processes that ignored the initial `SIGTERM`
+3. Destroys the tmux session
+4. If the tmux client disconnects without triggering cleanup, the session self-destructs via `destroy-unattached`
 
 This prevents zombie Claude Code processes from accumulating.
