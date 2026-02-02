@@ -37,17 +37,14 @@ Select project:
 > ~/.config/ghostty/claude-wrapper.sh /path/to/project
 > ```
 
-## Layout
+## Hotkeys
 
-```
-┌──────────────┬──────────────┐
-│   lazygit    │  Claude Code │
-├──────────────┤              │
-│    broot     │              │
-├──────────────┤              │
-│   terminal   │              │
-└──────────────┴──────────────┘
-```
+| Shortcut | Action |
+|---|---|
+| `Cmd+T` | New tab |
+| `Cmd+Shift+Left` | Previous tab |
+| `Cmd+Shift+Right` | Next tab |
+| `Left Alt` | Used as Alt key (macOS option-as-alt) |
 
 ## What the Setup Script Does
 
