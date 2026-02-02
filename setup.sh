@@ -63,14 +63,12 @@ if command -v claude &>/dev/null; then
 else
   warn "Claude Code not found in PATH."
   info "Installing Claude Code..."
-  curl -fsSL https://claude.ai/install.sh | sh
-  export PATH="$HOME/.local/bin:$PATH"
-  if command -v claude &>/dev/null; then
+  if brew install claude-code; then
     success "Claude Code installed"
     info "Run 'claude' to authenticate before opening Ghostty."
   else
     error "Claude Code installation failed."
-    info "Install manually: curl -fsSL https://claude.ai/install.sh | sh"
+    info "Install manually: brew install claude-code"
     info "Then run 'claude' to authenticate before re-running this script."
     exit 1
   fi
