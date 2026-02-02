@@ -4,6 +4,18 @@ A Ghostty + tmux wrapper that launches a four-pane dev session with Claude Code,
 
 ![vibecode-editor screenshot](docs/screenshot.png)
 
+## Quick Start
+
+> **One command to install everything:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JackUait/vibecode-editor/main/setup.sh | bash
+```
+
+That's it. The script installs all dependencies, sets up Ghostty, and walks you through adding your projects. Then open a new Ghostty window.
+
+> **Only requirement:** macOS with [Ghostty](https://ghostty.org) installed. Everything else (Homebrew, tmux, lazygit, broot, Claude Code) is installed automatically.
+
 ## Layout
 
 ```
@@ -16,19 +28,14 @@ A Ghostty + tmux wrapper that launches a four-pane dev session with Claude Code,
 └──────────────┴──────────────┘
 ```
 
-## Prerequisites
+## What the Setup Script Does
 
-- macOS
-- [Ghostty](https://ghostty.org)
-Everything else (tmux, lazygit, broot, Claude Code) is installed automatically by the setup script.
+1. Installs **Homebrew** (if needed)
+2. Installs **tmux**, **lazygit**, **broot**, and **Claude Code** via Homebrew
+3. Sets up the **Ghostty config** (with merge/replace option if you have an existing one)
+4. Walks you through adding your **project directories**
 
-## Setup
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/JackUait/vibecode-editor/main/setup.sh | bash
-```
-
-Or clone and run locally:
+### Alternative: Clone and Run
 
 ```sh
 git clone https://github.com/JackUait/vibecode-editor.git
@@ -36,16 +43,9 @@ cd vibecode-editor
 ./setup.sh
 ```
 
-The setup script will:
+### Alternative: Manual Setup
 
-1. Install Homebrew (if needed)
-2. Install tmux, lazygit, broot, and Claude Code
-4. Set up the Ghostty config (with merge/replace option if you have an existing one)
-5. Walk you through adding your project directories
-
-### Manual setup
-
-If you prefer to set things up manually:
+If you prefer to set things up by hand:
 
 1. Copy `ghostty/claude-wrapper.sh` to `~/.config/ghostty/` and make it executable
 2. Add `command = ~/.config/ghostty/claude-wrapper.sh` to `~/.config/ghostty/config`
@@ -78,7 +78,7 @@ To open a specific directory directly:
 ~/.config/ghostty/claude-wrapper.sh /path/to/project
 ```
 
-## Process cleanup
+## Process Cleanup
 
 When you close the Ghostty window, the wrapper automatically:
 
