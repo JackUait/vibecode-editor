@@ -799,11 +799,19 @@ fi
 # ---------- Claude Code Status Line ----------
 header "Setting up Claude Code status line..."
 
-# Check for npm
+# Check for npm, install Node.js LTS if needed
 if ! command -v npm &>/dev/null; then
-  warn "npm not found — skipping status line setup"
-  warn "Install Node.js to enable status line: brew install node"
-else
+  info "Installing Node.js LTS..."
+  if brew install node@22 &>/dev/null; then
+    # Add node@22 to PATH for this session
+    export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+    success "Node.js LTS installed"
+  else
+    warn "Node.js installation failed — skipping status line setup"
+  fi
+fi
+
+if command -v npm &>/dev/null; then
   # Install ccstatusline
   if npm list -g ccstatusline &>/dev/null; then
     success "ccstatusline already installed"

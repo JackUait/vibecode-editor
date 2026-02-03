@@ -77,7 +77,7 @@ That's it. The script installs all dependencies, sets up **`Ghostty`**, and walk
 3. Installs **`Ghostty`** via **`Homebrew`** cask (if needed)
 4. Sets up the **`Ghostty`** config (with merge/replace option if you have an existing one)
 5. Walks you through adding your **project directories**
-6. Sets up **Claude Code status line** showing git info and context usage (requires **`Node.js`**)
+6. Installs **`Node.js`** LTS (if needed) and sets up **Claude Code status line** showing git info and context usage
 
 <details>
 <summary><strong>Alternative: Clone and Run</strong></summary>
@@ -112,7 +112,7 @@ Lines starting with `#` are ignored. You can also add/delete projects directly f
 
 ## Status Line
 
-If **`Node.js`** is installed, the setup script configures a custom **Claude Code** status line:
+The setup script configures a custom **Claude Code** status line:
 
 ```
 my-project | main | S: 0 | U: 2 | A: 1 | 23.5%
