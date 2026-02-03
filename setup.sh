@@ -521,8 +521,14 @@ header "Checking Ghostty..."
 if [ -d "/Applications/Ghostty.app" ]; then
   success "Ghostty found"
 else
-  warn "Ghostty not found in /Applications. Config files will still be set up."
-  warn "Install Ghostty from https://ghostty.org"
+  info "Installing Ghostty..."
+  if brew install --cask ghostty; then
+    success "Ghostty installed"
+  else
+    error "Ghostty installation failed."
+    info "Install manually from https://ghostty.org or run: brew install --cask ghostty"
+    exit 1
+  fi
 fi
 
 # ---------- Wrapper script ----------
