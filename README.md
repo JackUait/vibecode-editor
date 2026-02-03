@@ -47,6 +47,7 @@ That's it. The script installs all dependencies, sets up **`Ghostty`**, and walk
 - **Arrow keys** or **mouse click** to navigate
 - **Number keys** (1-9) to jump directly to a project
 - **Enter** to select
+- **Path autocomplete** when adding projects (with Tab completion)
 
 **Step 3.** The four-pane **`tmux`** session launches automatically with **`Claude Code`** already focused — start typing your prompt right away.
 
@@ -76,6 +77,7 @@ That's it. The script installs all dependencies, sets up **`Ghostty`**, and walk
 3. Installs **`Ghostty`** via **`Homebrew`** cask (if needed)
 4. Sets up the **`Ghostty`** config (with merge/replace option if you have an existing one)
 5. Walks you through adding your **project directories**
+6. Sets up **Claude Code status line** showing git info and context usage (requires **`Node.js`**)
 
 <details>
 <summary><strong>Alternative: Clone and Run</strong></summary>
@@ -105,6 +107,26 @@ another-project:/path/to/another-project
 Lines starting with `#` are ignored. You can also add/delete projects directly from the interactive menu.
 
 </details>
+
+---
+
+## Status Line
+
+If **`Node.js`** is installed, the setup script configures a custom **Claude Code** status line:
+
+```
+my-project | main | S: 0 | U: 2 | A: 1 | 23.5%
+```
+
+- **Repository name** — current project
+- **Branch** — current git branch
+- **S** — staged files count
+- **U** — unstaged files count
+- **A** — untracked (added) files count
+- **Context %** — how much of Claude's context window is used
+
+> [!TIP]
+> Monitor context usage to know when to start a new conversation. Lower is better.
 
 ---
 

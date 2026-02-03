@@ -796,12 +796,131 @@ else
   info "No projects added. Add them later to $PROJECTS_FILE"
 fi
 
+# ---------- Claude Code Status Line ----------
+header "Setting up Claude Code status line..."
+
+# Check for npm
+if ! command -v npm &>/dev/null; then
+  warn "npm not found — skipping status line setup"
+  warn "Install Node.js to enable status line: brew install node"
+else
+  # Install ccstatusline
+  if npm list -g ccstatusline &>/dev/null; then
+    success "ccstatusline already installed"
+  else
+    info "Installing ccstatusline..."
+    if npm install -g ccstatusline &>/dev/null; then
+      success "ccstatusline installed"
+    else
+      warn "Failed to install ccstatusline — skipping status line setup"
+    fi
+  fi
+
+  if npm list -g ccstatusline &>/dev/null; then
+    # Create ccstatusline config
+    mkdir -p ~/.config/ccstatusline
+    cat > ~/.config/ccstatusline/settings.json << 'CCEOF'
+{
+  "version": 3,
+  "lines": [
+    [
+      {
+        "id": "1",
+        "type": "context-percentage",
+        "color": "yellow",
+        "bold": true,
+        "rawValue": true
+      }
+    ],
+    [],
+    []
+  ],
+  "flexMode": "full-minus-40",
+  "compactThreshold": 60,
+  "colorLevel": 2,
+  "inheritSeparatorColors": false,
+  "globalBold": false,
+  "powerline": {
+    "enabled": false,
+    "separators": [""],
+    "separatorInvertBackground": [false],
+    "startCaps": [],
+    "endCaps": [],
+    "autoAlign": false
+  }
+}
+CCEOF
+    success "Created ccstatusline config"
+
+    # Create statusline scripts
+    mkdir -p ~/.claude
+    cat > ~/.claude/statusline-command.sh << 'SLCEOF'
+#!/bin/bash
+input=$(cat)
+cwd=$(echo "$input" | sed -n 's/.*"current_dir":"\([^"]*\)".*/\1/p')
+
+if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
+  repo_name=$(basename "$cwd")
+  branch=$(git -C "$cwd" --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null)
+  staged=$(git -C "$cwd" --no-optional-locks diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+  unstaged=$(git -C "$cwd" --no-optional-locks diff --name-only 2>/dev/null | wc -l | tr -d ' ')
+  untracked=$(git -C "$cwd" --no-optional-locks ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+
+  printf '\033[01;36m%s\033[00m | \033[01;32m%s\033[00m | S: \033[01;33m%s\033[00m | U: \033[01;33m%s\033[00m | A: \033[01;33m%s\033[00m' \
+    "$repo_name" "$branch" "$staged" "$unstaged" "$untracked"
+else
+  printf '\033[01;36m%s\033[00m' "$(basename "$cwd")"
+fi
+SLCEOF
+
+    cat > ~/.claude/statusline-wrapper.sh << 'SLWEOF'
+#!/bin/bash
+input=$(cat)
+git_info=$(echo "$input" | bash ~/.claude/statusline-command.sh)
+context_pct=$(echo "$input" | npx ccstatusline 2>/dev/null)
+printf '%s | %s' "$git_info" "$context_pct"
+SLWEOF
+
+    chmod +x ~/.claude/statusline-command.sh
+    chmod +x ~/.claude/statusline-wrapper.sh
+    success "Created statusline scripts"
+
+    # Update Claude settings.json
+    CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+    if [ -f "$CLAUDE_SETTINGS" ]; then
+      # Check if statusLine already configured
+      if grep -q '"statusLine"' "$CLAUDE_SETTINGS"; then
+        success "Claude status line already configured"
+      else
+        # Add statusLine to existing settings
+        # Remove trailing } and add statusLine config
+        sed -i '' '$ s/}$/,\n  "statusLine": {\n    "type": "command",\n    "command": "bash ~\/.claude\/statusline-wrapper.sh"\n  }\n}/' "$CLAUDE_SETTINGS"
+        success "Added status line to Claude settings"
+      fi
+    else
+      # Create new settings file
+      cat > "$CLAUDE_SETTINGS" << 'CSEOF'
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-wrapper.sh"
+  }
+}
+CSEOF
+      success "Created Claude settings with status line"
+    fi
+  fi
+fi
+
 # ---------- Summary ----------
 header "Setup complete!"
 echo ""
-success "Wrapper script: ~/.config/ghostty/claude-wrapper.sh"
+success "Wrapper script:  ~/.config/ghostty/claude-wrapper.sh"
 success "Ghostty config:  ~/.config/ghostty/config"
 success "Projects file:   $PROJECTS_FILE"
+if [ -f ~/.claude/statusline-wrapper.sh ]; then
+  success "Status line:     ~/.claude/statusline-wrapper.sh"
+fi
 echo ""
 info "Open a new Ghostty window to start coding."
 
