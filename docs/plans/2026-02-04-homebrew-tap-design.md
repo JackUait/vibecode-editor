@@ -49,7 +49,7 @@ The formula:
   - `depends_on "broot"`
   - `depends_on "claude-code"`
   - `depends_on "node@22"`
-  - `depends_on cask: "ghostty"`
+- Note: Ghostty (`cask`) cannot be a formula dependency (Homebrew limitation). The `bin/ghost-tab` script checks for and installs Ghostty at runtime.
 
 ## Install Experience
 
