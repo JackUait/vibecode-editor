@@ -1,0 +1,316 @@
+#!/bin/bash
+set -e
+
+# Wrap everything in a function so `curl | bash` reads the entire
+# script into memory before executing.  Without this, bash reads
+# line-by-line from the pipe and `read` consumes script lines as input.
+main() {
+
+# Colors (with fallback)
+if [ -t 1 ] && [ "$(tput colors 2>/dev/null)" -ge 8 ] 2>/dev/null; then
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  RED='\033[0;31m'
+  BLUE='\033[0;34m'
+  BOLD='\033[1m'
+  NC='\033[0m'
+else
+  GREEN='' YELLOW='' RED='' BLUE='' BOLD='' NC=''
+fi
+
+success() { echo -e "${GREEN}✓${NC} $1"; }
+warn()    { echo -e "${YELLOW}!${NC} $1"; }
+error()   { echo -e "${RED}✗${NC} $1"; }
+info()    { echo -e "${BLUE}→${NC} $1"; }
+header()  { echo -e "\n${BOLD}$1${NC}"; }
+
+# Determine where supporting files live
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ "$SCRIPT_DIR" == "$(brew --prefix 2>/dev/null)/bin" ]]; then
+    SHARE_DIR="$(brew --prefix)/share/ghost-tab"
+else
+    SHARE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
+
+# ---------- OS check ----------
+header "Checking platform..."
+if [ "$(uname)" != "Darwin" ]; then
+  error "This setup script only supports macOS."
+  exit 1
+fi
+success "macOS detected"
+
+# ---------- Homebrew ----------
+header "Checking Homebrew..."
+if ! command -v brew &>/dev/null; then
+  info "Installing Homebrew..."
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+  success "Homebrew installed"
+else
+  success "Homebrew found"
+fi
+
+# ---------- Dependencies ----------
+header "Installing dependencies..."
+for pkg in tmux lazygit broot claude; do
+  brew_pkg="$pkg"
+  [ "$pkg" = "claude" ] && brew_pkg="claude-code"
+
+  if brew list "$brew_pkg" &>/dev/null; then
+    success "$pkg already installed"
+  else
+    info "Installing $pkg..."
+    if brew install "$brew_pkg"; then
+      success "$pkg installed"
+      [ "$pkg" = "claude" ] && info "Run 'claude' to authenticate before opening Ghostty."
+    else
+      if [ "$pkg" = "claude" ]; then
+        error "Claude Code installation failed."
+        info "Install manually: brew install claude-code"
+        info "Then run 'claude' to authenticate before re-running this script."
+        exit 1
+      else
+        warn "Failed to install $pkg — install it manually with: brew install $brew_pkg"
+      fi
+    fi
+  fi
+done
+
+# ---------- Ghostty ----------
+header "Checking Ghostty..."
+if [ -d "/Applications/Ghostty.app" ]; then
+  success "Ghostty found"
+else
+  info "Installing Ghostty..."
+  if brew install --cask ghostty; then
+    success "Ghostty installed"
+  else
+    error "Ghostty installation failed."
+    info "Install manually from https://ghostty.org or run: brew install --cask ghostty"
+    exit 1
+  fi
+fi
+
+# ---------- Wrapper script ----------
+header "Setting up wrapper script..."
+mkdir -p ~/.config/ghostty
+cp "$SHARE_DIR/ghostty/claude-wrapper.sh" ~/.config/ghostty/claude-wrapper.sh
+chmod +x ~/.config/ghostty/claude-wrapper.sh
+success "Created claude-wrapper.sh in ~/.config/ghostty/"
+
+# ---------- Ghostty config ----------
+header "Setting up Ghostty config..."
+GHOSTTY_CONFIG="$HOME/.config/ghostty/config"
+WRAPPER_LINE="command = ~/.config/ghostty/claude-wrapper.sh"
+
+if [ -f "$GHOSTTY_CONFIG" ]; then
+  warn "Existing Ghostty config found at $GHOSTTY_CONFIG"
+  echo ""
+  echo -e "  ${BOLD}1)${NC} Merge — add the wrapper command to your existing config"
+  echo -e "  ${BOLD}2)${NC} Backup & replace — save current config and use ours"
+  echo ""
+  read -rn1 -p "$(echo -e "${BLUE}Choose (1/2):${NC} ")" config_choice </dev/tty
+  echo ""
+
+  case "$config_choice" in
+    1)
+      if grep -q '^command\s*=' "$GHOSTTY_CONFIG"; then
+        sed -i '' 's|^command\s*=.*|'"$WRAPPER_LINE"'|' "$GHOSTTY_CONFIG"
+        success "Replaced existing command line in config"
+      else
+        echo "$WRAPPER_LINE" >> "$GHOSTTY_CONFIG"
+        success "Appended wrapper command to config"
+      fi
+      ;;
+    2)
+      BACKUP="$GHOSTTY_CONFIG.backup.$(date +%s)"
+      cp "$GHOSTTY_CONFIG" "$BACKUP"
+      success "Backed up existing config to $BACKUP"
+      cp "$SHARE_DIR/ghostty/config" "$GHOSTTY_CONFIG"
+      success "Replaced config with ghost-tab defaults"
+      ;;
+    *)
+      warn "Invalid choice, skipping config setup"
+      ;;
+  esac
+else
+  cp "$SHARE_DIR/ghostty/config" "$GHOSTTY_CONFIG"
+  success "Created Ghostty config at $GHOSTTY_CONFIG"
+fi
+
+# ---------- Projects ----------
+header "Setting up projects..."
+PROJECTS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/vibecode-editor"
+PROJECTS_FILE="$PROJECTS_DIR/projects"
+mkdir -p "$PROJECTS_DIR"
+
+echo ""
+read -rn1 -p "$(echo -e "${BLUE}Add a project? (y/n):${NC} ")" add_project </dev/tty
+echo ""
+
+while [[ "$add_project" =~ ^[yY]$ ]]; do
+  read -rp "$(echo -e "${BLUE}Project name:${NC} ")" proj_name </dev/tty
+  read -rp "$(echo -e "${BLUE}Project path:${NC} ")" proj_path </dev/tty
+
+  # Expand ~ to $HOME for validation
+  expanded_path="${proj_path/#\~/$HOME}"
+
+  if [ -d "$expanded_path" ]; then
+    echo "$proj_name:$expanded_path" >> "$PROJECTS_FILE"
+    success "Added $proj_name"
+  else
+    warn "Path $proj_path does not exist yet — adding anyway"
+    echo "$proj_name:$expanded_path" >> "$PROJECTS_FILE"
+  fi
+
+  echo ""
+  read -rn1 -p "$(echo -e "${BLUE}Add another? (y/n):${NC} ")" add_project </dev/tty
+  echo ""
+done
+
+if [ -f "$PROJECTS_FILE" ] && [ -s "$PROJECTS_FILE" ]; then
+  success "Projects saved to $PROJECTS_FILE"
+else
+  info "No projects added. Add them later to $PROJECTS_FILE"
+fi
+
+# ---------- Claude Code Status Line ----------
+header "Setting up Claude Code status line..."
+
+# Check for npm, install Node.js LTS if needed
+if ! command -v npm &>/dev/null; then
+  info "Installing Node.js LTS..."
+  if brew install node@22 &>/dev/null; then
+    # Add node@22 to PATH for this session
+    export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+    success "Node.js LTS installed"
+  else
+    warn "Node.js installation failed — skipping status line setup"
+  fi
+fi
+
+if command -v npm &>/dev/null; then
+  # Install ccstatusline
+  if npm list -g ccstatusline &>/dev/null; then
+    success "ccstatusline already installed"
+  else
+    info "Installing ccstatusline..."
+    if npm install -g ccstatusline &>/dev/null; then
+      success "ccstatusline installed"
+    else
+      warn "Failed to install ccstatusline — skipping status line setup"
+    fi
+  fi
+
+  if npm list -g ccstatusline &>/dev/null; then
+    # Create ccstatusline config
+    mkdir -p ~/.config/ccstatusline
+    cat > ~/.config/ccstatusline/settings.json << 'CCEOF'
+{
+  "version": 3,
+  "lines": [
+    [
+      {
+        "id": "1",
+        "type": "context-percentage",
+        "color": "yellow",
+        "bold": true,
+        "rawValue": true
+      }
+    ],
+    [],
+    []
+  ],
+  "flexMode": "full-minus-40",
+  "compactThreshold": 60,
+  "colorLevel": 2,
+  "inheritSeparatorColors": false,
+  "globalBold": false,
+  "powerline": {
+    "enabled": false,
+    "separators": [""],
+    "separatorInvertBackground": [false],
+    "startCaps": [],
+    "endCaps": [],
+    "autoAlign": false
+  }
+}
+CCEOF
+    success "Created ccstatusline config"
+
+    # Create statusline scripts
+    mkdir -p ~/.claude
+    cat > ~/.claude/statusline-command.sh << 'SLCEOF'
+#!/bin/bash
+input=$(cat)
+cwd=$(echo "$input" | sed -n 's/.*"current_dir":"\([^"]*\)".*/\1/p')
+
+if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
+  repo_name=$(basename "$cwd")
+  branch=$(git -C "$cwd" --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null)
+  staged=$(git -C "$cwd" --no-optional-locks diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+  unstaged=$(git -C "$cwd" --no-optional-locks diff --name-only 2>/dev/null | wc -l | tr -d ' ')
+  untracked=$(git -C "$cwd" --no-optional-locks ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+
+  printf '\033[01;36m%s\033[00m | \033[01;32m%s\033[00m | S: \033[01;33m%s\033[00m | U: \033[01;33m%s\033[00m | A: \033[01;33m%s\033[00m' \
+    "$repo_name" "$branch" "$staged" "$unstaged" "$untracked"
+else
+  printf '\033[01;36m%s\033[00m' "$(basename "$cwd")"
+fi
+SLCEOF
+
+    cat > ~/.claude/statusline-wrapper.sh << 'SLWEOF'
+#!/bin/bash
+input=$(cat)
+git_info=$(echo "$input" | bash ~/.claude/statusline-command.sh)
+context_pct=$(echo "$input" | npx ccstatusline 2>/dev/null)
+printf '%s | %s' "$git_info" "$context_pct"
+SLWEOF
+
+    chmod +x ~/.claude/statusline-command.sh
+    chmod +x ~/.claude/statusline-wrapper.sh
+    success "Created statusline scripts"
+
+    # Update Claude settings.json
+    CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+    if [ -f "$CLAUDE_SETTINGS" ]; then
+      # Check if statusLine already configured
+      if grep -q '"statusLine"' "$CLAUDE_SETTINGS"; then
+        success "Claude status line already configured"
+      else
+        # Add statusLine to existing settings
+        # Remove trailing } and add statusLine config
+        sed -i '' '$ s/}$/,\n  "statusLine": {\n    "type": "command",\n    "command": "bash ~\/.claude\/statusline-wrapper.sh"\n  }\n}/' "$CLAUDE_SETTINGS"
+        success "Added status line to Claude settings"
+      fi
+    else
+      # Create new settings file
+      cat > "$CLAUDE_SETTINGS" << 'CSEOF'
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-wrapper.sh"
+  }
+}
+CSEOF
+      success "Created Claude settings with status line"
+    fi
+  fi
+fi
+
+# ---------- Summary ----------
+header "Setup complete!"
+echo ""
+success "Wrapper script:  ~/.config/ghostty/claude-wrapper.sh"
+success "Ghostty config:  ~/.config/ghostty/config"
+success "Projects file:   $PROJECTS_FILE"
+if [ -f ~/.claude/statusline-wrapper.sh ]; then
+  success "Status line:     ~/.claude/statusline-wrapper.sh"
+fi
+echo ""
+info "Open a new Ghostty window to start coding."
+
+} # end main
+
+main "$@"
