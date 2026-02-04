@@ -328,7 +328,9 @@ elif [ -z "$1" ]; then
 
       _sep_count=0
       [ "${#projects[@]}" -gt 0 ] && _sep_count=1
-      _menu_h=$(( 3 + total * 2 + _sep_count + 2 ))
+      _update_line=0
+      [ -n "$_update_version" ] && _update_line=1
+      _menu_h=$(( 3 + _update_line + total * 2 + _sep_count + 2 ))
 
       _top_row=$(( (_rows - _menu_h) / 2 ))
       [ "$_top_row" -lt 1 ] && _top_row=1
@@ -340,6 +342,9 @@ elif [ -z "$1" ]; then
 
       # Title
       moveto "$r" "$c"; printf "${_BOLD}${_CYAN}⬡  Ghost Tab${_NC}\033[K"; r=$((r+1))
+      if [ -n "$_update_version" ]; then
+        moveto "$r" "$c"; printf "  ${_YELLOW}Update available: v${_update_version}${_NC} ${_DIM}(brew upgrade ghost-tab)${_NC}\033[K"; r=$((r+1))
+      fi
       moveto "$r" "$c"; printf "${_DIM}──────────────────────────────────────${_NC}\033[K"; r=$((r+1))
       moveto "$r" "$c"; printf "\033[K"; r=$((r+1))
 
