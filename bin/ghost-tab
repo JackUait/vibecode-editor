@@ -26,8 +26,9 @@ header()  { echo -e "\n${BOLD}$1${NC}"; }
 
 # Determine where supporting files live
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ "$SCRIPT_DIR" == "$(brew --prefix 2>/dev/null)/bin" ]]; then
-    SHARE_DIR="$(brew --prefix)/share/ghost-tab"
+_brew_prefix="$(brew --prefix 2>/dev/null || true)"
+if [[ -n "$_brew_prefix" && "$SCRIPT_DIR" == "$_brew_prefix/bin" ]]; then
+    SHARE_DIR="$_brew_prefix/share/ghost-tab"
 else
     SHARE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
@@ -90,6 +91,20 @@ else
     info "Install manually from https://ghostty.org or run: brew install --cask ghostty"
     exit 1
   fi
+fi
+
+# Verify supporting files exist (will fail if run via curl|bash without clone)
+if [ ! -f "$SHARE_DIR/ghostty/claude-wrapper.sh" ] || [ ! -f "$SHARE_DIR/ghostty/config" ]; then
+  error "Supporting files not found in $SHARE_DIR"
+  echo ""
+  info "If you ran this via curl|bash, install via Homebrew instead:"
+  echo "  brew tap JackUait/ghost-tab https://github.com/JackUait/ghost-tab"
+  echo "  brew install ghost-tab"
+  echo ""
+  info "Or clone the repo:"
+  echo "  git clone https://github.com/JackUait/ghost-tab.git"
+  echo "  cd ghost-tab && ./bin/ghost-tab"
+  exit 1
 fi
 
 # ---------- Wrapper script ----------
