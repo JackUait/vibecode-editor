@@ -33,14 +33,16 @@ check_for_update() {
 
   # Spawn background check (non-blocking)
   (
-    result="$(brew outdated --formula ghost-tab 2>/dev/null)"
+    result="$(brew outdated --verbose --formula ghost-tab 2>/dev/null)"
     mkdir -p "$(dirname "$UPDATE_CACHE")"
     if [ -n "$result" ]; then
       # Extract new version: "ghost-tab (1.0.0) < 1.1.0" -> "1.1.0"
       new_ver="$(echo "$result" | sed -n 's/.*< *//p')"
-      printf '%s\n%s\n' "$new_ver" "$(date +%s)" > "$UPDATE_CACHE"
+      printf '%s\n%s\n' "$new_ver" "$(date +%s)" > "$UPDATE_CACHE.tmp"
+      mv "$UPDATE_CACHE.tmp" "$UPDATE_CACHE"
     else
-      printf '\n%s\n' "$(date +%s)" > "$UPDATE_CACHE"
+      printf '\n%s\n' "$(date +%s)" > "$UPDATE_CACHE.tmp"
+      mv "$UPDATE_CACHE.tmp" "$UPDATE_CACHE"
     fi
   ) &
   disown
