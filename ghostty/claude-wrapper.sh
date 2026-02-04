@@ -375,10 +375,16 @@ elif [ -z "$1" ]; then
         # Subtitle line
         moveto "$r" "$c"
         if [ -n "${menu_subs[$i]}" ]; then
+          local _sub="${menu_subs[$i]}"
+          local _max_sub=$(( box_w - 6 ))
+          if [ "${#_sub}" -gt "$_max_sub" ]; then
+            local _half=$(( (_max_sub - 3) / 2 ))
+            _sub="${_sub:0:$_half}...${_sub: -$_half}"
+          fi
           if [ "$i" -eq "$selected" ]; then
-            printf "    ${_CYAN}%s${_NC}\033[K" "${menu_subs[$i]}"
+            printf "    ${_CYAN}%s${_NC}\033[K" "$_sub"
           else
-            printf "    ${_DIM}%s${_NC}\033[K" "${menu_subs[$i]}"
+            printf "    ${_DIM}%s${_NC}\033[K" "$_sub"
           fi
         else
           printf "\033[K"
