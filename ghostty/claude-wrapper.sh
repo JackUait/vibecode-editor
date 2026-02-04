@@ -404,7 +404,7 @@ elif [ -z "$1" ]; then
     while true; do
       if [ "$_add_mode" -eq 1 ]; then
         # Add mode: read path with autocomplete
-        _sub_row=$(( _top_row + 3 + _add_idx * 2 + _sep_count + 1 ))
+        _sub_row=$(( _top_row + 3 + _update_line + _add_idx * 2 + _sep_count + 1 ))
         read_path_autocomplete "$_sub_row" "$_left_col"
         _add_input="$_path_result"
 
@@ -464,7 +464,7 @@ elif [ -z "$1" ]; then
 
       if [ "$_open_mode" -eq 1 ]; then
         # Open once mode: read path with autocomplete
-        _sub_row=$(( _top_row + 3 + _open_idx * 2 + _sep_count + 1 ))
+        _sub_row=$(( _top_row + 3 + _update_line + _open_idx * 2 + _sep_count + 1 ))
         read_path_autocomplete "$_sub_row" "$_left_col"
         _open_input="$_path_result"
 
@@ -500,7 +500,7 @@ elif [ -z "$1" ]; then
 
       if [ "$_del_mode" -eq 1 ]; then
         # In delete mode: arrow-navigate or number-select project to delete
-        _del_sub_row=$(( _top_row + 3 + _del_idx * 2 + _sep_count + 1 ))
+        _del_sub_row=$(( _top_row + 3 + _update_line + _del_idx * 2 + _sep_count + 1 ))
         # Render current selection on subtitle line
         _dn="${projects[$_del_sel]%%:*}"
         moveto "$_del_sub_row" "$_left_col"
@@ -599,7 +599,7 @@ elif [ -z "$1" ]; then
           delete)
             if [ ${#projects[@]} -eq 0 ]; then
               draw_menu
-              moveto "$(( _top_row + 3 + selected * 2 + _sep_count + 1 ))" "$_left_col"
+              moveto "$(( _top_row + 3 + _update_line + selected * 2 + _sep_count + 1 ))" "$_left_col"
               printf "    ${_DIM}No projects to delete.${_NC}\033[K"
               sleep 0.8
               draw_menu
