@@ -390,6 +390,157 @@ else
   info "Skipping sound notification"
 fi
 
+# ---------- Tab Title Animation ----------
+header "Tab title animation..."
+echo ""
+echo -e "  Show a spinning animation in the tab title when Claude"
+echo -e "  is waiting for your input."
+echo ""
+read -rn1 -p "$(echo -e "${BLUE}Enable tab animation? (y/n):${NC} ")" enable_spinner </dev/tty
+echo ""
+
+if [[ "$enable_spinner" =~ ^[yY]$ ]]; then
+  mkdir -p ~/.claude
+
+  # Create start script
+  cat > ~/.claude/tab-spinner-start.sh << 'SPINSTART'
+#!/bin/bash
+
+# Get project name from PWD or tmux session
+PROJECT="${PWD##*/}"
+if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null; then
+  SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null)
+  [ -n "$SESSION_NAME" ] && PROJECT="$SESSION_NAME"
+fi
+
+# PID file for this project
+PID_FILE="/tmp/ghost-tab-spinner-${PROJECT}.pid"
+
+# Exit if already running
+if [ -f "$PID_FILE" ]; then
+  OLD_PID=$(cat "$PID_FILE")
+  if kill -0 "$OLD_PID" 2>/dev/null; then
+    exit 0
+  fi
+  rm -f "$PID_FILE"
+fi
+
+# Spinner frames
+FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+
+# Run animation in background
+(
+  echo $$ > "$PID_FILE"
+  i=0
+  while true; do
+    printf '\033]0;%s %s\007' "${FRAMES[$i]}" "$PROJECT"
+    i=$(( (i + 1) % ${#FRAMES[@]} ))
+    sleep 0.1
+  done
+) &
+
+disown
+SPINSTART
+
+  # Create stop script
+  cat > ~/.claude/tab-spinner-stop.sh << 'SPINSTOP'
+#!/bin/bash
+
+# Get project name from PWD or tmux session
+PROJECT="${PWD##*/}"
+if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null; then
+  SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null)
+  [ -n "$SESSION_NAME" ] && PROJECT="$SESSION_NAME"
+fi
+
+# PID file for this project
+PID_FILE="/tmp/ghost-tab-spinner-${PROJECT}.pid"
+
+# Kill spinner if running
+if [ -f "$PID_FILE" ]; then
+  PID=$(cat "$PID_FILE")
+  kill "$PID" 2>/dev/null
+  rm -f "$PID_FILE"
+fi
+
+# Restore normal tab title
+printf '\033]0;%s\007' "$PROJECT"
+SPINSTOP
+
+  chmod +x ~/.claude/tab-spinner-start.sh
+  chmod +x ~/.claude/tab-spinner-stop.sh
+  success "Created spinner scripts"
+
+  # Add hooks to settings.json using Python
+  CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+  if python3 - "$CLAUDE_SETTINGS" << 'PYEOF'
+import json, sys, os
+
+settings_path = sys.argv[1]
+
+# Load existing settings or start fresh
+if os.path.exists(settings_path):
+    try:
+        with open(settings_path, "r") as f:
+            settings = json.load(f)
+    except (json.JSONDecodeError, ValueError):
+        settings = {}
+else:
+    settings = {}
+
+hooks = settings.setdefault("hooks", {})
+
+# Add idle_prompt notification for start script
+notification_list = hooks.setdefault("Notification", [])
+start_cmd = "bash ~/.claude/tab-spinner-start.sh &"
+
+# Find or create idle_prompt matcher group
+idle_group = None
+for group in notification_list:
+    if group.get("matcher") == "idle_prompt":
+        idle_group = group
+        break
+
+if idle_group is None:
+    idle_group = {"matcher": "idle_prompt", "hooks": []}
+    notification_list.append(idle_group)
+
+# Add start command if not already present
+if not any(h.get("command") == start_cmd for h in idle_group["hooks"]):
+    idle_group["hooks"].append({"type": "command", "command": start_cmd})
+
+# Add UserPromptSubmit hook for stop script
+submit_list = hooks.setdefault("UserPromptSubmit", [])
+stop_cmd = "bash ~/.claude/tab-spinner-stop.sh"
+
+# UserPromptSubmit doesn't use matchers, just a hooks array
+# Find or create the matcher group (use empty string as matcher)
+submit_group = None
+for group in submit_list:
+    if group.get("matcher") == "":
+        submit_group = group
+        break
+
+if submit_group is None:
+    submit_group = {"matcher": "", "hooks": []}
+    submit_list.append(submit_group)
+
+if not any(h.get("command") == stop_cmd for h in submit_group["hooks"]):
+    submit_group["hooks"].append({"type": "command", "command": stop_cmd})
+
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+PYEOF
+  then
+    success "Tab animation hooks configured"
+  else
+    warn "Failed to configure tab animation hooks"
+  fi
+else
+  info "Skipping tab animation"
+fi
+
 # ---------- Summary ----------
 header "Setup complete!"
 echo ""
@@ -401,6 +552,9 @@ if [ -f ~/.claude/statusline-wrapper.sh ]; then
 fi
 if grep -q '"idle_prompt"' ~/.claude/settings.json 2>/dev/null; then
   success "Sound:           Notification on idle"
+fi
+if [ -f ~/.claude/tab-spinner-start.sh ]; then
+  success "Tab animation:   Spinner on idle"
 fi
 echo ""
 info "Open a new Ghostty window to start coding."
