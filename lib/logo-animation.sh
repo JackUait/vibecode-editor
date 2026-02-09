@@ -140,3 +140,84 @@ logo_art_opencode() {
   _LOGO_HEIGHT=${#_LOGO_LINES[@]}
   _LOGO_WIDTH=28
 }
+
+# ─────────────────────────────────────────────────────────────────
+# Rendering & animation helpers
+# ─────────────────────────────────────────────────────────────────
+
+# draw_logo row col tool_name
+#   Populate _LOGO_LINES via logo_art_<tool_name>, then render each
+#   line at the given terminal position using moveto (from tui.sh).
+draw_logo() {
+  local row=$1 col=$2 tool=$3 line
+  "logo_art_${tool}"
+  for line in "${_LOGO_LINES[@]}"; do
+    moveto "$row" "$col"
+    printf '%b' "$line"
+    row=$((row + 1))
+  done
+}
+
+# clear_logo_area row col height width
+#   Overwrite the rectangular region with spaces to erase the logo.
+clear_logo_area() {
+  local row=$1 col=$2 height=$3 width=$4
+  local end=$((row + height - 1)) blank
+  blank=$(printf "%*s" "$width" "")
+  while [ "$row" -le "$end" ]; do
+    moveto "$row" "$col"
+    printf '%s' "$blank"
+    row=$((row + 1))
+  done
+}
+
+# start_logo_animation row col tool_name
+#   Launch a background bobbing animation: the ghost alternates
+#   between (row) and (row+1) with 0.8 s pauses between frames.
+#   A flag file gates the loop so stop_logo_animation can halt it.
+start_logo_animation() {
+  local row=$1 col=$2 tool=$3
+  local flagfile="/tmp/ghost-tab-anim-$$"
+
+  touch "$flagfile"
+
+  (
+    while [ -f "$flagfile" ]; do
+      draw_logo "$row" "$col" "$tool"
+      sleep 0.8
+
+      [ -f "$flagfile" ] || break
+      clear_logo_area "$row" "$col" "$_LOGO_HEIGHT" "$_LOGO_WIDTH"
+
+      draw_logo $((row + 1)) "$col" "$tool"
+      sleep 0.8
+
+      [ -f "$flagfile" ] || break
+      clear_logo_area $((row + 1)) "$col" "$_LOGO_HEIGHT" "$_LOGO_WIDTH"
+    done
+  ) &
+
+  _LOGO_ANIM_PID=$!
+  _LOGO_CUR_ROW=$row
+  _LOGO_CUR_COL=$col
+  _LOGO_CUR_TOOL=$tool
+}
+
+# stop_logo_animation
+#   Tear down the background animation and erase the ghost at both
+#   possible bob positions so no artefacts remain on screen.
+stop_logo_animation() {
+  rm -f "/tmp/ghost-tab-anim-$$"
+
+  if [ -n "$_LOGO_ANIM_PID" ]; then
+    kill "$_LOGO_ANIM_PID" 2>/dev/null
+    wait "$_LOGO_ANIM_PID" 2>/dev/null
+  fi
+
+  if [ -n "$_LOGO_CUR_ROW" ]; then
+    clear_logo_area "$_LOGO_CUR_ROW" "$_LOGO_CUR_COL" "$_LOGO_HEIGHT" "$_LOGO_WIDTH"
+    clear_logo_area $((_LOGO_CUR_ROW + 1)) "$_LOGO_CUR_COL" "$_LOGO_HEIGHT" "$_LOGO_WIDTH"
+  fi
+
+  unset _LOGO_ANIM_PID
+}
