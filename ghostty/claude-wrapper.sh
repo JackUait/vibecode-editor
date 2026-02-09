@@ -368,9 +368,7 @@ elif [ -z "$1" ]; then
       [ "${#projects[@]}" -gt 0 ] && _sep_count=1
       _update_line=0
       [ -n "$_update_version" ] && _update_line=1
-      _ai_toggle_h=0
-      [ ${#AI_TOOLS_AVAILABLE[@]} -gt 0 ] && _ai_toggle_h=2
-      _menu_h=$(( 3 + _update_line + total * 2 + _sep_count + _ai_toggle_h + 2 ))
+      _menu_h=$(( 3 + _update_line + total * 2 + _sep_count + 2 ))
 
       _top_row=$(( (_rows - _menu_h) / 2 ))
       [ "$_top_row" -lt 1 ] && _top_row=1
@@ -380,8 +378,22 @@ elif [ -z "$1" ]; then
       c="$_left_col"
       r="$_top_row"
 
-      # Title
-      moveto "$r" "$c"; printf "${_BOLD}${_CYAN}⬡  Ghost Tab${_NC}\033[K"; r=$((r+1))
+      # Title with AI tool toggle (right-aligned)
+      moveto "$r" "$c"
+      if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
+        local _ai_name
+        _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
+        printf "${_BOLD}${_CYAN}⬡  Ghost Tab${_NC}%*s${_DIM}◀${_NC} ${_CYAN}%s${_NC} ${_DIM}▶${_NC}\033[K" \
+          $(( box_w - 12 - ${#_ai_name} - 4 )) "" "$_ai_name"
+      elif [ ${#AI_TOOLS_AVAILABLE[@]} -eq 1 ]; then
+        local _ai_name
+        _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
+        printf "${_BOLD}${_CYAN}⬡  Ghost Tab${_NC}%*s${_CYAN}%s${_NC}\033[K" \
+          $(( box_w - 12 - ${#_ai_name} )) "" "$_ai_name"
+      else
+        printf "${_BOLD}${_CYAN}⬡  Ghost Tab${_NC}\033[K"
+      fi
+      r=$((r+1))
       if [ -n "$_update_version" ]; then
         moveto "$r" "$c"; printf "  ${_YELLOW}Update available: v${_update_version}${_NC} ${_DIM}(brew upgrade ghost-tab)${_NC}\033[K"; r=$((r+1))
       fi
@@ -431,21 +443,6 @@ elif [ -z "$1" ]; then
         fi
         r=$((r+1))
       done
-
-      # AI tool toggle row
-      if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 0 ]; then
-        moveto "$r" "$c"; printf "\033[K"; r=$((r+1))
-        _ai_row=$r
-        local _ai_name
-        _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
-        moveto "$r" "$c"
-        if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
-          printf "  ${_DIM}◀${_NC}  AI: ${_BOLD}${_CYAN}%s${_NC}  ${_DIM}▶${_NC}\033[K" "$_ai_name"
-        else
-          printf "     AI: ${_BOLD}${_CYAN}%s${_NC}\033[K" "$_ai_name"
-        fi
-        r=$((r+1))
-      fi
 
       moveto "$r" "$c"; printf "${_DIM}──────────────────────────────────────${_NC}\033[K"; r=$((r+1))
       if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
