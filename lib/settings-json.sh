@@ -99,25 +99,7 @@ else:
 
 hooks = settings.setdefault("hooks", {})
 
-# Add idle_prompt notification for start script
-notification_list = hooks.setdefault("Notification", [])
-
-# Find or create idle_prompt matcher group
-idle_group = None
-for group in notification_list:
-    if group.get("matcher") == "idle_prompt":
-        idle_group = group
-        break
-
-if idle_group is None:
-    idle_group = {"matcher": "idle_prompt", "hooks": []}
-    notification_list.append(idle_group)
-
-# Add start command if not already present
-if not any(h.get("command") == start_cmd for h in idle_group["hooks"]):
-    idle_group["hooks"].append({"type": "command", "command": start_cmd})
-
-# Add UserPromptSubmit hook for stop script
+# Add UserPromptSubmit hook for start script (spinner while Claude works)
 submit_list = hooks.setdefault("UserPromptSubmit", [])
 
 # Find or create the matcher group (use empty string as matcher)
@@ -131,8 +113,26 @@ if submit_group is None:
     submit_group = {"matcher": "", "hooks": []}
     submit_list.append(submit_group)
 
-if not any(h.get("command") == stop_cmd for h in submit_group["hooks"]):
-    submit_group["hooks"].append({"type": "command", "command": stop_cmd})
+if not any(h.get("command") == start_cmd for h in submit_group["hooks"]):
+    submit_group["hooks"].append({"type": "command", "command": start_cmd})
+
+# Add idle_prompt notification for stop script (spinner stops when Claude is done)
+notification_list = hooks.setdefault("Notification", [])
+
+# Find or create idle_prompt matcher group
+idle_group = None
+for group in notification_list:
+    if group.get("matcher") == "idle_prompt":
+        idle_group = group
+        break
+
+if idle_group is None:
+    idle_group = {"matcher": "idle_prompt", "hooks": []}
+    notification_list.append(idle_group)
+
+# Add stop command if not already present
+if not any(h.get("command") == stop_cmd for h in idle_group["hooks"]):
+    idle_group["hooks"].append({"type": "command", "command": stop_cmd})
 
 with open(settings_path, "w") as f:
     json.dump(settings, f, indent=2)
