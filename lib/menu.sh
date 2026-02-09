@@ -24,6 +24,31 @@ draw_menu() {
   [ "$_left_col" -lt 1 ] && _left_col=1
   _content_col=$(( _left_col + 1 ))
 
+  # ── Logo layout ──
+  # Need _LOGO_HEIGHT and _LOGO_WIDTH from the art function
+  "logo_art_${SELECTED_AI_TOOL}"
+  local _logo_need_side=$(( box_w + 3 + _LOGO_WIDTH + 3 ))
+
+  if [ "$_logo_need_side" -le "$_cols" ]; then
+    _LOGO_LAYOUT="side"
+    _logo_col=$(( _left_col + box_w + 3 ))
+    _logo_row=$(( _top_row + (_menu_h - _LOGO_HEIGHT) / 2 ))
+    [ "$_logo_row" -lt 1 ] && _logo_row=1
+  elif [ "$_rows" -ge "$(( _menu_h + _LOGO_HEIGHT + 2 ))" ]; then
+    _LOGO_LAYOUT="above"
+    _top_row=$(( (_rows - _menu_h - _LOGO_HEIGHT - 1) / 2 + _LOGO_HEIGHT + 1 ))
+    [ "$_top_row" -lt $(( _LOGO_HEIGHT + 2 )) ] && _top_row=$(( _LOGO_HEIGHT + 2 ))
+    _logo_row=$(( _top_row - _LOGO_HEIGHT - 1 ))
+    [ "$_logo_row" -lt 1 ] && _logo_row=1
+    _logo_col=$(( (_cols - _LOGO_WIDTH) / 2 + 1 ))
+    # Recalculate left_col and content_col since _top_row changed
+    _left_col=$(( (_cols - box_w) / 2 + 1 ))
+    [ "$_left_col" -lt 1 ] && _left_col=1
+    _content_col=$(( _left_col + 1 ))
+  else
+    _LOGO_LAYOUT="hidden"
+  fi
+
   c="$_left_col"
   r="$_top_row"
 
@@ -167,4 +192,9 @@ draw_menu() {
   # ── Bottom border ──
   moveto "$r" "$c"
   printf "${_bdr_clr}└%s┘${_NC}\033[K" "$_hline"
+
+  # ── Logo ──
+  if [ "$_LOGO_LAYOUT" != "hidden" ]; then
+    draw_logo "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
+  fi
 }
