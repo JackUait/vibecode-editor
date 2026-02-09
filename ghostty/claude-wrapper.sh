@@ -49,7 +49,13 @@ check_for_update() {
     age=$(( now - ${cache_ts:-0} ))
     # Use cached result if less than 24 hours old
     if [ "$age" -lt 86400 ]; then
-      _update_version="$latest"
+      # Verify cached version is actually newer than installed
+      if [ -n "$latest" ]; then
+        installed="$(brew list --versions ghost-tab 2>/dev/null | awk '{print $2}')"
+        if [ "$latest" != "$installed" ]; then
+          _update_version="$latest"
+        fi
+      fi
       return
     fi
   fi
