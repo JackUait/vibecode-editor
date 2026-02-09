@@ -451,7 +451,7 @@ elif [ -z "$1" ]; then
 
       moveto "$r" "$c"; printf "${_DIM}──────────────────────────────────────${_NC}\033[K"; r=$((r+1))
       if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
-        moveto "$r" "$c"; printf "${_DIM}  ↑↓${_NC} navigate  ${_DIM}◀▶${_NC} AI tool  ${_DIM}⏎${_NC} select\033[K"
+        moveto "$r" "$c"; printf "${_DIM}  ↑↓${_NC} navigate  ${_DIM}←→${_NC} AI tool  ${_DIM}⏎${_NC} select\033[K"
       else
         moveto "$r" "$c"; printf "${_DIM}  ↑↓${_NC} navigate  ${_DIM}⏎${_NC} select\033[K"
       fi
