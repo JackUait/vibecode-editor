@@ -179,7 +179,7 @@ _BOB_MAX=1
 
 # start_logo_animation row col tool_name
 #   Launch a background bobbing animation: the ghost floats smoothly
-#   following a sine-wave offset pattern with 0.25 s per step.
+#   following a sine-wave offset pattern with 0.18 s per step.
 #   A flag file gates the loop so stop_logo_animation can halt it.
 start_logo_animation() {
   local row=$1 col=$2 tool=$3
@@ -210,7 +210,7 @@ start_logo_animation() {
 
         prev_off=$off
       fi
-      sleep 0.25
+      sleep 0.18
       idx=$(( (idx + 1) % n ))
     done
   ) &
