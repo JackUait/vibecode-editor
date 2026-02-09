@@ -289,7 +289,7 @@ fi
 if [ "$_spinner" -eq 1 ]; then
   FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
   (
-    echo $$ > "$PID_FILE"
+    echo $BASHPID > "$PID_FILE"
     i=0
     while true; do
       printf '\033]0;%s %s\007' "${FRAMES[$i]}" "$PROJECT"
