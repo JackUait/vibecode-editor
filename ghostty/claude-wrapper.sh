@@ -378,18 +378,23 @@ elif [ -z "$1" ]; then
       c="$_left_col"
       r="$_top_row"
 
-      # Title with AI tool toggle (right-aligned)
+      # Title with AI tool toggle (right-aligned to separator width)
+      local _sep_w=38 _title_w=13
       moveto "$r" "$c"
       if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
         local _ai_name
         _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
+        local _pad=$(( _sep_w - _title_w - ${#_ai_name} - 4 ))
+        [ "$_pad" -lt 2 ] && _pad=2
         printf "${_BOLD}${_CYAN}⬡  Ghost Tab${_NC}%*s${_DIM}◀${_NC} ${_CYAN}%s${_NC} ${_DIM}▶${_NC}\033[K" \
-          $(( box_w - 12 - ${#_ai_name} - 4 )) "" "$_ai_name"
+          "$_pad" "" "$_ai_name"
       elif [ ${#AI_TOOLS_AVAILABLE[@]} -eq 1 ]; then
         local _ai_name
         _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
+        local _pad=$(( _sep_w - _title_w - ${#_ai_name} ))
+        [ "$_pad" -lt 2 ] && _pad=2
         printf "${_BOLD}${_CYAN}⬡  Ghost Tab${_NC}%*s${_CYAN}%s${_NC}\033[K" \
-          $(( box_w - 12 - ${#_ai_name} )) "" "$_ai_name"
+          "$_pad" "" "$_ai_name"
       else
         printf "${_BOLD}${_CYAN}⬡  Ghost Tab${_NC}\033[K"
       fi
