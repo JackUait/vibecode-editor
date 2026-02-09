@@ -247,6 +247,174 @@ if [ "$_sel_claude" -eq 1 ]; then
   fi
 fi
 
+# ---------- Codex CLI Features ----------
+if [ "$_sel_codex" -eq 1 ] && { [ "$_sound_enabled" -eq 1 ] || [ "$_spinner_enabled" -eq 1 ]; }; then
+  header "Setting up Codex CLI features..."
+  mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
+
+  cat > "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/codex-notify.sh" << 'CXEOF'
+#!/bin/bash
+# Ghost Tab: Codex CLI notify handler (sound + spinner)
+
+PROJECT="${PWD##*/}"
+if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null 2>&1; then
+  SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null)
+  [ -n "$SESSION_NAME" ] && PROJECT="$SESSION_NAME"
+fi
+
+PID_FILE="/tmp/ghost-tab-spinner-${PROJECT}.pid"
+FEATURES_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/codex-features.json"
+
+# Kill any running spinner
+if [ -f "$PID_FILE" ]; then
+  OLD_PID=$(cat "$PID_FILE")
+  kill "$OLD_PID" 2>/dev/null
+  rm -f "$PID_FILE"
+  printf '\033]0;%s\007' "$PROJECT"
+fi
+
+# Read feature flags
+_sound=0; _spinner=0
+if [ -f "$FEATURES_FILE" ]; then
+  _sound=$(python3 -c "import json; print(int(json.load(open('$FEATURES_FILE')).get('sound',0)))" 2>/dev/null || echo 0)
+  _spinner=$(python3 -c "import json; print(int(json.load(open('$FEATURES_FILE')).get('spinner',0)))" 2>/dev/null || echo 0)
+fi
+
+# Play sound
+if [ "$_sound" -eq 1 ]; then
+  afplay /System/Library/Sounds/Bottle.aiff &
+fi
+
+# Start spinner
+if [ "$_spinner" -eq 1 ]; then
+  FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+  (
+    echo $$ > "$PID_FILE"
+    i=0
+    while true; do
+      printf '\033]0;%s %s\007' "${FRAMES[$i]}" "$PROJECT"
+      i=$(( (i + 1) % ${#FRAMES[@]} ))
+      sleep 0.1
+    done
+  ) &
+  disown
+fi
+CXEOF
+
+  chmod +x "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/codex-notify.sh"
+  success "Created Codex CLI notify script"
+
+  # Save Codex feature flags
+  python3 -c "
+import json, os
+path = os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'ghost-tab', 'codex-features.json')
+json.dump({'sound': ${_sound_enabled}, 'spinner': ${_spinner_enabled}}, open(path, 'w'))
+print('ok')
+"
+  success "Saved Codex CLI feature flags"
+fi
+
+# ---------- OpenCode Features ----------
+if [ "$_sel_opencode" -eq 1 ] && { [ "$_sound_enabled" -eq 1 ] || [ "$_spinner_enabled" -eq 1 ]; }; then
+  header "Setting up OpenCode features..."
+  mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins"
+  mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
+
+  # Save feature flags
+  python3 -c "
+import json, os
+path = os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'ghost-tab', 'opencode-features.json')
+json.dump({'sound': ${_sound_enabled}, 'spinner': ${_spinner_enabled}}, open(path, 'w'))
+print('ok')
+"
+
+  cat > "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/ghost-tab.ts" << 'OCEOF'
+import { spawn, execSync } from "child_process"
+import { readFileSync, unlinkSync, existsSync } from "fs"
+import { join } from "path"
+import { tmpdir, homedir } from "os"
+
+const configPath = join(
+  process.env.XDG_CONFIG_HOME || join(homedir(), ".config"),
+  "ghost-tab",
+  "opencode-features.json"
+)
+let features = { sound: false, spinner: false }
+try {
+  features = JSON.parse(readFileSync(configPath, "utf-8"))
+} catch {}
+
+function getProject(): string {
+  try {
+    const session = execSync("tmux display-message -p '#S'", {
+      stdio: ["pipe", "pipe", "ignore"],
+    }).toString().trim()
+    if (session) return session
+  } catch {}
+  return process.cwd().split("/").pop() || "opencode"
+}
+
+function getPidFile(): string {
+  return join(tmpdir(), `ghost-tab-spinner-${getProject()}.pid`)
+}
+
+function killSpinner(): void {
+  const pf = getPidFile()
+  if (existsSync(pf)) {
+    try {
+      const pid = parseInt(readFileSync(pf, "utf-8").trim())
+      process.kill(pid)
+    } catch {}
+    try { unlinkSync(pf) } catch {}
+    const project = getProject()
+    process.stdout.write(`\x1b]0;${project}\x07`)
+  }
+}
+
+function startSpinner(): void {
+  const project = getProject()
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+  const script = `
+    echo $$ > "${getPidFile()}"
+    FRAMES=(${frames.join(" ")})
+    i=0
+    while true; do
+      printf '\\033]0;%s %s\\007' "\${FRAMES[\$i]}" "${project}"
+      i=$(( (i + 1) % \${#FRAMES[@]} ))
+      sleep 0.1
+    done
+  `
+  const proc = spawn("bash", ["-c", script], { stdio: "ignore", detached: true })
+  proc.unref()
+}
+
+export const GhostTab = async () => {
+  return {
+    event: async ({ event }: { event: { type: string; properties?: any } }) => {
+      if (event.type === "session.idle") {
+        if (features.sound) {
+          spawn("afplay", ["/System/Library/Sounds/Bottle.aiff"], { stdio: "ignore" })
+        }
+        if (features.spinner) {
+          killSpinner()
+          startSpinner()
+        }
+      }
+      if (event.type === "session.status") {
+        const status = event.properties?.status
+        if (status?.type === "busy" && features.spinner) {
+          killSpinner()
+        }
+      }
+    },
+  }
+}
+OCEOF
+
+  success "Created OpenCode plugin"
+  success "Saved OpenCode feature flags"
+fi
+
 # ---------- Summary ----------
 header "Setup complete!"
 echo ""
