@@ -357,6 +357,7 @@ fi
 
 # Codex CLI status line (always configure if Codex is selected)
 if [ "$_sel_codex" -eq 1 ]; then
+  header "Setting up Codex CLI status line..."
   mkdir -p ~/.codex
   # Only add status_line if not already present
   if [ ! -f ~/.codex/config.toml ] || ! grep -q 'status_line' ~/.codex/config.toml 2>/dev/null; then
@@ -364,6 +365,9 @@ if [ "$_sel_codex" -eq 1 ]; then
       printf '\n[tui]\n' >> ~/.codex/config.toml
     fi
     printf 'status_line = ["model-with-reasoning", "git-branch", "context-remaining", "used-tokens"]\n' >> ~/.codex/config.toml
+    success "Codex CLI status line configured (model, branch, context, tokens)"
+  else
+    success "Codex CLI status line already configured"
   fi
 fi
 
@@ -484,6 +488,12 @@ if grep -q '"idle_prompt"' ~/.claude/settings.json 2>/dev/null; then
 fi
 if [ -f ~/.claude/tab-spinner-start.sh ]; then
   success "Tab animation:   Spinner on idle"
+fi
+if [ -f ~/.codex/config.toml ]; then
+  success "Codex config:    ~/.codex/config.toml"
+fi
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/ghost-tab.ts" ]; then
+  success "OpenCode plugin: ~/.config/opencode/plugins/ghost-tab.ts"
 fi
 echo ""
 info "Open a new Ghostty window to start coding."
