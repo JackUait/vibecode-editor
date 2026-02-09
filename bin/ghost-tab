@@ -16,6 +16,9 @@ else
 fi
 
 source "$SHARE_DIR/lib/tui.sh"
+source "$SHARE_DIR/lib/install.sh"
+source "$SHARE_DIR/lib/ghostty-config.sh"
+source "$SHARE_DIR/lib/settings-json.sh"
 
 # ---------- OS check ----------
 header "Checking platform..."
@@ -39,16 +42,7 @@ fi
 # ---------- Dependencies ----------
 header "Installing dependencies..."
 for pkg in tmux lazygit broot; do
-  if brew list "$pkg" &>/dev/null; then
-    success "$pkg already installed"
-  else
-    info "Installing $pkg..."
-    if brew install "$pkg"; then
-      success "$pkg installed"
-    else
-      warn "Failed to install $pkg — install it manually with: brew install $pkg"
-    fi
-  fi
+  ensure_brew_pkg "$pkg"
 done
 
 # ---------- AI Coding Tools ----------
@@ -139,54 +133,12 @@ done
 
 echo ""
 
-# Install Claude Code
-if [ "$_sel_claude" -eq 1 ] && [ "$_cc_installed" -eq 0 ]; then
-  info "Installing Claude Code..."
-  if curl -fsSL https://claude.ai/install.sh | bash; then
-    success "Claude Code installed"
-    info "Run 'claude' to authenticate before opening Ghostty."
-  else
-    warn "Claude Code installation failed — install manually: curl -fsSL https://claude.ai/install.sh | bash"
-  fi
-elif [ "$_sel_claude" -eq 1 ]; then
-  success "Claude Code already installed"
-fi
-
-# Install Codex CLI
-if [ "$_sel_codex" -eq 1 ] && [ "$_codex_installed" -eq 0 ]; then
-  info "Installing Codex CLI..."
-  if brew install --cask codex; then
-    success "Codex CLI installed"
-  else
-    warn "Codex CLI installation failed — install manually: brew install --cask codex"
-  fi
-elif [ "$_sel_codex" -eq 1 ]; then
-  success "Codex CLI already installed"
-fi
-
-# Install Copilot CLI
-if [ "$_sel_copilot" -eq 1 ] && [ "$_copilot_installed" -eq 0 ]; then
-  info "Installing Copilot CLI..."
-  if brew install copilot-cli; then
-    success "Copilot CLI installed"
-  else
-    warn "Copilot CLI installation failed — install manually: brew install copilot-cli"
-  fi
-elif [ "$_sel_copilot" -eq 1 ]; then
-  success "Copilot CLI already installed"
-fi
-
-# Install OpenCode
-if [ "$_sel_opencode" -eq 1 ] && [ "$_oc_installed" -eq 0 ]; then
-  info "Installing OpenCode..."
-  if brew install anomalyco/tap/opencode; then
-    success "OpenCode installed"
-  else
-    warn "OpenCode installation failed — install manually: brew install anomalyco/tap/opencode"
-  fi
-elif [ "$_sel_opencode" -eq 1 ]; then
-  success "OpenCode already installed"
-fi
+# Install selected AI tools
+[ "$_sel_claude" -eq 1 ] && ensure_command "claude" "curl -fsSL https://claude.ai/install.sh | bash" \
+  "Run 'claude' to authenticate before opening Ghostty." "Claude Code"
+[ "$_sel_codex" -eq 1 ] && ensure_command "codex" "brew install --cask codex" "" "Codex CLI"
+[ "$_sel_copilot" -eq 1 ] && ensure_command "copilot" "brew install copilot-cli" "" "Copilot CLI"
+[ "$_sel_opencode" -eq 1 ] && ensure_command "opencode" "brew install anomalyco/tap/opencode" "" "OpenCode"
 
 # Save default AI tool preference (first selected tool)
 AI_TOOL_PREF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
@@ -204,21 +156,10 @@ success "Default AI tool set to $(cat "$AI_TOOL_PREF_DIR/ai-tool")"
 
 # ---------- Ghostty ----------
 header "Checking Ghostty..."
-if [ -d "/Applications/Ghostty.app" ]; then
-  success "Ghostty found"
-else
-  info "Installing Ghostty..."
-  if brew install --cask ghostty; then
-    success "Ghostty installed"
-  else
-    error "Ghostty installation failed."
-    info "Install manually from https://ghostty.org or run: brew install --cask ghostty"
-    exit 1
-  fi
-fi
+ensure_cask "ghostty" "Ghostty"
 
 # Verify supporting files exist (will fail if run via curl|bash without clone)
-if [ ! -f "$SHARE_DIR/ghostty/claude-wrapper.sh" ] || [ ! -f "$SHARE_DIR/ghostty/config" ]; then
+if [ ! -f "$SHARE_DIR/ghostty/claude-wrapper.sh" ] || [ ! -f "$SHARE_DIR/ghostty/config" ] || [ ! -d "$SHARE_DIR/templates" ]; then
   error "Supporting files not found in $SHARE_DIR"
   echo ""
   info "If you ran this via curl|bash, install via Homebrew instead:"
@@ -259,25 +200,9 @@ if [ -f "$GHOSTTY_CONFIG" ]; then
   echo ""
 
   case "$config_choice" in
-    1)
-      if grep -q '^command\s*=' "$GHOSTTY_CONFIG"; then
-        sed -i '' 's|^command\s*=.*|'"$WRAPPER_LINE"'|' "$GHOSTTY_CONFIG"
-        success "Replaced existing command line in config"
-      else
-        echo "$WRAPPER_LINE" >> "$GHOSTTY_CONFIG"
-        success "Appended wrapper command to config"
-      fi
-      ;;
-    2)
-      BACKUP="$GHOSTTY_CONFIG.backup.$(date +%s)"
-      cp "$GHOSTTY_CONFIG" "$BACKUP"
-      success "Backed up existing config to $BACKUP"
-      cp "$SHARE_DIR/ghostty/config" "$GHOSTTY_CONFIG"
-      success "Replaced config with ghost-tab defaults"
-      ;;
-    *)
-      warn "Invalid choice, skipping config setup"
-      ;;
+    1) merge_ghostty_config "$GHOSTTY_CONFIG" "$WRAPPER_LINE" ;;
+    2) backup_replace_ghostty_config "$GHOSTTY_CONFIG" "$SHARE_DIR/ghostty/config" ;;
+    *) warn "Invalid choice, skipping config setup" ;;
   esac
 else
   cp "$SHARE_DIR/ghostty/config" "$GHOSTTY_CONFIG"
@@ -360,93 +285,14 @@ if command -v npm &>/dev/null; then
   if npm list -g ccstatusline &>/dev/null; then
     # Create ccstatusline config
     mkdir -p ~/.config/ccstatusline
-    cat > ~/.config/ccstatusline/settings.json << 'CCEOF'
-{
-  "version": 3,
-  "lines": [
-    [
-      {
-        "id": "1",
-        "type": "context-percentage",
-        "color": "yellow",
-        "bold": true,
-        "rawValue": true
-      }
-    ],
-    [],
-    []
-  ],
-  "flexMode": "full-minus-40",
-  "compactThreshold": 60,
-  "colorLevel": 2,
-  "inheritSeparatorColors": false,
-  "globalBold": false,
-  "powerline": {
-    "enabled": false,
-    "separators": [""],
-    "separatorInvertBackground": [false],
-    "startCaps": [],
-    "endCaps": [],
-    "autoAlign": false
-  }
-}
-CCEOF
+    cp "$SHARE_DIR/templates/ccstatusline-settings.json" ~/.config/ccstatusline/settings.json
     success "Created ccstatusline config"
 
     # Create statusline scripts
     mkdir -p ~/.claude
-    cat > ~/.claude/statusline-command.sh << 'SLCEOF'
-#!/bin/bash
-input=$(cat)
-cwd=$(echo "$input" | sed -n 's/.*"current_dir":"\([^"]*\)".*/\1/p')
+    cp "$SHARE_DIR/templates/statusline-command.sh" ~/.claude/statusline-command.sh
 
-if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
-  repo_name=$(basename "$cwd")
-  branch=$(git -C "$cwd" --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null)
-  staged=$(git -C "$cwd" --no-optional-locks diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
-  unstaged=$(git -C "$cwd" --no-optional-locks diff --name-only 2>/dev/null | wc -l | tr -d ' ')
-  untracked=$(git -C "$cwd" --no-optional-locks ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
-
-  printf '\033[01;36m%s\033[00m | \033[01;32m%s\033[00m | S: \033[01;33m%s\033[00m | U: \033[01;33m%s\033[00m | A: \033[01;33m%s\033[00m' \
-    "$repo_name" "$branch" "$staged" "$unstaged" "$untracked"
-else
-  printf '\033[01;36m%s\033[00m' "$(basename "$cwd")"
-fi
-SLCEOF
-
-    cat > ~/.claude/statusline-wrapper.sh << 'SLWEOF'
-#!/bin/bash
-input=$(cat)
-git_info=$(echo "$input" | bash ~/.claude/statusline-command.sh)
-context_pct=$(echo "$input" | npx ccstatusline 2>/dev/null)
-
-# Find parent Claude Code process and get its memory usage
-pid=$PPID
-mem_label=""
-while [ -n "$pid" ] && [ "$pid" != "1" ]; do
-  comm=$(ps -o comm= -p "$pid" 2>/dev/null | xargs basename 2>/dev/null)
-  if [ "$comm" = "claude" ]; then
-    mem_kb=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
-    if [ -n "$mem_kb" ] && [ "$mem_kb" -gt 0 ] 2>/dev/null; then
-      mem_mb=$((mem_kb / 1024))
-      if [ "$mem_mb" -ge 1024 ]; then
-        mem_gb=$(echo "scale=1; $mem_mb / 1024" | bc)
-        mem_label="${mem_gb}G"
-      else
-        mem_label="${mem_mb}M"
-      fi
-    fi
-    break
-  fi
-  pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-done
-
-if [ -n "$mem_label" ]; then
-  printf '%s | %s | \033[01;35m%s\033[00m' "$git_info" "$context_pct" "$mem_label"
-else
-  printf '%s | %s' "$git_info" "$context_pct"
-fi
-SLWEOF
+    cp "$SHARE_DIR/templates/statusline-wrapper.sh" ~/.claude/statusline-wrapper.sh
 
     chmod +x ~/.claude/statusline-command.sh
     chmod +x ~/.claude/statusline-wrapper.sh
@@ -454,28 +300,7 @@ SLWEOF
 
     # Update Claude settings.json
     CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-    if [ -f "$CLAUDE_SETTINGS" ]; then
-      # Check if statusLine already configured
-      if grep -q '"statusLine"' "$CLAUDE_SETTINGS"; then
-        success "Claude status line already configured"
-      else
-        # Add statusLine to existing settings
-        # Remove trailing } and add statusLine config
-        sed -i '' '$ s/}$/,\n  "statusLine": {\n    "type": "command",\n    "command": "bash ~\/.claude\/statusline-wrapper.sh"\n  }\n}/' "$CLAUDE_SETTINGS"
-        success "Added status line to Claude settings"
-      fi
-    else
-      # Create new settings file
-      cat > "$CLAUDE_SETTINGS" << 'CSEOF'
-{
-  "statusLine": {
-    "type": "command",
-    "command": "bash ~/.claude/statusline-wrapper.sh"
-  }
-}
-CSEOF
-      success "Created Claude settings with status line"
-    fi
+    merge_claude_settings "$CLAUDE_SETTINGS"
   fi
 fi
 else
@@ -494,55 +319,7 @@ echo ""
 
 if [[ "$enable_sound" =~ ^[yY]$ ]]; then
   CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-  mkdir -p ~/.claude
-
-  # Use Python (ships with macOS) to safely merge hook into settings.json
-  if python3 - "$CLAUDE_SETTINGS" << 'PYEOF'
-import json, sys, os
-
-settings_path = sys.argv[1]
-
-# Load existing settings or start fresh
-if os.path.exists(settings_path):
-    try:
-        with open(settings_path, "r") as f:
-            settings = json.load(f)
-    except (json.JSONDecodeError, ValueError):
-        settings = {}
-else:
-    settings = {}
-
-# Build the hook entry we want
-new_hook_entry = {
-    "matcher": "idle_prompt",
-    "hooks": [
-        {
-            "type": "command",
-            "command": "afplay /System/Library/Sounds/Bottle.aiff &"
-        }
-    ]
-}
-
-# Ensure hooks.Notification exists
-hooks = settings.setdefault("hooks", {})
-notification_list = hooks.setdefault("Notification", [])
-
-# Check if idle_prompt hook already exists
-already_exists = any(
-    entry.get("matcher") == "idle_prompt"
-    for entry in notification_list
-)
-
-if not already_exists:
-    notification_list.append(new_hook_entry)
-    with open(settings_path, "w") as f:
-        json.dump(settings, f, indent=2)
-        f.write("\n")
-    print("added")
-else:
-    print("exists")
-PYEOF
-  then
+  if add_sound_notification_hook "$CLAUDE_SETTINGS" "afplay /System/Library/Sounds/Bottle.aiff &"; then
     success "Sound notification configured"
   else
     warn "Failed to configure sound notification"
@@ -564,136 +341,18 @@ if [[ "$enable_spinner" =~ ^[yY]$ ]]; then
   mkdir -p ~/.claude
 
   # Create start script
-  cat > ~/.claude/tab-spinner-start.sh << 'SPINSTART'
-#!/bin/bash
-
-# Get project name from PWD or tmux session
-PROJECT="${PWD##*/}"
-if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null; then
-  SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null)
-  [ -n "$SESSION_NAME" ] && PROJECT="$SESSION_NAME"
-fi
-
-# PID file for this project
-PID_FILE="/tmp/ghost-tab-spinner-${PROJECT}.pid"
-
-# Exit if already running
-if [ -f "$PID_FILE" ]; then
-  OLD_PID=$(cat "$PID_FILE")
-  if kill -0 "$OLD_PID" 2>/dev/null; then
-    exit 0
-  fi
-  rm -f "$PID_FILE"
-fi
-
-# Spinner frames
-FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-
-# Run animation in background
-(
-  echo $$ > "$PID_FILE"
-  i=0
-  while true; do
-    printf '\033]0;%s %s\007' "${FRAMES[$i]}" "$PROJECT"
-    i=$(( (i + 1) % ${#FRAMES[@]} ))
-    sleep 0.1
-  done
-) &
-
-disown
-SPINSTART
+  cp "$SHARE_DIR/templates/tab-spinner-start.sh" ~/.claude/tab-spinner-start.sh
 
   # Create stop script
-  cat > ~/.claude/tab-spinner-stop.sh << 'SPINSTOP'
-#!/bin/bash
-
-# Get project name from PWD or tmux session
-PROJECT="${PWD##*/}"
-if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null; then
-  SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null)
-  [ -n "$SESSION_NAME" ] && PROJECT="$SESSION_NAME"
-fi
-
-# PID file for this project
-PID_FILE="/tmp/ghost-tab-spinner-${PROJECT}.pid"
-
-# Kill spinner if running
-if [ -f "$PID_FILE" ]; then
-  PID=$(cat "$PID_FILE")
-  kill "$PID" 2>/dev/null
-  rm -f "$PID_FILE"
-fi
-
-# Restore normal tab title
-printf '\033]0;%s\007' "$PROJECT"
-SPINSTOP
+  cp "$SHARE_DIR/templates/tab-spinner-stop.sh" ~/.claude/tab-spinner-stop.sh
 
   chmod +x ~/.claude/tab-spinner-start.sh
   chmod +x ~/.claude/tab-spinner-stop.sh
   success "Created spinner scripts"
 
-  # Add hooks to settings.json using Python
+  # Add hooks to settings.json
   CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-  if python3 - "$CLAUDE_SETTINGS" << 'PYEOF'
-import json, sys, os
-
-settings_path = sys.argv[1]
-
-# Load existing settings or start fresh
-if os.path.exists(settings_path):
-    try:
-        with open(settings_path, "r") as f:
-            settings = json.load(f)
-    except (json.JSONDecodeError, ValueError):
-        settings = {}
-else:
-    settings = {}
-
-hooks = settings.setdefault("hooks", {})
-
-# Add idle_prompt notification for start script
-notification_list = hooks.setdefault("Notification", [])
-start_cmd = "bash ~/.claude/tab-spinner-start.sh &"
-
-# Find or create idle_prompt matcher group
-idle_group = None
-for group in notification_list:
-    if group.get("matcher") == "idle_prompt":
-        idle_group = group
-        break
-
-if idle_group is None:
-    idle_group = {"matcher": "idle_prompt", "hooks": []}
-    notification_list.append(idle_group)
-
-# Add start command if not already present
-if not any(h.get("command") == start_cmd for h in idle_group["hooks"]):
-    idle_group["hooks"].append({"type": "command", "command": start_cmd})
-
-# Add UserPromptSubmit hook for stop script
-submit_list = hooks.setdefault("UserPromptSubmit", [])
-stop_cmd = "bash ~/.claude/tab-spinner-stop.sh"
-
-# UserPromptSubmit doesn't use matchers, just a hooks array
-# Find or create the matcher group (use empty string as matcher)
-submit_group = None
-for group in submit_list:
-    if group.get("matcher") == "":
-        submit_group = group
-        break
-
-if submit_group is None:
-    submit_group = {"matcher": "", "hooks": []}
-    submit_list.append(submit_group)
-
-if not any(h.get("command") == stop_cmd for h in submit_group["hooks"]):
-    submit_group["hooks"].append({"type": "command", "command": stop_cmd})
-
-with open(settings_path, "w") as f:
-    json.dump(settings, f, indent=2)
-    f.write("\n")
-PYEOF
-  then
+  if add_spinner_hooks "$CLAUDE_SETTINGS" "bash ~/.claude/tab-spinner-start.sh &" "bash ~/.claude/tab-spinner-stop.sh"; then
     success "Tab animation hooks configured"
   else
     warn "Failed to configure tab animation hooks"
