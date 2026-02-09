@@ -32,7 +32,8 @@ draw_settings_screen() {
     state_display="$(_c 240)[OFF]$(_r)"  # Dim gray
   fi
 
-  clear_screen
+  # Clear screen completely
+  printf '\033[2J\033[H'
 
   # Center calculation
   local settings_w=42
