@@ -19,6 +19,9 @@ source "$SHARE_DIR/lib/tui.sh"
 source "$SHARE_DIR/lib/install.sh"
 source "$SHARE_DIR/lib/ghostty-config.sh"
 source "$SHARE_DIR/lib/settings-json.sh"
+source "$SHARE_DIR/lib/ai-select.sh"
+source "$SHARE_DIR/lib/statusline-setup.sh"
+source "$SHARE_DIR/lib/notification-setup.sh"
 
 # ---------- OS check ----------
 header "Checking platform..."
@@ -58,78 +61,7 @@ _codex_installed=0; command -v codex &>/dev/null && _codex_installed=1
 _copilot_installed=0; command -v copilot &>/dev/null && _copilot_installed=1
 _oc_installed=0; command -v opencode &>/dev/null && _oc_installed=1
 
-# Default selections: pre-check installed tools, always pre-check Claude Code
-_sel_claude=1
-_sel_codex=$_codex_installed
-_sel_copilot=$_copilot_installed
-_sel_opencode=$_oc_installed
-
-# Display multi-select menu
-_selecting=1
-_cursor=0
-while [ "$_selecting" -eq 1 ]; do
-  # Move cursor up to redraw (skip first draw)
-  [ -n "$_drawn" ] && printf '\033[5A'
-  _drawn=1
-
-  for _i in 0 1 2 3; do
-    case $_i in
-      0) _name="Claude Code"; _sel=$_sel_claude; _tag="" ;;
-      1) _name="Codex CLI (OpenAI)"; _sel=$_sel_codex; _tag="" ;;
-      2) _name="Copilot CLI (GitHub)"; _sel=$_sel_copilot; _tag="" ;;
-      3) _name="OpenCode (anomalyco)"; _sel=$_sel_opencode; _tag="" ;;
-    esac
-    case $_i in
-      0) [ "$_cc_installed" -eq 1 ] && _tag=" ${_YELLOW}(installed)${_NC}" ;;
-      1) [ "$_codex_installed" -eq 1 ] && _tag=" ${_YELLOW}(installed)${_NC}" ;;
-      2) [ "$_copilot_installed" -eq 1 ] && _tag=" ${_YELLOW}(installed)${_NC}" ;;
-      3) [ "$_oc_installed" -eq 1 ] && _tag=" ${_YELLOW}(installed)${_NC}" ;;
-    esac
-
-    if [ "$_i" -eq "$_cursor" ]; then
-      if [ "$_sel" -eq 1 ]; then
-        echo -e "  ${_BOLD}❯ [x] ${_name}${_NC}${_tag}"
-      else
-        echo -e "  ${_BOLD}❯ [ ] ${_name}${_NC}${_tag}"
-      fi
-    else
-      if [ "$_sel" -eq 1 ]; then
-        echo -e "    [x] ${_name}${_tag}"
-      else
-        echo -e "    [ ] ${_name}${_tag}"
-      fi
-    fi
-  done
-  echo -e "  ${_BLUE}↑↓${_NC} navigate  ${_BLUE}Space${_NC} toggle  ${_BLUE}Enter${_NC} confirm"
-
-  read -rsn1 _key </dev/tty
-  if [[ "$_key" == $'\x1b' ]]; then
-    read -rsn1 _s1 </dev/tty
-    if [[ "$_s1" == "[" ]]; then
-      read -rsn1 _s2 </dev/tty
-      case "$_s2" in
-        A) _cursor=$(( (_cursor - 1 + 4) % 4 )) ;;
-        B) _cursor=$(( (_cursor + 1) % 4 )) ;;
-      esac
-    fi
-  elif [[ "$_key" == " " ]]; then
-    case $_cursor in
-      0) _sel_claude=$(( 1 - _sel_claude )) ;;
-      1) _sel_codex=$(( 1 - _sel_codex )) ;;
-      2) _sel_copilot=$(( 1 - _sel_copilot )) ;;
-      3) _sel_opencode=$(( 1 - _sel_opencode )) ;;
-    esac
-  elif [[ "$_key" == "" ]]; then
-    # Require at least one selection
-    if [ $(( _sel_claude + _sel_codex + _sel_copilot + _sel_opencode )) -eq 0 ]; then
-      echo -e "  ${_RED}✗${_NC} Select at least one AI tool"
-      sleep 0.8
-      printf '\033[1A\033[K'
-    else
-      _selecting=0
-    fi
-  fi
-done
+run_ai_tool_select "$_cc_installed" "$_codex_installed" "$_copilot_installed" "$_oc_installed"
 
 echo ""
 
@@ -140,18 +72,9 @@ echo ""
 [ "$_sel_copilot" -eq 1 ] && ensure_command "copilot" "brew install copilot-cli" "" "Copilot CLI"
 [ "$_sel_opencode" -eq 1 ] && ensure_command "opencode" "brew install anomalyco/tap/opencode" "" "OpenCode"
 
-# Save default AI tool preference (first selected tool)
+# Save default AI tool preference
 AI_TOOL_PREF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
-mkdir -p "$AI_TOOL_PREF_DIR"
-if [ "$_sel_claude" -eq 1 ]; then
-  echo "claude" > "$AI_TOOL_PREF_DIR/ai-tool"
-elif [ "$_sel_codex" -eq 1 ]; then
-  echo "codex" > "$AI_TOOL_PREF_DIR/ai-tool"
-elif [ "$_sel_copilot" -eq 1 ]; then
-  echo "copilot" > "$AI_TOOL_PREF_DIR/ai-tool"
-elif [ "$_sel_opencode" -eq 1 ]; then
-  echo "opencode" > "$AI_TOOL_PREF_DIR/ai-tool"
-fi
+save_ai_tool_preference "$_sel_claude" "$_sel_codex" "$_sel_copilot" "$_sel_opencode" "$AI_TOOL_PREF_DIR"
 success "Default AI tool set to $(cat "$AI_TOOL_PREF_DIR/ai-tool")"
 
 # ---------- Ghostty ----------
@@ -255,54 +178,9 @@ fi
 
 # ---------- Claude Code Status Line ----------
 if [ "$_sel_claude" -eq 1 ]; then
-header "Setting up Claude Code status line..."
-
-# Check for npm, install Node.js LTS if needed
-if ! command -v npm &>/dev/null; then
-  info "Installing Node.js LTS..."
-  if brew install node@22 &>/dev/null; then
-    # Add node@22 to PATH for this session
-    export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
-    success "Node.js LTS installed"
-  else
-    warn "Node.js installation failed — skipping status line setup"
-  fi
-fi
-
-if command -v npm &>/dev/null; then
-  # Install ccstatusline
-  if npm list -g ccstatusline &>/dev/null; then
-    success "ccstatusline already installed"
-  else
-    info "Installing ccstatusline..."
-    if npm install -g ccstatusline &>/dev/null; then
-      success "ccstatusline installed"
-    else
-      warn "Failed to install ccstatusline — skipping status line setup"
-    fi
-  fi
-
-  if npm list -g ccstatusline &>/dev/null; then
-    # Create ccstatusline config
-    mkdir -p ~/.config/ccstatusline
-    cp "$SHARE_DIR/templates/ccstatusline-settings.json" ~/.config/ccstatusline/settings.json
-    success "Created ccstatusline config"
-
-    # Create statusline scripts
-    mkdir -p ~/.claude
-    cp "$SHARE_DIR/templates/statusline-command.sh" ~/.claude/statusline-command.sh
-
-    cp "$SHARE_DIR/templates/statusline-wrapper.sh" ~/.claude/statusline-wrapper.sh
-
-    chmod +x ~/.claude/statusline-command.sh
-    chmod +x ~/.claude/statusline-wrapper.sh
-    success "Created statusline scripts"
-
-    # Update Claude settings.json
-    CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-    merge_claude_settings "$CLAUDE_SETTINGS"
-  fi
-fi
+  header "Setting up Claude Code status line..."
+  CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+  setup_statusline "$SHARE_DIR" "$CLAUDE_SETTINGS" "$HOME"
 else
   header "Skipping Claude Code status line..."
   info "Status line features are only available with Claude Code"
@@ -319,11 +197,7 @@ echo ""
 
 if [[ "$enable_sound" =~ ^[yY]$ ]]; then
   CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-  if add_sound_notification_hook "$CLAUDE_SETTINGS" "afplay /System/Library/Sounds/Bottle.aiff &"; then
-    success "Sound notification configured"
-  else
-    warn "Failed to configure sound notification"
-  fi
+  setup_sound_notification "$CLAUDE_SETTINGS" "afplay /System/Library/Sounds/Bottle.aiff &"
 else
   info "Skipping sound notification"
 fi
@@ -338,25 +212,9 @@ read -rn1 -p "$(echo -e "${_BLUE}Enable tab animation? (y/n):${_NC} ")" enable_s
 echo ""
 
 if [[ "$enable_spinner" =~ ^[yY]$ ]]; then
-  mkdir -p ~/.claude
-
-  # Create start script
-  cp "$SHARE_DIR/templates/tab-spinner-start.sh" ~/.claude/tab-spinner-start.sh
-
-  # Create stop script
-  cp "$SHARE_DIR/templates/tab-spinner-stop.sh" ~/.claude/tab-spinner-stop.sh
-
-  chmod +x ~/.claude/tab-spinner-start.sh
-  chmod +x ~/.claude/tab-spinner-stop.sh
-  success "Created spinner scripts"
-
-  # Add hooks to settings.json
   CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-  if add_spinner_hooks "$CLAUDE_SETTINGS" "bash ~/.claude/tab-spinner-start.sh &" "bash ~/.claude/tab-spinner-stop.sh"; then
-    success "Tab animation hooks configured"
-  else
-    warn "Failed to configure tab animation hooks"
-  fi
+  setup_tab_spinner "$SHARE_DIR" "$CLAUDE_SETTINGS" \
+    "bash ~/.claude/tab-spinner-start.sh &" "bash ~/.claude/tab-spinner-stop.sh" "$HOME"
 else
   info "Skipping tab animation"
 fi

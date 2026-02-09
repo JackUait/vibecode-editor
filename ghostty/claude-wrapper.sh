@@ -11,6 +11,8 @@ source "$_WRAPPER_DIR/lib/tui.sh"
 source "$_WRAPPER_DIR/lib/update.sh"
 source "$_WRAPPER_DIR/lib/menu.sh"
 source "$_WRAPPER_DIR/lib/autocomplete.sh"
+source "$_WRAPPER_DIR/lib/project-actions.sh"
+source "$_WRAPPER_DIR/lib/tmux-session.sh"
 
 TMUX_CMD="$(command -v tmux)"
 LAZYGIT_CMD="$(command -v lazygit)"
@@ -123,44 +125,26 @@ elif [ -z "$1" ]; then
           continue
         fi
 
-        expanded="${_add_input/#\~/$HOME}"
-        # Normalize: resolve to absolute path, remove trailing slash
-        expanded="$(cd "$expanded" 2>/dev/null && pwd)" || expanded="${_add_input/#\~/$HOME}"
-        expanded="${expanded%/}"
-        new_name="$(basename "$expanded")"
-
-        # Check if project already exists (compare normalized paths)
-        _already_exists=0
-        for _proj in "${projects[@]}"; do
-          _proj_path="${_proj#*:}"
-          _proj_path="${_proj_path%/}"
-          if [[ "$_proj_path" == "$expanded" ]]; then
-            _already_exists=1
-            break
-          fi
-        done
-
-        if [ "$_already_exists" -eq 1 ]; then
+        if ! validate_new_project "$_add_input" "$PROJECTS_FILE"; then
           _add_mode=0
           menu_labels[$_add_idx]="Add new project"
           menu_subs[$_add_idx]=""
           draw_menu
           moveto "$_sub_row" "$_left_col"
-          printf "    ${_YELLOW}!${_NC} Project ${_BOLD}${new_name}${_NC} already exists\033[K"
+          printf "    ${_YELLOW}!${_NC} Project ${_BOLD}${_validated_name}${_NC} already exists\033[K"
           sleep 1
           printf "${_HIDE_CURSOR}"
           draw_menu
           continue
         fi
 
-        mkdir -p "$(dirname "$PROJECTS_FILE")"
-        echo "${new_name}:${expanded}" >> "$PROJECTS_FILE"
+        add_project_to_file "$_validated_name" "$_validated_path" "$PROJECTS_FILE"
         _add_mode=0
         menu_labels[$_add_idx]="Add new project"
         menu_subs[$_add_idx]=""
         draw_menu
         moveto "$_sub_row" "$_left_col"
-        printf "    ${_GREEN}✓${_NC} Added ${_BOLD}${new_name}${_NC}\033[K"
+        printf "    ${_GREEN}✓${_NC} Added ${_BOLD}${_validated_name}${_NC}\033[K"
         sleep 0.8
         printf "${_HIDE_CURSOR}"
         # Redraw with new project list
@@ -238,7 +222,7 @@ elif [ -z "$1" ]; then
         # Perform deletion
         del_name="${projects[$_del_sel]%%:*}"
         del_line="${projects[$_del_sel]}"
-        grep -vxF "$del_line" "$PROJECTS_FILE" > "$PROJECTS_FILE.tmp" && mv "$PROJECTS_FILE.tmp" "$PROJECTS_FILE"
+        delete_project_from_file "$del_line" "$PROJECTS_FILE"
         _del_mode=0
         menu_labels[$_del_idx]="Delete a project"
         menu_subs[$_del_idx]=""
@@ -362,36 +346,17 @@ printf '\033]0;%s\007' "$PROJECT_NAME"
 WATCHER_PID=$!
 
 cleanup() {
-  kill $WATCHER_PID 2>/dev/null
-
-  # SIGTERM the full process tree of every pane
-  for pane_pid in $("$TMUX_CMD" list-panes -s -t "$SESSION_NAME" -F '#{pane_pid}' 2>/dev/null); do
-    kill_tree "$pane_pid" TERM
-  done
-
-  # Brief grace period, then SIGKILL any survivors
-  sleep 0.3
-  for pane_pid in $("$TMUX_CMD" list-panes -s -t "$SESSION_NAME" -F '#{pane_pid}' 2>/dev/null); do
-    kill_tree "$pane_pid" KILL
-  done
-
-  "$TMUX_CMD" kill-session -t "$SESSION_NAME" 2>/dev/null
+  cleanup_tmux_session "$SESSION_NAME" "$WATCHER_PID" "$TMUX_CMD"
 }
 trap cleanup EXIT HUP TERM INT
 
 # Build the AI tool launch command
 case "$SELECTED_AI_TOOL" in
-  codex)
-    AI_LAUNCH_CMD="$CODEX_CMD --cd \"$PROJECT_DIR\""
-    ;;
-  copilot)
-    AI_LAUNCH_CMD="$COPILOT_CMD"
-    ;;
-  opencode)
-    AI_LAUNCH_CMD="$OPENCODE_CMD \"$PROJECT_DIR\""
+  codex|opencode)
+    AI_LAUNCH_CMD="$(build_ai_launch_cmd "$SELECTED_AI_TOOL" "$CLAUDE_CMD" "$CODEX_CMD" "$COPILOT_CMD" "$OPENCODE_CMD" "$PROJECT_DIR")"
     ;;
   *)
-    AI_LAUNCH_CMD="$CLAUDE_CMD $*"
+    AI_LAUNCH_CMD="$(build_ai_launch_cmd "$SELECTED_AI_TOOL" "$CLAUDE_CMD" "$CODEX_CMD" "$COPILOT_CMD" "$OPENCODE_CMD" "$*")"
     ;;
 esac
 
