@@ -200,6 +200,8 @@ draw_menu() {
 
   # ── Logo ──
   if [ "$_LOGO_LAYOUT" != "hidden" ]; then
-    draw_logo "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
+    local ghost_display=$(get_ghost_display_setting)
+    # Only draw static ghost if not set to "none"
+    [ "$ghost_display" != "none" ] && draw_logo "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
   fi
 }

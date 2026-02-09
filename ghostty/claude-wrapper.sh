@@ -77,7 +77,23 @@ elif [ -z "$1" ]; then
   _redraw() {
     stop_logo_animation 2>/dev/null
     draw_menu
-    [ "$_LOGO_LAYOUT" != "hidden" ] && [ "$(get_animation_setting)" = "on" ] && start_logo_animation "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
+
+    # Apply ghost display setting if layout allows
+    if [ "$_LOGO_LAYOUT" != "hidden" ]; then
+      local ghost_display=$(get_ghost_display_setting)
+      case "$ghost_display" in
+        animated)
+          start_logo_animation "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
+          ;;
+        static)
+          # Static ghost already drawn by draw_menu
+          ;;
+        none)
+          # Clear any ghost that draw_menu drew
+          clear_logo_area "$_logo_row" "$_logo_col" "$_LOGO_HEIGHT" "$_LOGO_WIDTH"
+          ;;
+      esac
+    fi
   }
 
   while true; do
