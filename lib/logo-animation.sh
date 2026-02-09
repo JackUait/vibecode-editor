@@ -171,15 +171,15 @@ clear_logo_area() {
   done
 }
 
-# Bob offsets following a sine-wave pattern (range 0–2 rows).
-# 16 entries: slow at extremes (ease), faster through middle.
+# Bob offsets following a sine-wave pattern (range 0–1 rows).
+# 14 entries: slow at extremes (ease), smooth gentle bob.
 # Max 1-row difference between consecutive entries.
-_BOB_OFFSETS=(0 0 0 1 1 2 2 2 2 2 1 1 0 0 0 0)
-_BOB_MAX=2
+_BOB_OFFSETS=(0 0 0 0 1 1 1 1 1 1 0 0 0 0)
+_BOB_MAX=1
 
 # start_logo_animation row col tool_name
 #   Launch a background bobbing animation: the ghost floats smoothly
-#   following a sine-wave offset pattern with 0.12 s per step.
+#   following a sine-wave offset pattern with 0.25 s per step.
 #   A flag file gates the loop so stop_logo_animation can halt it.
 start_logo_animation() {
   local row=$1 col=$2 tool=$3
@@ -194,12 +194,23 @@ start_logo_animation() {
     while [ -f "$flagfile" ]; do
       off=${_BOB_OFFSETS[$idx]}
       if [ "$off" -ne "$prev_off" ]; then
-        # Only redraw when position actually changes
-        [ "$prev_off" -ge 0 ] && clear_logo_area $((row + prev_off)) "$col" "$_LOGO_HEIGHT" "$_LOGO_WIDTH"
+        # Draw new position first to minimize flashing
         draw_logo $((row + off)) "$col" "$tool"
+
+        # Clear only the exposed row
+        if [ "$prev_off" -ge 0 ]; then
+          if [ "$off" -gt "$prev_off" ]; then
+            # Moving down: clear top exposed row
+            clear_logo_area $((row + prev_off)) "$col" 1 "$_LOGO_WIDTH"
+          else
+            # Moving up: clear bottom exposed row
+            clear_logo_area $((row + prev_off + _LOGO_HEIGHT)) "$col" 1 "$_LOGO_WIDTH"
+          fi
+        fi
+
         prev_off=$off
       fi
-      sleep 0.12
+      sleep 0.25
       idx=$(( (idx + 1) % n ))
     done
   ) &
