@@ -176,6 +176,82 @@ EOF
   ! grep -q " =" "$SETTINGS_FILE"
 }
 
+# --- draw_settings_screen tests ---
+
+@test "draw_settings_screen: clears screen before drawing" {
+  # Mock terminal dimensions
+  export _rows=24
+  export _cols=80
+
+  # Capture output
+  output=$(draw_settings_screen 2>&1)
+
+  # Should contain clear screen escape sequence \033[2J\033[H
+  echo "$output" | grep -q $'\033\[2J\033\[H'
+}
+
+@test "draw_settings_screen: outputs clear screen as first action" {
+  export _rows=24
+  export _cols=80
+
+  # Capture output and check first escape sequence
+  output=$(draw_settings_screen 2>&1)
+
+  # First escape sequence should be clear screen
+  first_escape=$(echo "$output" | grep -o $'\033\[[^m]*[mHJ]' | head -1)
+  echo "$first_escape" | grep -q $'\033\[2J\033\[H'
+}
+
+@test "draw_settings_screen: displays [ON] when animation is on" {
+  echo "animation=on" > "$SETTINGS_FILE"
+  export _rows=24
+  export _cols=80
+
+  output=$(draw_settings_screen 2>&1)
+  echo "$output" | grep -q "\[ON\]"
+}
+
+@test "draw_settings_screen: displays [OFF] when animation is off" {
+  echo "animation=off" > "$SETTINGS_FILE"
+  export _rows=24
+  export _cols=80
+
+  output=$(draw_settings_screen 2>&1)
+  echo "$output" | grep -q "\[OFF\]"
+}
+
+@test "draw_settings_screen: includes toggle instruction" {
+  export _rows=24
+  export _cols=80
+
+  output=$(draw_settings_screen 2>&1)
+  echo "$output" | grep -q "Press A to toggle"
+}
+
+@test "draw_settings_screen: includes back navigation instruction" {
+  export _rows=24
+  export _cols=80
+
+  output=$(draw_settings_screen 2>&1)
+  echo "$output" | grep -q "ESC or B to go back"
+}
+
+@test "draw_settings_screen: displays Settings header" {
+  export _rows=24
+  export _cols=80
+
+  output=$(draw_settings_screen 2>&1)
+  echo "$output" | grep -q "Settings"
+}
+
+@test "draw_settings_screen: displays Ghost Animation label" {
+  export _rows=24
+  export _cols=80
+
+  output=$(draw_settings_screen 2>&1)
+  echo "$output" | grep -q "Ghost Animation"
+}
+
 # --- Edge cases ---
 
 @test "get_animation_setting: handles malformed settings file gracefully" {
