@@ -98,14 +98,14 @@ fi
 # ---------- Wrapper script ----------
 header "Setting up wrapper script..."
 mkdir -p ~/.config/ghostty
-cp "$SHARE_DIR/ghostty/claude-wrapper.sh" ~/.config/ghostty/claude-wrapper.sh
-chmod +x ~/.config/ghostty/claude-wrapper.sh
-success "Created claude-wrapper.sh in ~/.config/ghostty/"
+ln -sf "$SHARE_DIR/ghostty/claude-wrapper.sh" ~/.config/ghostty/claude-wrapper.sh
+success "Linked claude-wrapper.sh in ~/.config/ghostty/"
 
-# Copy shared libraries
+# Symlink shared libraries (remove old copies if present)
 if [ -d "$SHARE_DIR/lib" ]; then
-  cp -R "$SHARE_DIR/lib" ~/.config/ghostty/lib
-  success "Copied shared libraries to ~/.config/ghostty/lib/"
+  [ -d ~/.config/ghostty/lib ] && [ ! -L ~/.config/ghostty/lib ] && rm -rf ~/.config/ghostty/lib
+  ln -sfn "$SHARE_DIR/lib" ~/.config/ghostty/lib
+  success "Linked shared libraries to ~/.config/ghostty/lib/"
 fi
 
 # ---------- Ghostty config ----------
@@ -475,7 +475,7 @@ fi
 # ---------- Summary ----------
 header "Setup complete!"
 echo ""
-success "Wrapper script:  ~/.config/ghostty/claude-wrapper.sh"
+success "Wrapper script:  ~/.config/ghostty/claude-wrapper.sh (symlink)"
 success "Ghostty config:  ~/.config/ghostty/config"
 _ai_default="$(cat "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/ai-tool" 2>/dev/null)"
 success "AI tool:         $(echo "$_ai_default" | sed 's/claude/Claude Code/;s/codex/Codex CLI/;s/copilot/Copilot CLI/;s/opencode/OpenCode/')"

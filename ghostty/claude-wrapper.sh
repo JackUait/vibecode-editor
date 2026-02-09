@@ -3,16 +3,27 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # Load shared library functions
 _WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$_WRAPPER_DIR/lib/ai-tools.sh"
-source "$_WRAPPER_DIR/lib/projects.sh"
-source "$_WRAPPER_DIR/lib/process.sh"
-source "$_WRAPPER_DIR/lib/input.sh"
-source "$_WRAPPER_DIR/lib/tui.sh"
-source "$_WRAPPER_DIR/lib/update.sh"
-source "$_WRAPPER_DIR/lib/menu.sh"
-source "$_WRAPPER_DIR/lib/autocomplete.sh"
-source "$_WRAPPER_DIR/lib/project-actions.sh"
-source "$_WRAPPER_DIR/lib/tmux-session.sh"
+
+if [ ! -d "$_WRAPPER_DIR/lib" ]; then
+  printf '\033[31mError:\033[0m Ghost Tab libraries not found at %s/lib\n' "$_WRAPPER_DIR" >&2
+  printf 'Run \033[1mghost-tab\033[0m to reinstall.\n' >&2
+  printf 'Press any key to exit...\n' >&2
+  read -rsn1
+  exit 1
+fi
+
+_gt_libs=(ai-tools projects process input tui update menu autocomplete project-actions tmux-session)
+for _gt_lib in "${_gt_libs[@]}"; do
+  if [ ! -f "$_WRAPPER_DIR/lib/${_gt_lib}.sh" ]; then
+    printf '\033[31mError:\033[0m Missing library %s/lib/%s.sh\n' "$_WRAPPER_DIR" "$_gt_lib" >&2
+    printf 'Run \033[1mghost-tab\033[0m to reinstall.\n' >&2
+    printf 'Press any key to exit...\n' >&2
+    read -rsn1
+    exit 1
+  fi
+  source "$_WRAPPER_DIR/lib/${_gt_lib}.sh"
+done
+unset _gt_libs _gt_lib
 
 TMUX_CMD="$(command -v tmux)"
 LAZYGIT_CMD="$(command -v lazygit)"
