@@ -339,6 +339,15 @@ elif [ -z "$1" ]; then
       fi
     }
 
+    ai_tool_display_name() {
+      case "$1" in
+        claude)   echo "Claude Code" ;;
+        codex)    echo "Codex CLI" ;;
+        opencode) echo "OpenCode" ;;
+        *)        echo "$1" ;;
+      esac
+    }
+
     draw_menu() {
       local i r c
 
@@ -353,7 +362,9 @@ elif [ -z "$1" ]; then
       [ "${#projects[@]}" -gt 0 ] && _sep_count=1
       _update_line=0
       [ -n "$_update_version" ] && _update_line=1
-      _menu_h=$(( 3 + _update_line + total * 2 + _sep_count + 2 ))
+      _ai_toggle_h=0
+      [ ${#AI_TOOLS_AVAILABLE[@]} -gt 0 ] && _ai_toggle_h=2
+      _menu_h=$(( 3 + _update_line + total * 2 + _sep_count + _ai_toggle_h + 2 ))
 
       _top_row=$(( (_rows - _menu_h) / 2 ))
       [ "$_top_row" -lt 1 ] && _top_row=1
@@ -415,8 +426,27 @@ elif [ -z "$1" ]; then
         r=$((r+1))
       done
 
+      # AI tool toggle row
+      if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 0 ]; then
+        moveto "$r" "$c"; printf "\033[K"; r=$((r+1))
+        _ai_row=$r
+        local _ai_name
+        _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
+        moveto "$r" "$c"
+        if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
+          printf "  ${_DIM}◀${_NC}  AI: ${_BOLD}${_CYAN}%s${_NC}  ${_DIM}▶${_NC}\033[K" "$_ai_name"
+        else
+          printf "     AI: ${_BOLD}${_CYAN}%s${_NC}\033[K" "$_ai_name"
+        fi
+        r=$((r+1))
+      fi
+
       moveto "$r" "$c"; printf "${_DIM}──────────────────────────────────────${_NC}\033[K"; r=$((r+1))
-      moveto "$r" "$c"; printf "${_DIM}  ↑↓${_NC} navigate  ${_DIM}⏎${_NC} select\033[K"
+      if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
+        moveto "$r" "$c"; printf "${_DIM}  ↑↓${_NC} navigate  ${_DIM}◀▶${_NC} AI tool  ${_DIM}⏎${_NC} select\033[K"
+      else
+        moveto "$r" "$c"; printf "${_DIM}  ↑↓${_NC} navigate  ${_DIM}⏎${_NC} select\033[K"
+      fi
     }
 
     _add_mode=0
