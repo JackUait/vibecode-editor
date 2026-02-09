@@ -7,6 +7,7 @@ source "$_WRAPPER_DIR/lib/ai-tools.sh"
 source "$_WRAPPER_DIR/lib/projects.sh"
 source "$_WRAPPER_DIR/lib/process.sh"
 source "$_WRAPPER_DIR/lib/input.sh"
+source "$_WRAPPER_DIR/lib/tui.sh"
 
 TMUX_CMD="$(command -v tmux)"
 LAZYGIT_CMD="$(command -v lazygit)"
@@ -87,22 +88,7 @@ if [ -n "$1" ] && [ -d "$1" ]; then
   cd "$1"
   shift
 elif [ -z "$1" ]; then
-  # Colors for interactive menu
-  _CYAN=$'\033[0;36m'
-  _GREEN=$'\033[0;32m'
-  _YELLOW=$'\033[0;33m'
-  _BLUE=$'\033[0;34m'
-  _BOLD=$'\033[1m'
-  _DIM=$'\033[2m'
-  _NC=$'\033[0m'
-  _INVERSE=$'\033[7m'
-  _BG_BLUE=$'\033[48;5;27m'
-  _BG_RED=$'\033[48;5;160m'
-  _WHITE=$'\033[1;37m'
-  _HIDE_CURSOR=$'\033[?25l'
-  _SHOW_CURSOR=$'\033[?25h'
-  _MOUSE_ON=$'\033[?1000h\033[?1006h'
-  _MOUSE_OFF=$'\033[?1000l\033[?1006l'
+  tui_init_interactive
 
   # Restore cursor and disable mouse on exit
   trap 'printf "${_SHOW_CURSOR}${_MOUSE_OFF}"; printf "\\033[?7h"' EXIT
@@ -112,9 +98,6 @@ elif [ -z "$1" ]; then
 
   # Set terminal title for project selection screen
   printf '\033]0;👻 Ghost Tab\007'
-
-  # Padding helper: prints N spaces
-  pad() { printf "%*s" "$1" ""; }
 
   while true; do
     # Reload projects each iteration
@@ -149,9 +132,6 @@ elif [ -z "$1" ]; then
     total=${#menu_labels[@]}
     selected=0
     box_w=44
-
-    # Move cursor to row;col
-    moveto() { printf '\033[%d;%dH' "$1" "$2"; }
 
     # Get directory suggestions for autocomplete
     get_suggestions() {
@@ -313,41 +293,6 @@ elif [ -z "$1" ]; then
       draw_menu
     }
 
-    # Read escape sequence after \x1b
-    # Sets _esc_seq to: A/B (arrows), "click:ROW" (mouse click), or empty
-    read_esc() {
-      _esc_seq=""
-      read -rsn1 _b1
-      if [[ "$_b1" == "[" ]]; then
-        read -rsn1 _b2
-        if [[ "$_b2" == "<" ]]; then
-          # SGR mouse: read until M (press) or m (release)
-          _mouse_data=""
-          while true; do
-            read -rsn1 _mc
-            if [[ "$_mc" == "M" || "$_mc" == "m" ]]; then
-              break
-            fi
-            _mouse_data="${_mouse_data}${_mc}"
-          done
-          # Only handle press (M), ignore release (m)
-          if [[ "$_mc" == "M" ]]; then
-            # Parse button;col;row — we want the row
-            _mouse_btn="${_mouse_data%%;*}"
-            _mouse_rest="${_mouse_data#*;}"
-            _mouse_col="${_mouse_rest%%;*}"
-            _mouse_row="${_mouse_rest##*;}"
-            # Only left click (button 0)
-            if [[ "$_mouse_btn" == "0" ]]; then
-              _esc_seq="click:${_mouse_row}"
-            fi
-          fi
-        else
-          _esc_seq="$_b2"
-        fi
-      fi
-    }
-
     draw_menu() {
       local i r c
 
@@ -453,24 +398,6 @@ elif [ -z "$1" ]; then
       else
         moveto "$r" "$c"; printf "${_DIM}  ↑↓${_NC} navigate  ${_DIM}⏎${_NC} select\033[K"
       fi
-    }
-
-    cycle_ai_tool() {
-      local direction="$1" i
-      [ ${#AI_TOOLS_AVAILABLE[@]} -le 1 ] && return
-      for i in "${!AI_TOOLS_AVAILABLE[@]}"; do
-        if [ "${AI_TOOLS_AVAILABLE[$i]}" == "$SELECTED_AI_TOOL" ]; then
-          if [ "$direction" == "next" ]; then
-            SELECTED_AI_TOOL="${AI_TOOLS_AVAILABLE[$(( (i + 1) % ${#AI_TOOLS_AVAILABLE[@]} ))]}"
-          else
-            SELECTED_AI_TOOL="${AI_TOOLS_AVAILABLE[$(( (i - 1 + ${#AI_TOOLS_AVAILABLE[@]}) % ${#AI_TOOLS_AVAILABLE[@]} ))]}"
-          fi
-          break
-        fi
-      done
-      # Save preference
-      mkdir -p "$(dirname "$AI_TOOL_PREF_FILE")"
-      echo "$SELECTED_AI_TOOL" > "$AI_TOOL_PREF_FILE"
     }
 
     _add_mode=0
@@ -591,7 +518,7 @@ elif [ -z "$1" ]; then
 
         read -rsn1 key
         if [[ "$key" == $'\x1b' ]]; then
-          read_esc
+          _esc_seq="$(parse_esc_sequence)"
           case "$_esc_seq" in
             "A") _del_sel=$(( (_del_sel - 1 + ${#projects[@]}) % ${#projects[@]} )) ;;
             "B") _del_sel=$(( (_del_sel + 1) % ${#projects[@]} )) ;;
@@ -631,7 +558,7 @@ elif [ -z "$1" ]; then
       _do_select=0
       read -rsn1 key
       if [[ "$key" == $'\x1b' ]]; then
-        read_esc
+        _esc_seq="$(parse_esc_sequence)"
         if [[ "$_esc_seq" == click:* ]]; then
           _click_row="${_esc_seq#click:}"
           for _ci in $(seq 0 $((total - 1))); do
@@ -646,8 +573,8 @@ elif [ -z "$1" ]; then
           case "$_esc_seq" in
             "A") selected=$(( (selected - 1 + total) % total )); draw_menu ;;
             "B") selected=$(( (selected + 1) % total )); draw_menu ;;
-            "C") cycle_ai_tool "next"; draw_menu ;;
-            "D") cycle_ai_tool "prev"; draw_menu ;;
+            "C") cycle_ai_tool "next"; echo "$SELECTED_AI_TOOL" > "$AI_TOOL_PREF_FILE"; draw_menu ;;
+            "D") cycle_ai_tool "prev"; echo "$SELECTED_AI_TOOL" > "$AI_TOOL_PREF_FILE"; draw_menu ;;
           esac
         fi
       fi

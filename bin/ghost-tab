@@ -6,24 +6,6 @@ set -e
 # line-by-line from the pipe and `read` consumes script lines as input.
 main() {
 
-# Colors (with fallback)
-if [ -t 1 ] && [ "$(tput colors 2>/dev/null)" -ge 8 ] 2>/dev/null; then
-  GREEN='\033[0;32m'
-  YELLOW='\033[0;33m'
-  RED='\033[0;31m'
-  BLUE='\033[0;34m'
-  BOLD='\033[1m'
-  NC='\033[0m'
-else
-  GREEN='' YELLOW='' RED='' BLUE='' BOLD='' NC=''
-fi
-
-success() { echo -e "${GREEN}✓${NC} $1"; }
-warn()    { echo -e "${YELLOW}!${NC} $1"; }
-error()   { echo -e "${RED}✗${NC} $1"; }
-info()    { echo -e "${BLUE}→${NC} $1"; }
-header()  { echo -e "\n${BOLD}$1${NC}"; }
-
 # Determine where supporting files live
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 _brew_prefix="$(brew --prefix 2>/dev/null || true)"
@@ -32,6 +14,8 @@ if [[ -n "$_brew_prefix" && "$SCRIPT_DIR" == "$_brew_prefix/bin" ]]; then
 else
     SHARE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
+
+source "$SHARE_DIR/lib/tui.sh"
 
 # ---------- OS check ----------
 header "Checking platform..."
@@ -102,17 +86,17 @@ while [ "$_selecting" -eq 1 ]; do
       3) _name="OpenCode (anomalyco)"; _sel=$_sel_opencode; _tag="" ;;
     esac
     case $_i in
-      0) [ "$_cc_installed" -eq 1 ] && _tag=" ${YELLOW}(installed)${NC}" ;;
-      1) [ "$_codex_installed" -eq 1 ] && _tag=" ${YELLOW}(installed)${NC}" ;;
-      2) [ "$_copilot_installed" -eq 1 ] && _tag=" ${YELLOW}(installed)${NC}" ;;
-      3) [ "$_oc_installed" -eq 1 ] && _tag=" ${YELLOW}(installed)${NC}" ;;
+      0) [ "$_cc_installed" -eq 1 ] && _tag=" ${_YELLOW}(installed)${_NC}" ;;
+      1) [ "$_codex_installed" -eq 1 ] && _tag=" ${_YELLOW}(installed)${_NC}" ;;
+      2) [ "$_copilot_installed" -eq 1 ] && _tag=" ${_YELLOW}(installed)${_NC}" ;;
+      3) [ "$_oc_installed" -eq 1 ] && _tag=" ${_YELLOW}(installed)${_NC}" ;;
     esac
 
     if [ "$_i" -eq "$_cursor" ]; then
       if [ "$_sel" -eq 1 ]; then
-        echo -e "  ${BOLD}❯ [x] ${_name}${NC}${_tag}"
+        echo -e "  ${_BOLD}❯ [x] ${_name}${_NC}${_tag}"
       else
-        echo -e "  ${BOLD}❯ [ ] ${_name}${NC}${_tag}"
+        echo -e "  ${_BOLD}❯ [ ] ${_name}${_NC}${_tag}"
       fi
     else
       if [ "$_sel" -eq 1 ]; then
@@ -122,7 +106,7 @@ while [ "$_selecting" -eq 1 ]; do
       fi
     fi
   done
-  echo -e "  ${BLUE}↑↓${NC} navigate  ${BLUE}Space${NC} toggle  ${BLUE}Enter${NC} confirm"
+  echo -e "  ${_BLUE}↑↓${_NC} navigate  ${_BLUE}Space${_NC} toggle  ${_BLUE}Enter${_NC} confirm"
 
   read -rsn1 _key </dev/tty
   if [[ "$_key" == $'\x1b' ]]; then
@@ -144,7 +128,7 @@ while [ "$_selecting" -eq 1 ]; do
   elif [[ "$_key" == "" ]]; then
     # Require at least one selection
     if [ $(( _sel_claude + _sel_codex + _sel_copilot + _sel_opencode )) -eq 0 ]; then
-      echo -e "  ${RED}✗${NC} Select at least one AI tool"
+      echo -e "  ${_RED}✗${_NC} Select at least one AI tool"
       sleep 0.8
       printf '\033[1A\033[K'
     else
@@ -268,10 +252,10 @@ WRAPPER_LINE="command = ~/.config/ghostty/claude-wrapper.sh"
 if [ -f "$GHOSTTY_CONFIG" ]; then
   warn "Existing Ghostty config found at $GHOSTTY_CONFIG"
   echo ""
-  echo -e "  ${BOLD}1)${NC} Merge — add the wrapper command to your existing config"
-  echo -e "  ${BOLD}2)${NC} Backup & replace — save current config and use ours"
+  echo -e "  ${_BOLD}1)${_NC} Merge — add the wrapper command to your existing config"
+  echo -e "  ${_BOLD}2)${_NC} Backup & replace — save current config and use ours"
   echo ""
-  read -rn1 -p "$(echo -e "${BLUE}Choose (1/2):${NC} ")" config_choice </dev/tty
+  read -rn1 -p "$(echo -e "${_BLUE}Choose (1/2):${_NC} ")" config_choice </dev/tty
   echo ""
 
   case "$config_choice" in
@@ -315,12 +299,12 @@ PROJECTS_FILE="$PROJECTS_DIR/projects"
 mkdir -p "$PROJECTS_DIR"
 
 echo ""
-read -rn1 -p "$(echo -e "${BLUE}Add a project? (y/n):${NC} ")" add_project </dev/tty
+read -rn1 -p "$(echo -e "${_BLUE}Add a project? (y/n):${_NC} ")" add_project </dev/tty
 echo ""
 
 while [[ "$add_project" =~ ^[yY]$ ]]; do
-  read -rp "$(echo -e "${BLUE}Project name:${NC} ")" proj_name </dev/tty
-  read -rp "$(echo -e "${BLUE}Project path:${NC} ")" proj_path </dev/tty
+  read -rp "$(echo -e "${_BLUE}Project name:${_NC} ")" proj_name </dev/tty
+  read -rp "$(echo -e "${_BLUE}Project path:${_NC} ")" proj_path </dev/tty
 
   # Expand ~ to $HOME for validation
   expanded_path="${proj_path/#\~/$HOME}"
@@ -334,7 +318,7 @@ while [[ "$add_project" =~ ^[yY]$ ]]; do
   fi
 
   echo ""
-  read -rn1 -p "$(echo -e "${BLUE}Add another? (y/n):${NC} ")" add_project </dev/tty
+  read -rn1 -p "$(echo -e "${_BLUE}Add another? (y/n):${_NC} ")" add_project </dev/tty
   echo ""
 done
 
@@ -505,7 +489,7 @@ echo ""
 echo -e "  Claude Code can play a sound when it finishes generating"
 echo -e "  and is waiting for your input."
 echo ""
-read -rn1 -p "$(echo -e "${BLUE}Enable sound notification? (y/n):${NC} ")" enable_sound </dev/tty
+read -rn1 -p "$(echo -e "${_BLUE}Enable sound notification? (y/n):${_NC} ")" enable_sound </dev/tty
 echo ""
 
 if [[ "$enable_sound" =~ ^[yY]$ ]]; then
@@ -573,7 +557,7 @@ echo ""
 echo -e "  Show a spinning animation in the tab title when Claude"
 echo -e "  is waiting for your input."
 echo ""
-read -rn1 -p "$(echo -e "${BLUE}Enable tab animation? (y/n):${NC} ")" enable_spinner </dev/tty
+read -rn1 -p "$(echo -e "${_BLUE}Enable tab animation? (y/n):${_NC} ")" enable_spinner </dev/tty
 echo ""
 
 if [[ "$enable_spinner" =~ ^[yY]$ ]]; then
