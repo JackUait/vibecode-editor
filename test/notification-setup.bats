@@ -6,12 +6,6 @@ setup() {
   source "$PROJECT_ROOT/lib/notification-setup.sh"
   TEST_TMP="$(mktemp -d)"
 
-  # Create fake share dir with template spinner scripts
-  SHARE_DIR="$TEST_TMP/share"
-  mkdir -p "$SHARE_DIR/templates"
-  echo "#!/bin/bash" > "$SHARE_DIR/templates/tab-spinner-start.sh"
-  echo "#!/bin/bash" > "$SHARE_DIR/templates/tab-spinner-stop.sh"
-
   FAKE_HOME="$TEST_TMP/home"
   mkdir -p "$FAKE_HOME/.claude"
 }
@@ -53,32 +47,4 @@ EOF
   [ -f "$TEST_TMP/new-settings.json" ]
 }
 
-# --- setup_tab_spinner ---
 
-@test "setup_tab_spinner: copies scripts and sets executable" {
-  echo '{}' > "$TEST_TMP/settings.json"
-  setup_tab_spinner "$SHARE_DIR" "$TEST_TMP/settings.json" \
-    "bash ~/.claude/tab-spinner-start.sh &" "bash ~/.claude/tab-spinner-stop.sh" \
-    "$FAKE_HOME"
-  [ -f "$FAKE_HOME/.claude/tab-spinner-start.sh" ]
-  [ -f "$FAKE_HOME/.claude/tab-spinner-stop.sh" ]
-  [ -x "$FAKE_HOME/.claude/tab-spinner-start.sh" ]
-  [ -x "$FAKE_HOME/.claude/tab-spinner-stop.sh" ]
-}
-
-@test "setup_tab_spinner: adds hooks to settings" {
-  echo '{}' > "$TEST_TMP/settings.json"
-  setup_tab_spinner "$SHARE_DIR" "$TEST_TMP/settings.json" \
-    "bash start.sh &" "bash stop.sh" "$FAKE_HOME"
-  run cat "$TEST_TMP/settings.json"
-  assert_output --partial "start.sh"
-  assert_output --partial "stop.sh"
-}
-
-@test "setup_tab_spinner: creates .claude directory" {
-  rm -rf "$FAKE_HOME/.claude"
-  echo '{}' > "$TEST_TMP/settings.json"
-  setup_tab_spinner "$SHARE_DIR" "$TEST_TMP/settings.json" \
-    "bash start.sh &" "bash stop.sh" "$FAKE_HOME"
-  [ -d "$FAKE_HOME/.claude" ]
-}

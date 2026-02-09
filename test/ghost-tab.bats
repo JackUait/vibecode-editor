@@ -237,7 +237,6 @@ teardown() {
   # Create all the optional component files
   touch "$HOME/.claude/statusline-wrapper.sh"
   echo '{"hooks":{"Notification":[{"matcher":"idle_prompt","hooks":[]}]}}' > "$HOME/.claude/settings.json"
-  touch "$HOME/.claude/tab-spinner-start.sh"
   echo "claude" > "$HOME/.config/ghost-tab/ai-tool"
 
   run bash -c '
@@ -249,14 +248,10 @@ teardown() {
     if grep -q "idle_prompt" "$HOME/.claude/settings.json" 2>/dev/null; then
       success "Sound:           Notification on idle"
     fi
-    if [ -f "$HOME/.claude/tab-spinner-start.sh" ]; then
-      success "Tab animation:   Spinner on idle"
-    fi
   '
   assert_success
   assert_output --partial "Status line"
   assert_output --partial "Sound"
-  assert_output --partial "Tab animation"
 }
 
 @test "summary: omits missing components" {
@@ -271,9 +266,6 @@ teardown() {
     fi
     if grep -q "idle_prompt" "$HOME/.claude/settings.json" 2>/dev/null; then
       success "Sound:           Notification on idle"
-    fi
-    if [ -f "$HOME/.claude/tab-spinner-start.sh" ]; then
-      success "Tab animation:   Spinner on idle"
     fi
     echo "done"
   '

@@ -61,42 +61,4 @@ EOF
   [ -f "$TEST_TMP/new-settings.json" ]
 }
 
-# --- add_spinner_hooks ---
 
-@test "add_spinner_hooks: adds start on UserPromptSubmit and stop on Notification" {
-  echo '{}' > "$TEST_TMP/settings.json"
-  add_spinner_hooks "$TEST_TMP/settings.json" "bash ~/.claude/tab-spinner-start.sh &" "bash ~/.claude/tab-spinner-stop.sh"
-  run cat "$TEST_TMP/settings.json"
-  assert_output --partial "tab-spinner-start"
-  assert_output --partial "tab-spinner-stop"
-  assert_output --partial "Notification"
-  assert_output --partial "UserPromptSubmit"
-
-  # Verify start is on UserPromptSubmit, stop is on Notification/idle_prompt
-  run python3 -c "
-import json
-with open('$TEST_TMP/settings.json') as f:
-    s = json.load(f)
-for g in s['hooks']['UserPromptSubmit']:
-    for h in g['hooks']:
-        assert 'start' in h['command'], f'Expected start on UserPromptSubmit, got {h[\"command\"]}'
-for g in s['hooks']['Notification']:
-    if g.get('matcher') == 'idle_prompt':
-        for h in g['hooks']:
-            if 'spinner' in h['command']:
-                assert 'stop' in h['command'], f'Expected stop on Notification, got {h[\"command\"]}'
-print('ok')
-"
-  assert_output "ok"
-}
-
-@test "add_spinner_hooks: idempotent — running twice doesn't duplicate" {
-  echo '{}' > "$TEST_TMP/settings.json"
-  add_spinner_hooks "$TEST_TMP/settings.json" "bash start.sh &" "bash stop.sh"
-  add_spinner_hooks "$TEST_TMP/settings.json" "bash start.sh &" "bash stop.sh"
-
-  # Count occurrences of the start command — should be exactly 1
-  local count
-  count=$(grep -c "start.sh" "$TEST_TMP/settings.json" || true)
-  [ "$count" -eq 1 ]
-}

@@ -186,12 +186,11 @@ else
   info "Status line features are only available with Claude Code"
 fi
 
-# Check if any selected tool supports sound/spinner
+# Check if any selected tool supports sound
 _supports_sound=0
-_supports_spinner=0
-[ "$_sel_claude" -eq 1 ] && { _supports_sound=1; _supports_spinner=1; }
-[ "$_sel_codex" -eq 1 ] && { _supports_sound=1; _supports_spinner=1; }
-[ "$_sel_opencode" -eq 1 ] && { _supports_sound=1; _supports_spinner=1; }
+[ "$_sel_claude" -eq 1 ] && _supports_sound=1
+[ "$_sel_codex" -eq 1 ] && _supports_sound=1
+[ "$_sel_opencode" -eq 1 ] && _supports_sound=1
 
 # ---------- Sound Notification ----------
 _sound_enabled=0
@@ -214,91 +213,25 @@ else
   info "Sound notification requires a supported AI tool"
 fi
 
-# ---------- Tab Title Animation ----------
-_spinner_enabled=0
-if [ "$_supports_spinner" -eq 1 ]; then
-  header "Tab title animation..."
-  echo ""
-  echo -e "  Show a spinning animation in the tab title when the AI"
-  echo -e "  is waiting for your input."
-  echo ""
-  read -rn1 -p "$(echo -e "${_BLUE}Enable tab animation? (y/n):${_NC} ")" enable_spinner </dev/tty
-  echo ""
-
-  if [[ "$enable_spinner" =~ ^[yY]$ ]]; then
-    _spinner_enabled=1
-  else
-    info "Skipping tab animation"
-  fi
-else
-  header "Skipping tab title animation..."
-  info "Tab animation requires a supported AI tool"
-fi
-
 # ---------- Claude Code notification hooks ----------
 if [ "$_sel_claude" -eq 1 ]; then
   CLAUDE_SETTINGS="$HOME/.claude/settings.json"
   if [ "$_sound_enabled" -eq 1 ]; then
     setup_sound_notification "$CLAUDE_SETTINGS" "afplay /System/Library/Sounds/Bottle.aiff &"
   fi
-  if [ "$_spinner_enabled" -eq 1 ]; then
-    setup_tab_spinner "$SHARE_DIR" "$CLAUDE_SETTINGS" \
-      "bash ~/.claude/tab-spinner-start.sh &" "bash ~/.claude/tab-spinner-stop.sh" "$HOME"
-  fi
 fi
 
 # ---------- Codex CLI Features ----------
-if [ "$_sel_codex" -eq 1 ] && { [ "$_sound_enabled" -eq 1 ] || [ "$_spinner_enabled" -eq 1 ]; }; then
+if [ "$_sel_codex" -eq 1 ] && [ "$_sound_enabled" -eq 1 ]; then
   header "Setting up Codex CLI features..."
   mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
 
   cat > "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/codex-notify.sh" << 'CXEOF'
 #!/bin/bash
-# Ghost Tab: Codex CLI notify handler (sound + spinner)
-
-PROJECT="${PWD##*/}"
-if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null 2>&1; then
-  SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null)
-  [ -n "$SESSION_NAME" ] && PROJECT="$SESSION_NAME"
-fi
-
-PID_FILE="/tmp/ghost-tab-spinner-${PROJECT}.pid"
-FEATURES_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/codex-features.json"
-
-# Kill any running spinner
-if [ -f "$PID_FILE" ]; then
-  OLD_PID=$(cat "$PID_FILE")
-  kill "$OLD_PID" 2>/dev/null
-  rm -f "$PID_FILE"
-  printf '\033]0;%s\007' "$PROJECT"
-fi
-
-# Read feature flags
-_sound=0; _spinner=0
-if [ -f "$FEATURES_FILE" ]; then
-  _sound=$(python3 -c "import json; print(int(json.load(open('$FEATURES_FILE')).get('sound',0)))" 2>/dev/null || echo 0)
-  _spinner=$(python3 -c "import json; print(int(json.load(open('$FEATURES_FILE')).get('spinner',0)))" 2>/dev/null || echo 0)
-fi
+# Ghost Tab: Codex CLI notify handler (sound)
 
 # Play sound
-if [ "$_sound" -eq 1 ]; then
-  afplay /System/Library/Sounds/Bottle.aiff &
-fi
-
-# Start spinner
-if [ "$_spinner" -eq 1 ]; then
-  FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-  (
-    echo $BASHPID > "$PID_FILE"
-    i=0
-    while true; do
-      printf '\033]0;%s %s\007' "${FRAMES[$i]}" "$PROJECT"
-      i=$(( (i + 1) % ${#FRAMES[@]} ))
-      sleep 0.1
-    done
-  ) &
-  disown
-fi
+afplay /System/Library/Sounds/Bottle.aiff &
 CXEOF
 
   chmod +x "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/codex-notify.sh"
@@ -308,7 +241,7 @@ CXEOF
   python3 -c "
 import json, os
 path = os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'ghost-tab', 'codex-features.json')
-json.dump({'sound': ${_sound_enabled}, 'spinner': ${_spinner_enabled}}, open(path, 'w'))
+json.dump({'sound': ${_sound_enabled}}, open(path, 'w'))
 print('ok')
 "
   success "Saved Codex CLI feature flags"
@@ -316,12 +249,11 @@ print('ok')
   # Configure Codex config.toml
   mkdir -p ~/.codex
 
-  if python3 - ~/.codex/config.toml "$_sound_enabled" "$_spinner_enabled" << 'PYEOF'
+  if python3 - ~/.codex/config.toml "$_sound_enabled" << 'PYEOF'
 import sys, os
 
 config_path = sys.argv[1]
 sound = int(sys.argv[2])
-spinner = int(sys.argv[3])
 
 lines = []
 if os.path.exists(config_path):
@@ -333,12 +265,9 @@ has_tui = any(l.strip() == "[tui]" for l in lines)
 has_status = any(l.strip().startswith("status_line") for l in lines)
 
 with open(config_path, "a") as f:
-    if not has_notify and (sound or spinner):
+    if not has_notify and sound:
         f.write("\n")
-        if spinner:
-            f.write('notify = ["bash", "~/.config/ghost-tab/codex-notify.sh"]\n')
-        else:
-            f.write('notify = ["afplay", "/System/Library/Sounds/Bottle.aiff"]\n')
+        f.write('notify = ["afplay", "/System/Library/Sounds/Bottle.aiff"]\n')
 
     if not has_tui:
         f.write("\n[tui]\n")
@@ -372,7 +301,7 @@ if [ "$_sel_codex" -eq 1 ]; then
 fi
 
 # ---------- OpenCode Features ----------
-if [ "$_sel_opencode" -eq 1 ] && { [ "$_sound_enabled" -eq 1 ] || [ "$_spinner_enabled" -eq 1 ]; }; then
+if [ "$_sel_opencode" -eq 1 ] && [ "$_sound_enabled" -eq 1 ]; then
   header "Setting up OpenCode features..."
   mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins"
   mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
@@ -381,69 +310,25 @@ if [ "$_sel_opencode" -eq 1 ] && { [ "$_sound_enabled" -eq 1 ] || [ "$_spinner_e
   python3 -c "
 import json, os
 path = os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'ghost-tab', 'opencode-features.json')
-json.dump({'sound': ${_sound_enabled}, 'spinner': ${_spinner_enabled}}, open(path, 'w'))
+json.dump({'sound': ${_sound_enabled}}, open(path, 'w'))
 print('ok')
 "
 
   cat > "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/ghost-tab.ts" << 'OCEOF'
-import { spawn, execSync } from "child_process"
-import { readFileSync, unlinkSync, existsSync } from "fs"
+import { spawn } from "child_process"
+import { readFileSync } from "fs"
 import { join } from "path"
-import { tmpdir, homedir } from "os"
+import { homedir } from "os"
 
 const configPath = join(
   process.env.XDG_CONFIG_HOME || join(homedir(), ".config"),
   "ghost-tab",
   "opencode-features.json"
 )
-let features = { sound: false, spinner: false }
+let features = { sound: false }
 try {
   features = JSON.parse(readFileSync(configPath, "utf-8"))
 } catch {}
-
-function getProject(): string {
-  try {
-    const session = execSync("tmux display-message -p '#S'", {
-      stdio: ["pipe", "pipe", "ignore"],
-    }).toString().trim()
-    if (session) return session
-  } catch {}
-  return process.cwd().split("/").pop() || "opencode"
-}
-
-function getPidFile(): string {
-  return join(tmpdir(), `ghost-tab-spinner-${getProject()}.pid`)
-}
-
-function killSpinner(): void {
-  const pf = getPidFile()
-  if (existsSync(pf)) {
-    try {
-      const pid = parseInt(readFileSync(pf, "utf-8").trim())
-      process.kill(pid)
-    } catch {}
-    try { unlinkSync(pf) } catch {}
-    const project = getProject()
-    process.stdout.write(`\x1b]0;${project}\x07`)
-  }
-}
-
-function startSpinner(): void {
-  const project = getProject()
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-  const script = `
-    echo $$ > "${getPidFile()}"
-    FRAMES=(${frames.join(" ")})
-    i=0
-    while true; do
-      printf '\\033]0;%s %s\\007' "\${FRAMES[\$i]}" "${project}"
-      i=$(( (i + 1) % \${#FRAMES[@]} ))
-      sleep 0.1
-    done
-  `
-  const proc = spawn("bash", ["-c", script], { stdio: "ignore", detached: true })
-  proc.unref()
-}
 
 export const GhostTab = async () => {
   return {
@@ -451,16 +336,6 @@ export const GhostTab = async () => {
       if (event.type === "session.idle") {
         if (features.sound) {
           spawn("afplay", ["/System/Library/Sounds/Bottle.aiff"], { stdio: "ignore" })
-        }
-        if (features.spinner) {
-          killSpinner()
-          startSpinner()
-        }
-      }
-      if (event.type === "session.status") {
-        const status = event.properties?.status
-        if (status?.type === "busy" && features.spinner) {
-          killSpinner()
         }
       }
     },
@@ -485,9 +360,6 @@ if [ -f ~/.claude/statusline-wrapper.sh ]; then
 fi
 if grep -q '"idle_prompt"' ~/.claude/settings.json 2>/dev/null; then
   success "Sound:           Notification on idle"
-fi
-if [ -f ~/.claude/tab-spinner-start.sh ]; then
-  success "Tab animation:   Spinner on idle"
 fi
 if [ -f ~/.codex/config.toml ]; then
   success "Codex config:    ~/.codex/config.toml"
