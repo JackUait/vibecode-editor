@@ -724,7 +724,8 @@ printf '\033]0;%s\007' "$PROJECT_NAME"
   while true; do
     sleep 0.5
     content=$("$TMUX_CMD" capture-pane -t "$SESSION_NAME:0.1" -p 2>/dev/null)
-    if echo "$content" | grep -q '>'; then
+    # All three tools show a prompt character when ready
+    if echo "$content" | grep -qE '[>$❯]'; then
       "$TMUX_CMD" select-pane -t "$SESSION_NAME:0.1"
       break
     fi
@@ -761,6 +762,19 @@ cleanup() {
 }
 trap cleanup EXIT HUP TERM INT
 
+# Build the AI tool launch command
+case "$SELECTED_AI_TOOL" in
+  codex)
+    AI_LAUNCH_CMD="$CODEX_CMD --cd \"$PROJECT_DIR\""
+    ;;
+  opencode)
+    AI_LAUNCH_CMD="$OPENCODE_CMD \"$PROJECT_DIR\""
+    ;;
+  *)
+    AI_LAUNCH_CMD="$CLAUDE_CMD $*"
+    ;;
+esac
+
 "$TMUX_CMD" new-session -s "$SESSION_NAME" -e "PATH=$PATH" -c "$PROJECT_DIR" \
   "$LAZYGIT_CMD; exec bash" \; \
   set-option status-left " ⬡ ${PROJECT_NAME} " \; \
@@ -769,7 +783,7 @@ trap cleanup EXIT HUP TERM INT
   set-option status-right "" \; \
   set-option exit-unattached on \; \
   split-window -h -p 50 -c "$PROJECT_DIR" \
-  "$CLAUDE_CMD $*; exec bash" \; \
+  "$AI_LAUNCH_CMD; exec bash" \; \
   select-pane -t 0 \; \
   split-window -v -p 50 -c "$PROJECT_DIR" \
   "trap exit TERM; while true; do $BROOT_CMD $PROJECT_DIR; done" \; \
