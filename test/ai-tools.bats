@@ -48,9 +48,9 @@ setup() {
   [[ "$result" == $'\033[38;5;141m' ]]
 }
 
-@test "ai_tool_color: opencode returns blue ANSI" {
+@test "ai_tool_color: opencode returns light gray ANSI" {
   result="$(ai_tool_color "opencode")"
-  [[ "$result" == $'\033[38;5;75m' ]]
+  [[ "$result" == $'\033[38;5;250m' ]]
 }
 
 @test "ai_tool_color: unknown returns default cyan" {

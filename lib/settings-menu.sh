@@ -77,8 +77,8 @@ draw_settings_screen() {
       ;;
   esac
 
-  # Don't clear entire screen - settings box will overlay on menu
-  # This preserves the ghost mascot animation
+  # Clear screen to remove main menu, ghost will be redrawn after
+  printf '\033[2J\033[H'
 
   # Box dimensions (matching main menu style)
   local box_w=48
@@ -181,6 +181,24 @@ toggle_animation_immediate() {
 show_settings_menu() {
   while true; do
     draw_settings_screen
+
+    # Redraw ghost after settings screen if it should be visible
+    if [ "$_LOGO_LAYOUT" != "hidden" ]; then
+      local ghost_display=$(get_ghost_display_setting)
+      # Stop any existing animation first to prevent multiple processes
+      stop_logo_animation 2>/dev/null
+      case "$ghost_display" in
+        animated)
+          start_logo_animation "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
+          ;;
+        static)
+          draw_logo "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
+          ;;
+        none)
+          # Don't draw ghost
+          ;;
+      esac
+    fi
 
     read -rsn1 key
     case "$key" in

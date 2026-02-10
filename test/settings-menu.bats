@@ -183,7 +183,7 @@ EOF
 
 # --- draw_settings_screen tests ---
 
-@test "draw_settings_screen: does not clear full screen (preserves ghost)" {
+@test "draw_settings_screen: clears screen before drawing" {
   # Mock terminal dimensions
   export _rows=24
   export _cols=80
@@ -191,8 +191,8 @@ EOF
   # Capture output
   output=$(draw_settings_screen 2>&1)
 
-  # Should NOT contain full screen clear escape sequence
-  ! echo "$output" | grep -q $'\033\[2J\033\[H'
+  # Should contain full screen clear escape sequence
+  echo "$output" | grep -q $'\033\[2J\033\[H'
 }
 
 @test "draw_settings_screen: draws box with borders" {

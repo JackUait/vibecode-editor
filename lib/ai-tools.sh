@@ -16,7 +16,7 @@ ai_tool_color() {
     claude)   printf '\033[38;5;209m' ;;
     codex)    printf '\033[38;5;114m' ;;
     copilot)  printf '\033[38;5;141m' ;;
-    opencode) printf '\033[38;5;75m' ;;
+    opencode) printf '\033[38;5;250m' ;;
     *)        printf '\033[0;36m' ;;
   esac
 }
@@ -26,7 +26,7 @@ ai_tool_dim_color() {
     claude)   printf '\033[2;38;5;209m' ;;
     codex)    printf '\033[2;38;5;114m' ;;
     copilot)  printf '\033[2;38;5;141m' ;;
-    opencode) printf '\033[2;38;5;75m' ;;
+    opencode) printf '\033[2;38;5;244m' ;;
     *)        printf '\033[2;36m' ;;
   esac
 }
