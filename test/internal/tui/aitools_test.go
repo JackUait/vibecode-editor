@@ -3,8 +3,8 @@ package tui_test
 import (
 	"testing"
 
-	"github.com/yourusername/ghost-tab/internal/models"
-	"github.com/yourusername/ghost-tab/internal/tui"
+	"github.com/jackuait/ghost-tab/internal/models"
+	"github.com/jackuait/ghost-tab/internal/tui"
 )
 
 func TestNewAIToolSelector(t *testing.T) {

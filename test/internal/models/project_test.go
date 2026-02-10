@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yourusername/ghost-tab/internal/models"
+	"github.com/jackuait/ghost-tab/internal/models"
 )
 
 func TestLoadProjects(t *testing.T) {

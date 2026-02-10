@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/yourusername/ghost-tab/internal/util"
+	"github.com/jackuait/ghost-tab/internal/util"
 )
 
 func TestExpandPath(t *testing.T) {

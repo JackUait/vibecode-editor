@@ -3,7 +3,7 @@ package main
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
-	"github.com/yourusername/ghost-tab/internal/tui"
+	"github.com/jackuait/ghost-tab/internal/tui"
 )
 
 var showLogoCmd = &cobra.Command{

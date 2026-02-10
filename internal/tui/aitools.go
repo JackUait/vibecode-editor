@@ -3,7 +3,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/yourusername/ghost-tab/internal/models"
+	"github.com/jackuait/ghost-tab/internal/models"
 )
 
 type aiToolItem struct {
