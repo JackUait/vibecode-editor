@@ -61,3 +61,18 @@ setup() {
   assert [ "$_LOGO_HEIGHT" -eq 15 ]
   assert [ "$_LOGO_WIDTH" -eq 28 ]
 }
+
+@test "draw_zzz function exists" {
+  run type draw_zzz
+  assert_success
+}
+
+@test "clear_zzz function exists" {
+  run type clear_zzz
+  assert_success
+}
+
+@test "draw_logo_sleeping function exists" {
+  run type draw_logo_sleeping
+  assert_success
+}

@@ -294,6 +294,42 @@ clear_logo_area() {
   done
 }
 
+# draw_zzz row col
+#   Render "z Z Z" indicator above the ghost at the given position.
+#   Used to show the ghost is sleeping.
+draw_zzz() {
+  local row=$1 col=$2
+  moveto "$row" "$((col + _LOGO_WIDTH - 8))"
+  printf '%s' "${_DIM}z${_NC}"
+  moveto "$((row + 1))" "$((col + _LOGO_WIDTH - 6))"
+  printf '%s' "${_DIM}Z${_NC}"
+  moveto "$((row + 2))" "$((col + _LOGO_WIDTH - 4))"
+  printf "Z"
+}
+
+# clear_zzz row col
+#   Clear the "z Z Z" indicator area by overwriting with spaces.
+clear_zzz() {
+  local row=$1 col=$2
+  local i
+  for i in 0 1 2; do
+    moveto "$((row + i))" "$((col + _LOGO_WIDTH - 8))"
+    printf "          "
+  done
+}
+
+# draw_logo_sleeping row col tool_name
+#   Draw the sleeping variant of the ghost (closed eyes, dimmed).
+draw_logo_sleeping() {
+  local row=$1 col=$2 tool=$3 line
+  "logo_art_${tool}_sleeping"
+  for line in "${_LOGO_LINES[@]}"; do
+    moveto "$row" "$col"
+    printf '%b' "$line"
+    row=$((row + 1))
+  done
+}
+
 # Bob offsets following a sine-wave pattern (range 0–1 rows).
 # 14 entries: slow at extremes (ease), smooth gentle bob.
 # Max 1-row difference between consecutive entries.
