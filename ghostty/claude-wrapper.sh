@@ -158,6 +158,7 @@ elif [ -z "$1" ]; then
         _sub_row=$(( _top_row + 4 + _update_line + _add_idx * 2 + _sep_count + 1 ))
         read_path_autocomplete "$_sub_row" "$_content_col"
         _add_input="$_path_result"
+        _last_interaction=$SECONDS  # Reset timer after autocomplete interaction
 
         if [ -z "$_add_input" ]; then
           # Empty = cancel
@@ -200,6 +201,7 @@ elif [ -z "$1" ]; then
         _sub_row=$(( _top_row + 4 + _update_line + _open_idx * 2 + _sep_count + 1 ))
         read_path_autocomplete "$_sub_row" "$_content_col"
         _open_input="$_path_result"
+        _last_interaction=$SECONDS  # Reset timer after autocomplete interaction
 
         if [ -z "$_open_input" ]; then
           # Empty = cancel
@@ -281,7 +283,7 @@ elif [ -z "$1" ]; then
       fi
 
       _do_select=0
-      # Non-blocking read with 0.5s timeout to allow sleep checking
+      # Non-blocking read with 0.5s timeout (balances responsiveness and CPU usage)
       read -rsn1 -t 0.5 key || {
         # Check for sleep timeout when no input
         if [ "$_ghost_sleeping" -eq 0 ] && [ "$_LOGO_LAYOUT" != "hidden" ]; then
@@ -336,6 +338,7 @@ elif [ -z "$1" ]; then
         s|S)
           # Show settings menu (handles ghost display internally)
           show_settings_menu
+          _last_interaction=$SECONDS  # Reset timer after settings interaction
           # Clear screen and redraw everything when returning from settings
           printf '\033[2J\033[H'
           _redraw
