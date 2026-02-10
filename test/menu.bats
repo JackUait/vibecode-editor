@@ -1,227 +1,68 @@
 setup() {
   load 'test_helper/common'
   _common_setup
+
+  # Source the ACTUAL lib/menu.sh (not a copy!)
   source "$PROJECT_ROOT/lib/tui.sh"
   source "$PROJECT_ROOT/lib/ai-tools.sh"
   source "$PROJECT_ROOT/lib/logo-animation.sh"
+  source "$PROJECT_ROOT/lib/menu.sh"
 
   # Create temp directory for test data
   TEST_DIR="$(mktemp -d)"
 
-  # Create a helper to override draw_menu's terminal dimension reading
-  # This allows us to test with controlled dimensions
+  # Helper to mock terminal dimensions for draw_menu
+  # draw_menu() reads from /dev/tty using: read ... </dev/tty
+  # We override the read command to provide controlled dimensions
   _setup_test_draw_menu() {
     local test_rows="$1"
     local test_cols="$2"
 
-    # Source menu.sh but override the terminal read part
-    eval "$(sed -n '1,/^draw_menu/p' "$PROJECT_ROOT/lib/menu.sh" | head -n -1)"
+    # Store dimensions in global variables
+    MOCK_TTY_ROWS="$test_rows"
+    MOCK_TTY_COLS="$test_cols"
+    export MOCK_TTY_ROWS MOCK_TTY_COLS
 
-    draw_menu() {
-      local i r c
+    # Wrapper that sets up a mock for the tty read
+    _run_draw_menu_with_mocked_tty() {
+      # Override the read builtin for this subshell to inject fake dimensions
+      # The read in draw_menu expects: IFS='[;' read -rs -d R -p $'\033[6n' _ _rows _cols </dev/tty
+      # We simulate what /dev/tty would return
+      (
+        # Inject fake /dev/tty content by symlinking to a fifo
+        local fake_tty="$TEST_DIR/fake_tty_$$"
+        mkfifo "$fake_tty" 2>/dev/null || true
 
-      # Override terminal dimensions instead of reading from tty
-      _rows="${test_rows:-24}"
-      _cols="${test_cols:-80}"
+        # Send the response that the terminal would send
+        printf "\033[%d;%dR" "$MOCK_TTY_ROWS" "$MOCK_TTY_COLS" > "$fake_tty" &
 
-      # Continue with rest of draw_menu logic
-      _sep_count=0
-      [ "${#projects[@]}" -gt 0 ] && _sep_count=1
-      _update_line=0
-      [ -n "$_update_version" ] && _update_line=1
-      _menu_h=$(( 7 + _update_line + total * 2 + _sep_count ))
+        # Execute draw_menu in a context where /dev/tty is our pipe
+        # This is tricky - we use exec to replace /dev/tty's file descriptor
+        exec 9<"$fake_tty"
+        # Now call draw_menu but with fd 9 instead of /dev/tty
+        # Actually, this won't work directly. Let's use a different approach.
 
-      _top_row=$(( (_rows - _menu_h) / 2 ))
-      [ "$_top_row" -lt 1 ] && _top_row=1
-      _left_col=$(( (_cols - box_w) / 2 + 1 ))
-      [ "$_left_col" -lt 1 ] && _left_col=1
-      _content_col=$(( _left_col + 1 ))
+        # Alternative: Patch draw_menu temporarily to read from our pipe
+        # Save original draw_menu
+        declare -f draw_menu > "$TEST_DIR/orig_draw_menu_$$"
 
-      # Logo layout
-      "logo_art_${SELECTED_AI_TOOL}"
-      local _logo_need_side=$(( box_w + 3 + _LOGO_WIDTH + 3 ))
+        # Create patched version that reads from our fake tty
+        eval "$(declare -f draw_menu | sed 's|</dev/tty|<"$fake_tty"|')"
 
-      if [ "$_logo_need_side" -le "$_cols" ]; then
-        _LOGO_LAYOUT="side"
-        _logo_col=$(( _left_col + box_w + 3 ))
-        _logo_row=$(( _top_row + (_menu_h - _LOGO_HEIGHT) / 2 ))
-        [ "$_logo_row" -lt 1 ] && _logo_row=1
-        if [ $((_logo_row + _LOGO_HEIGHT + _BOB_MAX)) -gt "$_rows" ]; then
-          _logo_row=$((_rows - _LOGO_HEIGHT - _BOB_MAX))
-          [ "$_logo_row" -lt 1 ] && _logo_row=1
-        fi
-      elif [ "$_rows" -ge "$(( _menu_h + _LOGO_HEIGHT + _BOB_MAX + 1 ))" ]; then
-        _LOGO_LAYOUT="above"
-        _top_row=$(( (_rows - _menu_h - _LOGO_HEIGHT - 1) / 2 + _LOGO_HEIGHT + 1 ))
-        [ "$_top_row" -lt $(( _LOGO_HEIGHT + 2 )) ] && _top_row=$(( _LOGO_HEIGHT + 2 ))
-        _logo_row=$(( _top_row - _LOGO_HEIGHT - 1 ))
-        [ "$_logo_row" -lt 1 ] && _logo_row=1
-        _logo_col=$(( (_cols - _LOGO_WIDTH) / 2 + 1 ))
-        _left_col=$(( (_cols - box_w) / 2 + 1 ))
-        [ "$_left_col" -lt 1 ] && _left_col=1
-        _content_col=$(( _left_col + 1 ))
-      else
-        _LOGO_LAYOUT="hidden"
-      fi
+        # Call the patched function
+        draw_menu
 
-      c="$_left_col"
-      r="$_top_row"
-
-      # Precompute border colors and horizontal line
-      local _bdr_clr _acc_clr _bright_clr _inner_w _right_col _hline
-      _bdr_clr="$(ai_tool_dim_color "$SELECTED_AI_TOOL")"
-      _acc_clr="$(ai_tool_color "$SELECTED_AI_TOOL")"
-      _bright_clr="$(ai_tool_bright_color "$SELECTED_AI_TOOL")"
-      _inner_w=$(( box_w - 2 ))
-      _right_col=$(( c + box_w - 1 ))
-      printf -v _hline '%*s' "$_inner_w" ""
-      _hline="${_hline// /─}"
-
-      # Helper: print right border at fixed column and clear rest of line
-      _rbdr() { moveto "$1" "$_right_col"; printf "${_bdr_clr}│${_NC}\033[K"; }
-
-      # Top border
-      moveto "$r" "$c"
-      printf "${_bdr_clr}┌%s┐${_NC}\033[K" "$_hline"
-      r=$((r+1))
-
-      # Title row
-      local _title_w=13 _layout_w=$(( _inner_w - 2 ))
-      moveto "$r" "$c"
-      printf "${_bdr_clr}│${_NC}\033[K"
-      if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
-        local _ai_name
-        _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
-        local _pad=$(( _layout_w - _title_w - ${#_ai_name} - 4 ))
-        [ "$_pad" -lt 2 ] && _pad=2
-        local _ai_clr
-        _ai_clr="$(ai_tool_color "$SELECTED_AI_TOOL")"
-        printf " ${_BOLD}${_acc_clr}⬡  Ghost Tab${_NC}%*s${_DIM}◂${_NC} ${_ai_clr}%s${_NC} ${_DIM}▸${_NC} " \
-          "$_pad" "" "$_ai_name"
-      elif [ ${#AI_TOOLS_AVAILABLE[@]} -eq 1 ]; then
-        local _ai_name
-        _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
-        local _pad=$(( _layout_w - _title_w - ${#_ai_name} ))
-        [ "$_pad" -lt 2 ] && _pad=2
-        local _ai_clr
-        _ai_clr="$(ai_tool_color "$SELECTED_AI_TOOL")"
-        printf " ${_BOLD}${_acc_clr}⬡  Ghost Tab${_NC}%*s${_ai_clr}%s${_NC} " \
-          "$_pad" "" "$_ai_name"
-      else
-        printf " ${_BOLD}${_acc_clr}⬡  Ghost Tab${_NC}"
-      fi
-      _rbdr "$r"
-      r=$((r+1))
-
-      # Update notification
-      if [ -n "$_update_version" ]; then
-        moveto "$r" "$c"
-        printf "${_bdr_clr}│${_NC}\033[K  ${_YELLOW}Update available: v${_update_version}${_NC} ${_DIM}(brew upgrade ghost-tab)${_NC}"
-        _rbdr "$r"
-        r=$((r+1))
-      fi
-
-      # Separator after title
-      moveto "$r" "$c"
-      printf "${_bdr_clr}├%s┤${_NC}\033[K" "$_hline"
-      r=$((r+1))
-
-      # Blank row
-      moveto "$r" "$c"
-      printf "${_bdr_clr}│${_NC}\033[K"
-      _rbdr "$r"
-      r=$((r+1))
-
-      # Menu items
-      local _max_label=$(( _inner_w - 8 ))
-      _item_rows=()
-      for i in $(seq 0 $((total - 1))); do
-        # Separator before action items
-        if [ "$i" -eq "${#projects[@]}" ] && [ "${#projects[@]}" -gt 0 ]; then
-          moveto "$r" "$c"
-          printf "${_bdr_clr}├%s┤${_NC}\033[K" "$_hline"
-          r=$((r+1))
-        fi
-
-        # Truncate label if needed
-        local _label="${menu_labels[$i]}"
-        if [ "${#_label}" -gt "$_max_label" ]; then
-          _label="${_label:0:$((_max_label-1))}…"
-        fi
-
-        _item_rows+=("$r")
-        moveto "$r" "$c"
-        printf "${_bdr_clr}│${_NC}\033[K"
-        if [ "$i" -eq "$selected" ]; then
-          if [ "$i" -lt "${#projects[@]}" ]; then
-            printf "  ${_acc_clr}▎${_NC} ${_DIM}%d${_NC}  ${_bright_clr}${_BOLD}%s${_NC}" "$((i+1))" "$_label"
-          else
-            local _ai=$(( i - ${#projects[@]} ))
-            printf " ${_action_bar[$_ai]}▎${_NC}${menu_hi[$i]}${_BOLD} %s  %s ${_NC}" "${_action_hints[$_ai]}" "$_label"
-          fi
-        else
-          if [ "$i" -lt "${#projects[@]}" ]; then
-            printf "    ${_DIM}%d${_NC}  %s" "$((i+1))" "$_label"
-          else
-            printf "    ${_DIM}%s${_NC}  %s" "${_action_hints[$((i - ${#projects[@]}))]}" "$_label"
-          fi
-        fi
-        _rbdr "$r"
-        r=$((r+1))
-
-        # Subtitle line
-        moveto "$r" "$c"
-        printf "${_bdr_clr}│${_NC}\033[K"
-        if [ -n "${menu_subs[$i]}" ]; then
-          local _sub="${menu_subs[$i]}"
-          local _max_sub=$(( _inner_w - 7 ))
-          if [ "${#_sub}" -gt "$_max_sub" ]; then
-            local _half=$(( (_max_sub - 3) / 2 ))
-            _sub="${_sub:0:$_half}...${_sub: -$_half}"
-          fi
-          if [ "$i" -eq "$selected" ]; then
-            printf "      ${_acc_clr}%s${_NC}" "$_sub"
-          else
-            printf "      ${_DIM}%s${_NC}" "$_sub"
-          fi
-        fi
-        _rbdr "$r"
-        r=$((r+1))
-      done
-
-      # Separator before help
-      moveto "$r" "$c"
-      printf "${_bdr_clr}├%s┤${_NC}\033[K" "$_hline"
-      r=$((r+1))
-
-      # Help row
-      moveto "$r" "$c"
-      printf "${_bdr_clr}│${_NC}\033[K"
-      if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
-        printf " ${_DIM}↑↓${_NC} navigate ${_DIM}←→${_NC} AI tool ${_DIM}S${_NC} settings ${_DIM}⏎${_NC} select "
-      else
-        printf " ${_DIM}↑↓${_NC} navigate ${_DIM}S${_NC} settings ${_DIM}⏎${_NC} select "
-      fi
-      _rbdr "$r"
-      r=$((r+1))
-
-      # Bottom border
-      moveto "$r" "$c"
-      printf "${_bdr_clr}└%s┘${_NC}\033[K" "$_hline"
-
-      # Logo
-      if [ "$_LOGO_LAYOUT" != "hidden" ]; then
-        local ghost_display=$(get_ghost_display_setting)
-        [ "$ghost_display" != "none" ] && draw_logo "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
-      fi
+        # Restore original
+        rm -f "$fake_tty"
+      )
     }
 
-    export -f draw_menu
+    export -f _run_draw_menu_with_mocked_tty
   }
 
-  # Mock draw_logo to capture logo rendering
+  # Mock draw_logo to avoid complex logo rendering
   draw_logo() {
-    echo "LOGO_RENDERED:row=$1:col=$2:tool=$3"
+    echo "LOGO:$1:$2:$3"
   }
   export -f draw_logo
 
@@ -239,12 +80,10 @@ teardown() {
 # --- draw_menu: function exists ---
 
 @test "draw_menu: function is defined" {
-  source "$PROJECT_ROOT/lib/menu.sh"
   declare -f draw_menu >/dev/null
 }
 
 @test "draw_menu: function is callable (type -t)" {
-  source "$PROJECT_ROOT/lib/menu.sh"
   [ "$(type -t draw_menu)" = "function" ]
 }
 
@@ -253,9 +92,6 @@ teardown() {
 @test "draw_menu: _rbdr function definition is correct" {
   # Bug fix verification: _rbdr() should position first, then print border+clear
   # NOT clear first then position (which would clear content at wrong location)
-  source "$PROJECT_ROOT/lib/tui.sh"
-  source "$PROJECT_ROOT/lib/ai-tools.sh"
-  source "$PROJECT_ROOT/lib/menu.sh"
 
   # Check that the source code has the fix
   rbdr_def=$(grep -A0 "_rbdr()" "$PROJECT_ROOT/lib/menu.sh")
@@ -319,7 +155,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Verify menu is rendered properly for wide terminal
@@ -344,7 +180,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Verify menu is rendered properly for medium terminal
@@ -369,7 +205,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Verify menu is still rendered even in small terminal
@@ -396,7 +232,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "+ Add project"
@@ -419,7 +255,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "myapp"
@@ -449,7 +285,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "app1"
@@ -478,7 +314,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should contain truncation character
@@ -504,7 +340,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should contain middle ellipsis truncation
@@ -531,7 +367,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should contain Claude Code display name
@@ -556,7 +392,7 @@ teardown() {
   SELECTED_AI_TOOL="codex"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "Codex CLI"
@@ -580,7 +416,7 @@ teardown() {
   SELECTED_AI_TOOL="copilot"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "Copilot CLI"
@@ -604,7 +440,7 @@ teardown() {
   SELECTED_AI_TOOL="opencode"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "OpenCode"
@@ -628,7 +464,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should show arrow indicators for cycling
@@ -652,7 +488,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should NOT show cycling arrows
@@ -678,7 +514,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "+ Add project"
@@ -701,7 +537,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "⚙ Settings"
@@ -724,7 +560,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version="1.2.3"
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "Update available: v1.2.3"
@@ -747,7 +583,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   refute_output --partial "Update available"
@@ -771,7 +607,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should contain box drawing characters
@@ -801,7 +637,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should have separator (├──┤) between projects and actions
@@ -827,7 +663,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should still render menu even in narrow terminal
@@ -851,7 +687,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should render menu properly in very wide terminal
@@ -876,7 +712,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "app-name"
@@ -900,7 +736,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   # Should render without crashing
@@ -925,7 +761,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "↑↓"
@@ -950,7 +786,7 @@ teardown() {
   SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  run draw_menu
+  run _run_draw_menu_with_mocked_tty
 
   assert_success
   assert_output --partial "←→"

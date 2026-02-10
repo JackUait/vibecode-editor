@@ -2,6 +2,9 @@
 # Menu drawing — project selection screen.
 # Depends on: tui.sh, ai-tools.sh, and caller globals (projects, menu_*, selected, etc.)
 
+# shellcheck disable=SC2154  # External variables from caller: projects, total, box_w, selected, menu_labels, menu_subs, menu_hi, _action_bar, _action_hints, AI_TOOLS_AVAILABLE, SELECTED_AI_TOOL, _update_version
+# shellcheck disable=SC2059   # Printf with variables is intentional for ANSI color codes
+
 draw_menu() {
   local i r c
 
@@ -201,7 +204,8 @@ draw_menu() {
 
   # ── Logo ──
   if [ "$_LOGO_LAYOUT" != "hidden" ]; then
-    local ghost_display=$(get_ghost_display_setting)
+    local ghost_display
+    ghost_display=$(get_ghost_display_setting)
     # Only draw static ghost if not set to "none"
     [ "$ghost_display" != "none" ] && draw_logo "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
   fi
