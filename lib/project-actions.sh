@@ -13,16 +13,28 @@ validate_new_project() {
   expanded="$(cd "$expanded" 2>/dev/null && pwd)" || expanded="${input/#\~/$HOME}"
   expanded="${expanded%/}"
 
+  # Resolve symlinks in the final path component only
+  # If the path is a symlink, follow it; otherwise use the path as-is
+  if [ -L "$expanded" ]; then
+    expanded="$(readlink "$expanded")"
+    expanded="${expanded%/}"
+  fi
+
   _validated_path="$expanded"
   _validated_name="$(basename "$expanded")"
 
-  # Check for duplicates
+  # Check for duplicates (resolve symlinks in existing paths too)
   if [ -f "$projects_file" ]; then
     local line proj_path
     while IFS= read -r line; do
       [[ -z "$line" || "$line" == \#* ]] && continue
       proj_path="${line#*:}"
       proj_path="${proj_path%/}"
+      # Resolve symlinks in the existing project path
+      if [ -L "$proj_path" ]; then
+        proj_path="$(readlink "$proj_path")"
+        proj_path="${proj_path%/}"
+      fi
       if [[ "$proj_path" == "$expanded" ]]; then
         return 1
       fi
