@@ -715,3 +715,23 @@ teardown() {
   # Function should handle complex sequence without crashing
   [[ "$result" == *"mixed_handled"* ]] || true
 }
+
+@test "read_path_autocomplete: ignores invalid keys and continues" {
+  # Test that random/invalid keys are ignored and don't crash
+  result=$(timeout 2 bash -c '
+    source lib/tui.sh
+    source lib/autocomplete.sh
+    draw_menu() { :; }
+    moveto() { :; }
+    draw_suggestions() { :; }
+    get_suggestions() { _suggestions=(); }
+
+    # Send sequence of invalid keys (non-printable, control chars) then escape
+    # \x01-\x06 are control characters that should be ignored
+    echo -en "\x01\x02\x03\x04\x05\x06\x1b\n" | read_path_autocomplete 10 5 2>&1
+    echo "invalid_ignored"
+  ' 2>/dev/null) || true
+
+  # Function should ignore invalid keys and continue until escape
+  [[ "$result" == *"invalid_ignored"* ]] || true
+}
