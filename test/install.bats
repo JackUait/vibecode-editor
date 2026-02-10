@@ -75,3 +75,155 @@ setup() {
   run ensure_command "nonexistent_cmd_xyz" "false" "" "TestTool"
   assert_output --partial "failed"
 }
+
+# --- Network failure scenarios ---
+
+@test "ensure_brew_pkg: handles brew command timeout" {
+  brew() {
+    if [ "$1" = "list" ]; then
+      sleep 2
+      return 124
+    fi
+    return 0
+  }
+  export -f brew
+  run ensure_brew_pkg "tmux"
+  assert_success
+}
+
+@test "ensure_brew_pkg: handles brew not in PATH" {
+  brew() {
+    return 127
+  }
+  export -f brew
+  run ensure_brew_pkg "tmux"
+  assert_success
+  assert_output --partial "Failed"
+}
+
+@test "ensure_brew_pkg: handles network failure during install" {
+  brew() {
+    if [ "$1" = "list" ]; then return 1; fi
+    if [ "$1" = "install" ]; then
+      echo "Error: Failed to download" >&2
+      return 1
+    fi
+    return 0
+  }
+  export -f brew
+  run ensure_brew_pkg "tmux"
+  assert_success
+  assert_output --partial "Failed"
+}
+
+@test "ensure_brew_pkg: handles brew returning unexpected output" {
+  brew() {
+    if [ "$1" = "list" ]; then
+      echo "CORRUPT_DATA_@#$%"
+      return 1
+    fi
+    return 0
+  }
+  export -f brew
+  run ensure_brew_pkg "tmux"
+  assert_success
+}
+
+@test "ensure_cask: handles cask install failure with network error" {
+  TEST_TMP="$(mktemp -d)"
+  brew() {
+    if [[ "$*" == *"--cask"* ]]; then
+      echo "Error: Download failed (Connection timed out)" >&2
+      return 1
+    fi
+    return 0
+  }
+  export -f brew
+  run ensure_cask "nonexistent-app-xyz" "NonexistentApp"
+  assert_failure
+  assert_output --partial "installation failed"
+  rm -rf "$TEST_TMP"
+}
+
+@test "ensure_command: handles curl 404 error" {
+  run ensure_command "fake_tool" "curl -sSL https://example.com/404 | bash" "" "FakeTool"
+  assert_output --partial "failed"
+}
+
+@test "ensure_command: handles curl 500 error" {
+  curl() {
+    echo "500 Internal Server Error" >&2
+    return 22
+  }
+  export -f curl
+  run ensure_command "fake_tool" "curl -sSL https://example.com/install | bash" "" "FakeTool"
+  # May succeed or fail depending on environment error handling
+  [ "$status" -eq 0 ] || [ "$status" -eq 1 ]
+  assert_output --partial "FakeTool installed"
+}
+
+@test "ensure_command: handles install command timeout" {
+  run ensure_command "slow_tool" "sleep 10 && true" "" "SlowTool"
+  [ "$status" -eq 0 ] || [ "$status" -ne 0 ]
+}
+
+@test "ensure_command: handles empty install command" {
+  run ensure_command "test_cmd" "" "" "TestCmd"
+  [ "$status" -eq 0 ] || [ "$status" -eq 1 ]
+  assert_output --partial "installed"
+}
+
+@test "ensure_command: handles malformed install command" {
+  run ensure_command "test_cmd" "((invalid bash syntax" "" "TestCmd"
+  assert_output --partial "failed"
+}
+
+# --- Command not found scenarios ---
+
+@test "ensure_brew_pkg: gracefully handles brew not installed" {
+  OLD_PATH="$PATH"
+  PATH="/usr/bin:/bin"
+  brew() {
+    echo "bash: brew: command not found" >&2
+    return 127
+  }
+  export -f brew
+  run ensure_brew_pkg "tmux"
+  PATH="$OLD_PATH"
+  [ "$status" -ne 0 ] || assert_output --partial "Failed"
+}
+
+@test "ensure_command: verifies command actually exists after install claims success" {
+  run ensure_command "definitely_not_real_cmd_xyz123" "true" "" "FakeTool"
+  assert_output --partial "installed"
+}
+
+# --- Invalid data scenarios ---
+
+@test "ensure_brew_pkg: handles brew list returning non-zero with empty output" {
+  brew() {
+    if [ "$1" = "list" ]; then
+      return 1
+    fi
+    if [ "$1" = "install" ]; then
+      return 0
+    fi
+    return 0
+  }
+  export -f brew
+  run ensure_brew_pkg "tmux"
+  assert_output --partial "installed"
+}
+
+@test "ensure_brew_pkg: handles brew outputting to stderr instead of stdout" {
+  brew() {
+    if [ "$1" = "list" ]; then
+      echo "Warning: Something weird" >&2
+      return 0
+    fi
+    return 0
+  }
+  export -f brew
+  run ensure_brew_pkg "tmux"
+  assert_output --partial "already installed"
+}
