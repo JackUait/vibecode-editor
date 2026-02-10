@@ -1,1 +1,6 @@
 docs/plans/
+
+# Go artifacts
+bin/ghost-tab-tui
+*.test
+*.out
