@@ -227,3 +227,19 @@ setup() {
   run ensure_brew_pkg "tmux"
   assert_output --partial "already installed"
 }
+
+# --- ensure_base_requirements ---
+
+@test "jq is in PATH after ensure_base_requirements" {
+  # Mock ensure_command to just echo
+  ensure_command() {
+    echo "Checking $1"
+  }
+
+  source "$BATS_TEST_DIRNAME/../lib/install.sh"
+
+  run ensure_base_requirements
+
+  assert_success
+  assert_output --partial "jq"
+}

@@ -1,6 +1,13 @@
 #!/bin/bash
 # Package installation helpers for the installer.
 
+# Install base requirements (tmux, jq, ghostty).
+ensure_base_requirements() {
+  ensure_command "tmux" "brew install tmux" "" "tmux"
+  ensure_command "jq" "brew install jq" "" "jq"
+  ensure_command "ghostty" "brew install --cask ghostty" "" "Ghostty"
+}
+
 # Install a Homebrew formula if not already present.
 ensure_brew_pkg() {
   local pkg="$1"
