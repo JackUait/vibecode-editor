@@ -26,7 +26,7 @@ get_suggestions() {
     name="$(basename "$item")"
     [ -d "$item" ] && name="${name}/"
     _suggestions+=("$name")
-  done < <(find "$dir" -maxdepth 1 -iname "${base}*" 2>/dev/null | sort -f | head -8)
+  done < <(find "$dir" -mindepth 1 -maxdepth 1 -iname "${base}*" 2>/dev/null | sort -f | head -8)
 }
 
 # Draw autocomplete suggestions box below the input field.
