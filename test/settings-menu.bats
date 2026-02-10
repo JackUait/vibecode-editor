@@ -176,9 +176,12 @@ EOF
   set_animation_setting "on"
 
   # Should not have spaces around =
-  ! grep -q " = " "$SETTINGS_FILE"
-  ! grep -q "= " "$SETTINGS_FILE"
-  ! grep -q " =" "$SETTINGS_FILE"
+  run grep " = " "$SETTINGS_FILE"
+  assert_failure
+  run grep "= " "$SETTINGS_FILE"
+  assert_failure
+  run grep " =" "$SETTINGS_FILE"
+  assert_failure
 }
 
 # --- draw_settings_screen tests ---

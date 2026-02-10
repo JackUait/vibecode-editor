@@ -199,7 +199,7 @@ teardown() {
 
 @test "get_suggestions: limits results to 8 items" {
   for i in $(seq 1 15); do
-    mkdir -p "$TEST_TMP/many/item$(printf '%02d' $i)"
+    mkdir -p "$TEST_TMP/many/item$(printf '%02d' "$i")"
   done
   get_suggestions "$TEST_TMP/many/"
   [ "${#_suggestions[@]}" -le 8 ]
@@ -304,7 +304,7 @@ teardown() {
   # Tilde not at start should be treated literally
   get_suggestions "$TEST_TMP/foo/~"
   # Should handle without expanding the second tilde
-  [ -n "${_suggestions[@]}" ] || true
+  [ "${#_suggestions[@]}" -gt 0 ] || true
 }
 
 @test "get_suggestions: handles circular symlinks" {
@@ -676,7 +676,8 @@ teardown() {
 
 @test "read_path_autocomplete: handles very long input (50+ chars)" {
   # Test with very long path (60 characters)
-  local long_path="/$(printf 'a%.0s' {1..60})"
+  local long_path
+  long_path="/$(printf 'a%.0s' {1..60})"
 
   result=$(timeout 2 bash -c '
     source lib/tui.sh
