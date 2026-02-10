@@ -58,6 +58,33 @@ setup() {
   [[ "$result" == $'\033[0;36m' ]]
 }
 
+# --- ai_tool_bright_color ---
+
+@test "ai_tool_bright_color: claude returns orange ANSI" {
+  result="$(ai_tool_bright_color "claude")"
+  [[ "$result" == $'\033[38;5;209m' ]]
+}
+
+@test "ai_tool_bright_color: codex returns green ANSI" {
+  result="$(ai_tool_bright_color "codex")"
+  [[ "$result" == $'\033[38;5;114m' ]]
+}
+
+@test "ai_tool_bright_color: copilot returns purple ANSI" {
+  result="$(ai_tool_bright_color "copilot")"
+  [[ "$result" == $'\033[38;5;141m' ]]
+}
+
+@test "ai_tool_bright_color: opencode returns bold white ANSI" {
+  result="$(ai_tool_bright_color "opencode")"
+  [[ "$result" == $'\033[1;38;5;255m' ]]
+}
+
+@test "ai_tool_bright_color: unknown returns bold white" {
+  result="$(ai_tool_bright_color "vim")"
+  [[ "$result" == $'\033[1;37m' ]]
+}
+
 # --- cycle_ai_tool ---
 
 @test "cycle_ai_tool: next wraps from last to first" {

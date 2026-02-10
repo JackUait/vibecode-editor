@@ -58,9 +58,10 @@ draw_menu() {
   r="$_top_row"
 
   # Precompute border colors and horizontal line
-  local _bdr_clr _acc_clr _inner_w _right_col _hline
+  local _bdr_clr _acc_clr _bright_clr _inner_w _right_col _hline
   _bdr_clr="$(ai_tool_dim_color "$SELECTED_AI_TOOL")"
   _acc_clr="$(ai_tool_color "$SELECTED_AI_TOOL")"
+  _bright_clr="$(ai_tool_bright_color "$SELECTED_AI_TOOL")"
   _inner_w=$(( box_w - 2 ))
   _right_col=$(( c + box_w - 1 ))
   printf -v _hline '%*s' "$_inner_w" ""
@@ -143,7 +144,7 @@ draw_menu() {
     printf "${_bdr_clr}│${_NC}\033[K"
     if [ "$i" -eq "$selected" ]; then
       if [ "$i" -lt "${#projects[@]}" ]; then
-        printf "  ${_acc_clr}▎${_NC} ${_DIM}%d${_NC}  ${_acc_clr}${_BOLD}%s${_NC}" "$((i+1))" "$_label"
+        printf "  ${_acc_clr}▎${_NC} ${_DIM}%d${_NC}  ${_bright_clr}${_BOLD}%s${_NC}" "$((i+1))" "$_label"
       else
         local _ai=$(( i - ${#projects[@]} ))
         printf " ${_action_bar[$_ai]}▎${_NC}${menu_hi[$i]}${_BOLD} %s  %s ${_NC}" "${_action_hints[$_ai]}" "$_label"
@@ -187,9 +188,9 @@ draw_menu() {
   moveto "$r" "$c"
   printf "${_bdr_clr}│${_NC}\033[K"
   if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
-    printf "  ${_DIM}↑↓${_NC} navigate ${_DIM}←→${_NC} AI tool ${_DIM}S${_NC} settings ${_DIM}⏎${_NC} select"
+    printf " ${_DIM}↑↓${_NC} navigate ${_DIM}←→${_NC} AI tool ${_DIM}S${_NC} settings ${_DIM}⏎${_NC} select "
   else
-    printf "  ${_DIM}↑↓${_NC} navigate ${_DIM}S${_NC} settings ${_DIM}⏎${_NC} select"
+    printf " ${_DIM}↑↓${_NC} navigate ${_DIM}S${_NC} settings ${_DIM}⏎${_NC} select "
   fi
   _rbdr "$r"
   r=$((r+1))
