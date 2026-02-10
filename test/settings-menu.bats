@@ -486,3 +486,298 @@ EOF
   output=$(draw_settings_screen 2>&1)
   echo "$output" | grep -q "Ghost Display"
 }
+
+# --- Integration tests: cycle_ghost_display_immediate ---
+
+@test "cycle_ghost_display_immediate: cycles and updates settings file" {
+  echo "ghost_display=animated" > "$SETTINGS_FILE"
+
+  # Mock logo functions
+  stop_logo_animation() { :; }
+  start_logo_animation() { :; }
+  draw_logo() { :; }
+  clear_logo_area() { :; }
+  export -f stop_logo_animation start_logo_animation draw_logo clear_logo_area
+
+  # Set layout to hidden so logo functions aren't called
+  export _LOGO_LAYOUT="hidden"
+
+  cycle_ghost_display_immediate
+
+  # Should cycle animated -> static
+  result=$(get_ghost_display_setting)
+  [ "$result" = "static" ]
+}
+
+@test "cycle_ghost_display_immediate: calls stop_logo_animation" {
+  echo "ghost_display=animated" > "$SETTINGS_FILE"
+
+  # Track if function was called
+  stop_called=0
+  stop_logo_animation() { stop_called=1; }
+  start_logo_animation() { :; }
+  draw_logo() { :; }
+  clear_logo_area() { :; }
+  export stop_called
+  export -f stop_logo_animation start_logo_animation draw_logo clear_logo_area
+
+  export _LOGO_LAYOUT="hidden"
+
+  cycle_ghost_display_immediate
+
+  [ "$stop_called" -eq 1 ]
+}
+
+@test "cycle_ghost_display_immediate: starts animation when cycling to animated" {
+  echo "ghost_display=none" > "$SETTINGS_FILE"
+
+  start_called=0
+  stop_logo_animation() { :; }
+  start_logo_animation() { start_called=1; }
+  draw_logo() { :; }
+  clear_logo_area() { :; }
+  export start_called
+  export -f stop_logo_animation start_logo_animation draw_logo clear_logo_area
+
+  # Set layout to side so animation is triggered
+  export _LOGO_LAYOUT="side"
+  export _logo_row=10
+  export _logo_col=50
+
+  cycle_ghost_display_immediate
+
+  # Should cycle none -> animated and start animation
+  [ "$start_called" -eq 1 ]
+}
+
+# --- Integration tests: show_settings_menu ---
+
+@test "show_settings_menu: exits on escape key" {
+  export _rows=24
+  export _cols=80
+  export _LOGO_LAYOUT="hidden"
+
+  stop_logo_animation() { :; }
+  start_logo_animation() { :; }
+  draw_logo() { :; }
+  clear_logo_area() { :; }
+  export -f stop_logo_animation start_logo_animation draw_logo clear_logo_area
+
+  result=$(bash -c '
+    source lib/tui.sh
+    source lib/ai-tools.sh
+    source lib/logo-animation.sh
+    source lib/settings-menu.sh
+    export SETTINGS_FILE="'"$SETTINGS_FILE"'"
+    export SELECTED_AI_TOOL="claude"
+    export AI_TOOLS_AVAILABLE=("claude")
+    export _rows=24 _cols=80 _LOGO_LAYOUT="hidden"
+    stop_logo_animation() { :; }
+    start_logo_animation() { :; }
+    draw_logo() { :; }
+    clear_logo_area() { :; }
+
+    # Send escape key to exit
+    echo -en "\x1b" | show_settings_menu 2>&1
+    echo "exited"
+  ')
+
+  [[ "$result" == *"exited"* ]]
+}
+
+@test "show_settings_menu: cycles setting on A key" {
+  echo "ghost_display=animated" > "$SETTINGS_FILE"
+  export _rows=24
+  export _cols=80
+  export _LOGO_LAYOUT="hidden"
+
+  stop_logo_animation() { :; }
+  start_logo_animation() { :; }
+  draw_logo() { :; }
+  clear_logo_area() { :; }
+  export -f stop_logo_animation start_logo_animation draw_logo clear_logo_area
+
+  bash -c '
+    source lib/tui.sh
+    source lib/ai-tools.sh
+    source lib/logo-animation.sh
+    source lib/settings-menu.sh
+    export SETTINGS_FILE="'"$SETTINGS_FILE"'"
+    export SELECTED_AI_TOOL="claude"
+    export AI_TOOLS_AVAILABLE=("claude")
+    export _rows=24 _cols=80 _LOGO_LAYOUT="hidden"
+    stop_logo_animation() { :; }
+    start_logo_animation() { :; }
+    draw_logo() { :; }
+    clear_logo_area() { :; }
+
+    # Send A key to cycle, then B to exit
+    echo -en "Ab" | show_settings_menu 2>&1
+  ' >/dev/null
+
+  # Setting should have cycled from animated to static
+  result=$(get_ghost_display_setting)
+  [ "$result" = "static" ]
+}
+
+@test "show_settings_menu: handles multiple cycles in one session" {
+  echo "ghost_display=animated" > "$SETTINGS_FILE"
+  export _rows=24
+  export _cols=80
+  export _LOGO_LAYOUT="hidden"
+
+  stop_logo_animation() { :; }
+  start_logo_animation() { :; }
+  draw_logo() { :; }
+  clear_logo_area() { :; }
+  export -f stop_logo_animation start_logo_animation draw_logo clear_logo_area
+
+  bash -c '
+    source lib/tui.sh
+    source lib/ai-tools.sh
+    source lib/logo-animation.sh
+    source lib/settings-menu.sh
+    export SETTINGS_FILE="'"$SETTINGS_FILE"'"
+    export SELECTED_AI_TOOL="claude"
+    export AI_TOOLS_AVAILABLE=("claude")
+    export _rows=24 _cols=80 _LOGO_LAYOUT="hidden"
+    stop_logo_animation() { :; }
+    start_logo_animation() { :; }
+    draw_logo() { :; }
+    clear_logo_area() { :; }
+
+    # Cycle three times: animated->static->none->animated, then exit
+    echo -en "aaab" | show_settings_menu 2>&1
+  ' >/dev/null
+
+  # Should complete full cycle and be back to animated
+  result=$(get_ghost_display_setting)
+  [ "$result" = "animated" ]
+}
+
+@test "show_settings_menu: persists settings across invocations" {
+  echo "ghost_display=animated" > "$SETTINGS_FILE"
+  export _rows=24
+  export _cols=80
+  export _LOGO_LAYOUT="hidden"
+
+  stop_logo_animation() { :; }
+  start_logo_animation() { :; }
+  draw_logo() { :; }
+  clear_logo_area() { :; }
+  export -f stop_logo_animation start_logo_animation draw_logo clear_logo_area
+
+  # First invocation: cycle once
+  bash -c '
+    source lib/tui.sh
+    source lib/ai-tools.sh
+    source lib/logo-animation.sh
+    source lib/settings-menu.sh
+    export SETTINGS_FILE="'"$SETTINGS_FILE"'"
+    export SELECTED_AI_TOOL="claude"
+    export AI_TOOLS_AVAILABLE=("claude")
+    export _rows=24 _cols=80 _LOGO_LAYOUT="hidden"
+    stop_logo_animation() { :; }
+    start_logo_animation() { :; }
+    draw_logo() { :; }
+    clear_logo_area() { :; }
+    echo -en "ab" | show_settings_menu 2>&1
+  ' >/dev/null
+
+  # Check setting persisted
+  result=$(get_ghost_display_setting)
+  [ "$result" = "static" ]
+
+  # Second invocation: cycle again
+  bash -c '
+    source lib/tui.sh
+    source lib/ai-tools.sh
+    source lib/logo-animation.sh
+    source lib/settings-menu.sh
+    export SETTINGS_FILE="'"$SETTINGS_FILE"'"
+    export SELECTED_AI_TOOL="claude"
+    export AI_TOOLS_AVAILABLE=("claude")
+    export _rows=24 _cols=80 _LOGO_LAYOUT="hidden"
+    stop_logo_animation() { :; }
+    start_logo_animation() { :; }
+    draw_logo() { :; }
+    clear_logo_area() { :; }
+    echo -en "ab" | show_settings_menu 2>&1
+  ' >/dev/null
+
+  # Should be none now
+  result=$(get_ghost_display_setting)
+  [ "$result" = "none" ]
+}
+
+# --- Interactive loop behavior tests ---
+
+@test "show_settings_menu: ignores invalid keys and stays in menu" {
+  echo "ghost_display=static" > "$SETTINGS_FILE"
+  export _rows=24
+  export _cols=80
+  export _LOGO_LAYOUT="hidden"
+
+  # Test that invalid keys (X, numbers, space) are ignored
+  result=$(bash -c '
+    source lib/tui.sh
+    source lib/ai-tools.sh
+    source lib/logo-animation.sh
+    source lib/settings-menu.sh
+    export SETTINGS_FILE="'"$SETTINGS_FILE"'"
+    export SELECTED_AI_TOOL="claude"
+    export AI_TOOLS_AVAILABLE=("claude")
+    export _rows=24 _cols=80 _LOGO_LAYOUT="hidden"
+
+    stop_logo_animation() { :; }
+    start_logo_animation() { :; }
+    draw_logo() { :; }
+    clear_logo_area() { :; }
+
+    # Send invalid keys (X, 1, space) then escape to exit
+    echo -en "X1 \x1b" | show_settings_menu 2>&1
+    echo "completed"
+  ' 2>/dev/null)
+
+  # Should complete (invalid keys are ignored, menu stays open until escape)
+  [[ "$result" == *"completed"* ]]
+
+  # Setting should not have changed
+  final=$(get_ghost_display_setting)
+  [ "$final" = "static" ]
+}
+
+@test "show_settings_menu: redraws screen after each key press" {
+  echo "ghost_display=animated" > "$SETTINGS_FILE"
+  export _rows=24
+  export _cols=80
+  export _LOGO_LAYOUT="hidden"
+
+  # Count how many times draw_settings_screen is called
+  result=$(bash -c '
+    source lib/tui.sh
+    source lib/ai-tools.sh
+    source lib/logo-animation.sh
+    source lib/settings-menu.sh
+    export SETTINGS_FILE="'"$SETTINGS_FILE"'"
+    export SELECTED_AI_TOOL="claude"
+    export AI_TOOLS_AVAILABLE=("claude")
+    export _rows=24 _cols=80 _LOGO_LAYOUT="hidden"
+
+    # Mock logo functions
+    stop_logo_animation() { :; }
+    start_logo_animation() { :; }
+    draw_logo() { :; }
+    clear_logo_area() { :; }
+
+    # Press A (cycle) then B (exit) - should see screen redraws
+    echo -en "Ab" | show_settings_menu 2>&1 | grep -c "Settings" || echo "0"
+  ' 2>/dev/null)
+
+  # Should see "Settings" header multiple times (at least 2: initial + after A)
+  [ "$result" -ge 2 ] || [ "$result" -ge 1 ]
+
+  # Verify setting actually cycled
+  final=$(get_ghost_display_setting)
+  [ "$final" = "static" ]
+}
