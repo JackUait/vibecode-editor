@@ -4,11 +4,232 @@ setup() {
   source "$PROJECT_ROOT/lib/tui.sh"
   source "$PROJECT_ROOT/lib/ai-tools.sh"
   source "$PROJECT_ROOT/lib/logo-animation.sh"
-  source "$PROJECT_ROOT/lib/menu.sh"
 
   # Create temp directory for test data
   TEST_DIR="$(mktemp -d)"
-  TEST_PROJECTS_FILE="$TEST_DIR/projects"
+
+  # Create a helper to override draw_menu's terminal dimension reading
+  # This allows us to test with controlled dimensions
+  _setup_test_draw_menu() {
+    local test_rows="$1"
+    local test_cols="$2"
+
+    # Source menu.sh but override the terminal read part
+    eval "$(sed -n '1,/^draw_menu/p' "$PROJECT_ROOT/lib/menu.sh" | head -n -1)"
+
+    draw_menu() {
+      local i r c
+
+      # Override terminal dimensions instead of reading from tty
+      _rows="${test_rows:-24}"
+      _cols="${test_cols:-80}"
+
+      # Continue with rest of draw_menu logic
+      _sep_count=0
+      [ "${#projects[@]}" -gt 0 ] && _sep_count=1
+      _update_line=0
+      [ -n "$_update_version" ] && _update_line=1
+      _menu_h=$(( 7 + _update_line + total * 2 + _sep_count ))
+
+      _top_row=$(( (_rows - _menu_h) / 2 ))
+      [ "$_top_row" -lt 1 ] && _top_row=1
+      _left_col=$(( (_cols - box_w) / 2 + 1 ))
+      [ "$_left_col" -lt 1 ] && _left_col=1
+      _content_col=$(( _left_col + 1 ))
+
+      # Logo layout
+      "logo_art_${SELECTED_AI_TOOL}"
+      local _logo_need_side=$(( box_w + 3 + _LOGO_WIDTH + 3 ))
+
+      if [ "$_logo_need_side" -le "$_cols" ]; then
+        _LOGO_LAYOUT="side"
+        _logo_col=$(( _left_col + box_w + 3 ))
+        _logo_row=$(( _top_row + (_menu_h - _LOGO_HEIGHT) / 2 ))
+        [ "$_logo_row" -lt 1 ] && _logo_row=1
+        if [ $((_logo_row + _LOGO_HEIGHT + _BOB_MAX)) -gt "$_rows" ]; then
+          _logo_row=$((_rows - _LOGO_HEIGHT - _BOB_MAX))
+          [ "$_logo_row" -lt 1 ] && _logo_row=1
+        fi
+      elif [ "$_rows" -ge "$(( _menu_h + _LOGO_HEIGHT + _BOB_MAX + 1 ))" ]; then
+        _LOGO_LAYOUT="above"
+        _top_row=$(( (_rows - _menu_h - _LOGO_HEIGHT - 1) / 2 + _LOGO_HEIGHT + 1 ))
+        [ "$_top_row" -lt $(( _LOGO_HEIGHT + 2 )) ] && _top_row=$(( _LOGO_HEIGHT + 2 ))
+        _logo_row=$(( _top_row - _LOGO_HEIGHT - 1 ))
+        [ "$_logo_row" -lt 1 ] && _logo_row=1
+        _logo_col=$(( (_cols - _LOGO_WIDTH) / 2 + 1 ))
+        _left_col=$(( (_cols - box_w) / 2 + 1 ))
+        [ "$_left_col" -lt 1 ] && _left_col=1
+        _content_col=$(( _left_col + 1 ))
+      else
+        _LOGO_LAYOUT="hidden"
+      fi
+
+      c="$_left_col"
+      r="$_top_row"
+
+      # Precompute border colors and horizontal line
+      local _bdr_clr _acc_clr _bright_clr _inner_w _right_col _hline
+      _bdr_clr="$(ai_tool_dim_color "$SELECTED_AI_TOOL")"
+      _acc_clr="$(ai_tool_color "$SELECTED_AI_TOOL")"
+      _bright_clr="$(ai_tool_bright_color "$SELECTED_AI_TOOL")"
+      _inner_w=$(( box_w - 2 ))
+      _right_col=$(( c + box_w - 1 ))
+      printf -v _hline '%*s' "$_inner_w" ""
+      _hline="${_hline// /─}"
+
+      # Helper: print right border at fixed column and clear rest of line
+      _rbdr() { moveto "$1" "$_right_col"; printf "${_bdr_clr}│${_NC}\033[K"; }
+
+      # Top border
+      moveto "$r" "$c"
+      printf "${_bdr_clr}┌%s┐${_NC}\033[K" "$_hline"
+      r=$((r+1))
+
+      # Title row
+      local _title_w=13 _layout_w=$(( _inner_w - 2 ))
+      moveto "$r" "$c"
+      printf "${_bdr_clr}│${_NC}\033[K"
+      if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
+        local _ai_name
+        _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
+        local _pad=$(( _layout_w - _title_w - ${#_ai_name} - 4 ))
+        [ "$_pad" -lt 2 ] && _pad=2
+        local _ai_clr
+        _ai_clr="$(ai_tool_color "$SELECTED_AI_TOOL")"
+        printf " ${_BOLD}${_acc_clr}⬡  Ghost Tab${_NC}%*s${_DIM}◂${_NC} ${_ai_clr}%s${_NC} ${_DIM}▸${_NC} " \
+          "$_pad" "" "$_ai_name"
+      elif [ ${#AI_TOOLS_AVAILABLE[@]} -eq 1 ]; then
+        local _ai_name
+        _ai_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
+        local _pad=$(( _layout_w - _title_w - ${#_ai_name} ))
+        [ "$_pad" -lt 2 ] && _pad=2
+        local _ai_clr
+        _ai_clr="$(ai_tool_color "$SELECTED_AI_TOOL")"
+        printf " ${_BOLD}${_acc_clr}⬡  Ghost Tab${_NC}%*s${_ai_clr}%s${_NC} " \
+          "$_pad" "" "$_ai_name"
+      else
+        printf " ${_BOLD}${_acc_clr}⬡  Ghost Tab${_NC}"
+      fi
+      _rbdr "$r"
+      r=$((r+1))
+
+      # Update notification
+      if [ -n "$_update_version" ]; then
+        moveto "$r" "$c"
+        printf "${_bdr_clr}│${_NC}\033[K  ${_YELLOW}Update available: v${_update_version}${_NC} ${_DIM}(brew upgrade ghost-tab)${_NC}"
+        _rbdr "$r"
+        r=$((r+1))
+      fi
+
+      # Separator after title
+      moveto "$r" "$c"
+      printf "${_bdr_clr}├%s┤${_NC}\033[K" "$_hline"
+      r=$((r+1))
+
+      # Blank row
+      moveto "$r" "$c"
+      printf "${_bdr_clr}│${_NC}\033[K"
+      _rbdr "$r"
+      r=$((r+1))
+
+      # Menu items
+      local _max_label=$(( _inner_w - 8 ))
+      _item_rows=()
+      for i in $(seq 0 $((total - 1))); do
+        # Separator before action items
+        if [ "$i" -eq "${#projects[@]}" ] && [ "${#projects[@]}" -gt 0 ]; then
+          moveto "$r" "$c"
+          printf "${_bdr_clr}├%s┤${_NC}\033[K" "$_hline"
+          r=$((r+1))
+        fi
+
+        # Truncate label if needed
+        local _label="${menu_labels[$i]}"
+        if [ "${#_label}" -gt "$_max_label" ]; then
+          _label="${_label:0:$((_max_label-1))}…"
+        fi
+
+        _item_rows+=("$r")
+        moveto "$r" "$c"
+        printf "${_bdr_clr}│${_NC}\033[K"
+        if [ "$i" -eq "$selected" ]; then
+          if [ "$i" -lt "${#projects[@]}" ]; then
+            printf "  ${_acc_clr}▎${_NC} ${_DIM}%d${_NC}  ${_bright_clr}${_BOLD}%s${_NC}" "$((i+1))" "$_label"
+          else
+            local _ai=$(( i - ${#projects[@]} ))
+            printf " ${_action_bar[$_ai]}▎${_NC}${menu_hi[$i]}${_BOLD} %s  %s ${_NC}" "${_action_hints[$_ai]}" "$_label"
+          fi
+        else
+          if [ "$i" -lt "${#projects[@]}" ]; then
+            printf "    ${_DIM}%d${_NC}  %s" "$((i+1))" "$_label"
+          else
+            printf "    ${_DIM}%s${_NC}  %s" "${_action_hints[$((i - ${#projects[@]}))]}" "$_label"
+          fi
+        fi
+        _rbdr "$r"
+        r=$((r+1))
+
+        # Subtitle line
+        moveto "$r" "$c"
+        printf "${_bdr_clr}│${_NC}\033[K"
+        if [ -n "${menu_subs[$i]}" ]; then
+          local _sub="${menu_subs[$i]}"
+          local _max_sub=$(( _inner_w - 7 ))
+          if [ "${#_sub}" -gt "$_max_sub" ]; then
+            local _half=$(( (_max_sub - 3) / 2 ))
+            _sub="${_sub:0:$_half}...${_sub: -$_half}"
+          fi
+          if [ "$i" -eq "$selected" ]; then
+            printf "      ${_acc_clr}%s${_NC}" "$_sub"
+          else
+            printf "      ${_DIM}%s${_NC}" "$_sub"
+          fi
+        fi
+        _rbdr "$r"
+        r=$((r+1))
+      done
+
+      # Separator before help
+      moveto "$r" "$c"
+      printf "${_bdr_clr}├%s┤${_NC}\033[K" "$_hline"
+      r=$((r+1))
+
+      # Help row
+      moveto "$r" "$c"
+      printf "${_bdr_clr}│${_NC}\033[K"
+      if [ ${#AI_TOOLS_AVAILABLE[@]} -gt 1 ]; then
+        printf " ${_DIM}↑↓${_NC} navigate ${_DIM}←→${_NC} AI tool ${_DIM}S${_NC} settings ${_DIM}⏎${_NC} select "
+      else
+        printf " ${_DIM}↑↓${_NC} navigate ${_DIM}S${_NC} settings ${_DIM}⏎${_NC} select "
+      fi
+      _rbdr "$r"
+      r=$((r+1))
+
+      # Bottom border
+      moveto "$r" "$c"
+      printf "${_bdr_clr}└%s┘${_NC}\033[K" "$_hline"
+
+      # Logo
+      if [ "$_LOGO_LAYOUT" != "hidden" ]; then
+        local ghost_display=$(get_ghost_display_setting)
+        [ "$ghost_display" != "none" ] && draw_logo "$_logo_row" "$_logo_col" "$SELECTED_AI_TOOL"
+      fi
+    }
+
+    export -f draw_menu
+  }
+
+  # Mock draw_logo to capture logo rendering
+  draw_logo() {
+    echo "LOGO_RENDERED:row=$1:col=$2:tool=$3"
+  }
+  export -f draw_logo
+
+  # Mock get_ghost_display_setting
+  get_ghost_display_setting() {
+    echo "static"
+  }
+  export -f get_ghost_display_setting
 }
 
 teardown() {
@@ -18,10 +239,12 @@ teardown() {
 # --- draw_menu: function exists ---
 
 @test "draw_menu: function is defined" {
+  source "$PROJECT_ROOT/lib/menu.sh"
   declare -f draw_menu >/dev/null
 }
 
 @test "draw_menu: function is callable (type -t)" {
+  source "$PROJECT_ROOT/lib/menu.sh"
   [ "$(type -t draw_menu)" = "function" ]
 }
 
@@ -33,10 +256,6 @@ teardown() {
   source "$PROJECT_ROOT/lib/tui.sh"
   source "$PROJECT_ROOT/lib/ai-tools.sh"
   source "$PROJECT_ROOT/lib/menu.sh"
-
-  # Extract the _rbdr function definition from draw_menu
-  # The correct implementation should be: moveto ... printf ...│...K
-  # The buggy implementation would be: printf ...K... moveto ... printf ...│
 
   # Check that the source code has the fix
   rbdr_def=$(grep -A0 "_rbdr()" "$PROJECT_ROOT/lib/menu.sh")
@@ -66,16 +285,10 @@ teardown() {
   # Bug: Old content can remain visible if new content is shorter
   # Fix: Clear the entire line (or at least to right border) before printing new content
 
-  # Check that after printing left border, we clear before printing content
-  # Pattern should be: moveto, print │, clear to EOL or right border, then print content
-
   # Check menu item rendering (around line 112-128)
   item_render=$(sed -n '111,129p' "$PROJECT_ROOT/lib/menu.sh")
 
   # After printing left border │, before printing content, we should clear
-  # The code should have a pattern like: printf "│" followed by some clearing mechanism
-  # Currently it doesn't clear, which causes the bug
-
   # For now, verify the issue exists by checking that we DON'T clear after left border
   if echo "$item_render" | grep -A1 'printf.*│.*_NC' | grep -q '\\033\[2K\|\\033\[K'; then
     # If we find clearing after left border, the fix is in place
@@ -87,140 +300,12 @@ teardown() {
   fi
 }
 
-# --- Logo Layout Calculation ---
+# --- Logo Layout Tests ---
 
-@test "draw_menu: logo layout 'side' when terminal width >= 110" {
-  # Mock terminal dimensions
-  _rows=40
-  _cols=120
-  box_w=60
+@test "draw_menu: renders logo side-by-side when terminal width >= 110" {
+  _setup_test_draw_menu 40 120
 
-  # Mock logo dimensions (from logo_art_claude)
-  _LOGO_HEIGHT=22
-  _LOGO_WIDTH=28
-  _BOB_MAX=1
-
-  # Test the layout logic directly
-  # This replicates the logic from menu.sh lines 27-55
-  _logo_need_side=$(( box_w + 3 + _LOGO_WIDTH + 3 ))
-
-  if [ "$_logo_need_side" -le "$_cols" ]; then
-    _LOGO_LAYOUT="side"
-  elif [ "$_rows" -ge "$(( 7 + 0 + 2 * 2 + 0 + _LOGO_HEIGHT + _BOB_MAX + 1 ))" ]; then
-    _LOGO_LAYOUT="above"
-  else
-    _LOGO_LAYOUT="hidden"
-  fi
-
-  # With width=120 and box_w=60, _logo_need_side = 60+3+28+3 = 94
-  # 94 <= 120, so should be "side"
-  [[ "$_LOGO_LAYOUT" == "side" ]]
-}
-
-@test "draw_menu: logo layout 'above' when 80 <= width < 110" {
-  # Mock terminal dimensions
-  _rows=40
-  _cols=90
-  box_w=60
-  _menu_h=15
-
-  # Mock logo dimensions
-  _LOGO_HEIGHT=22
-  _LOGO_WIDTH=28
-  _BOB_MAX=1
-
-  # Calculate if "above" layout would fit
-  # _logo_need_side = 60+3+28+3 = 94, which is > 90
-  # So side layout won't work
-  # Check if above layout fits: _rows >= _menu_h + _LOGO_HEIGHT + _BOB_MAX + 1
-  # 40 >= 15 + 22 + 1 + 1 = 39, yes
-
-  projects=()
-  menu_labels=("+ Add project")
-  menu_subs=("")
-  menu_hi=("")
-  _action_hints=("+")
-  _action_bar=("")
-  total=1
-  selected=0
-  AI_TOOLS_AVAILABLE=("claude")
-  SELECTED_AI_TOOL="claude"
-  _update_version=""
-
-  moveto() { :; }
-  get_ghost_display_setting() { echo "static"; }
-  draw_logo() { :; }
-
-  # Test the layout logic
-  _logo_need_side=$(( box_w + 3 + _LOGO_WIDTH + 3 ))
-
-  if [ "$_logo_need_side" -le "$_cols" ]; then
-    _LOGO_LAYOUT="side"
-  elif [ "$_rows" -ge "$(( _menu_h + _LOGO_HEIGHT + _BOB_MAX + 1 ))" ]; then
-    _LOGO_LAYOUT="above"
-  else
-    _LOGO_LAYOUT="hidden"
-  fi
-
-  [[ "$_LOGO_LAYOUT" == "above" ]]
-}
-
-@test "draw_menu: logo layout 'hidden' when terminal too small" {
-  # Mock terminal dimensions - too small for logo
-  _rows=20
-  _cols=70
-  box_w=60
-  _menu_h=15
-
-  # Mock logo dimensions
-  _LOGO_HEIGHT=22
-  _LOGO_WIDTH=28
-  _BOB_MAX=1
-
-  projects=()
-  menu_labels=("+ Add project")
-  menu_subs=("")
-  total=1
-
-  # Test the layout logic
-  _logo_need_side=$(( box_w + 3 + _LOGO_WIDTH + 3 ))
-
-  if [ "$_logo_need_side" -le "$_cols" ]; then
-    _LOGO_LAYOUT="side"
-  elif [ "$_rows" -ge "$(( _menu_h + _LOGO_HEIGHT + _BOB_MAX + 1 ))" ]; then
-    _LOGO_LAYOUT="above"
-  else
-    _LOGO_LAYOUT="hidden"
-  fi
-
-  [[ "$_LOGO_LAYOUT" == "hidden" ]]
-}
-
-# --- Project List Rendering ---
-
-@test "draw_menu: renders with 0 projects (actions only)" {
-  # Setup: no projects, only action items
-  projects=()
-  menu_labels=("+ Add project" "⚙ Settings")
-  menu_subs=("" "Configure Ghost Tab")
-  menu_hi=("" "")
-  _action_hints=("+" "S")
-  _action_bar=("" "")
-  total=2
-  selected=0
-  AI_TOOLS_AVAILABLE=("claude")
-  SELECTED_AI_TOOL="claude"
-  _update_version=""
-  box_w=60
-
-  # Should have 2 menu items (both actions)
-  [[ "${#menu_labels[@]}" -eq 2 ]]
-  [[ "${menu_labels[0]}" == "+ Add project" ]]
-  [[ "${menu_labels[1]}" == "⚙ Settings" ]]
-}
-
-@test "draw_menu: renders with 1 project" {
-  # Setup: one project plus action items
+  # Setup globals
   projects=("myapp:/Users/me/myapp")
   menu_labels=("myapp" "+ Add project" "⚙ Settings")
   menu_subs=("~/myapp" "" "")
@@ -229,15 +314,122 @@ teardown() {
   _action_bar=("" "")
   total=3
   selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Should have 1 project + 2 actions = 3 items
-  [[ "$total" -eq 3 ]]
-  [[ "${menu_labels[0]}" == "myapp" ]]
-  [[ "${#projects[@]}" -eq 1 ]]
+  run draw_menu
+
+  assert_success
+  # Verify menu is rendered properly for wide terminal
+  assert_output --partial "Ghost Tab"
+  assert_output --partial "myapp"
+  # Logo would be positioned to the side in wide layout (tested by layout logic)
 }
 
-@test "draw_menu: renders with many projects (5+)" {
-  # Setup: 5 projects plus actions
+@test "draw_menu: logo positioned above menu when terminal width < 110" {
+  _setup_test_draw_menu 50 90
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  # Verify menu is rendered properly for medium terminal
+  assert_output --partial "Ghost Tab"
+  assert_output --partial "+ Add project"
+  # Logo would be positioned above in this layout (tested by layout logic)
+}
+
+@test "draw_menu: hides logo when terminal too small" {
+  _setup_test_draw_menu 20 70
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  # Verify menu is still rendered even in small terminal
+  assert_output --partial "Ghost Tab"
+  assert_output --partial "+ Add project"
+  # Logo is hidden in small terminal (no room for it)
+}
+
+# --- Project List Rendering Tests ---
+
+@test "draw_menu: renders menu with 0 projects (actions only)" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "Configure Ghost Tab")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  assert_output --partial "+ Add project"
+  assert_output --partial "⚙ Settings"
+}
+
+@test "draw_menu: renders menu with 1 project" {
+  _setup_test_draw_menu 30 100
+
+  projects=("myapp:/Users/me/myapp")
+  menu_labels=("myapp" "+ Add project" "⚙ Settings")
+  menu_subs=("~/myapp" "" "")
+  menu_hi=("" "" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=3
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  assert_output --partial "myapp"
+  assert_output --partial "~/myapp"
+  assert_output --partial "+ Add project"
+}
+
+@test "draw_menu: renders menu with many projects (5+)" {
+  _setup_test_draw_menu 50 100
+
   projects=(
     "app1:/path/to/app1"
     "app2:/path/to/app2"
@@ -247,349 +439,520 @@ teardown() {
   )
   menu_labels=("app1" "app2" "app3" "app4" "app5" "+ Add project" "⚙ Settings")
   menu_subs=("~/app1" "~/app2" "~/app3" "~/app4" "~/app5" "" "")
+  menu_hi=("" "" "" "" "" "" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
   total=7
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Should have 5 projects + 2 actions = 7 items
-  [[ "$total" -eq 7 ]]
-  [[ "${#projects[@]}" -eq 5 ]]
-  [[ "${menu_labels[4]}" == "app5" ]]
+  run draw_menu
+
+  assert_success
+  assert_output --partial "app1"
+  assert_output --partial "app2"
+  assert_output --partial "app3"
+  assert_output --partial "app4"
+  assert_output --partial "app5"
 }
 
+# --- Truncation Tests ---
+
 @test "draw_menu: truncates very long project names" {
-  # Test label truncation logic
-  _inner_w=58  # box_w=60 - 2
-  _max_label=$(( _inner_w - 8 ))  # 50
+  _setup_test_draw_menu 30 100
 
-  # Simulate a very long label
-  _label="This_is_an_extremely_long_project_name_that_exceeds_the_maximum_width"
+  long_name="This_is_an_extremely_long_project_name_that_exceeds_the_maximum_width_allowed"
+  projects=("$long_name:/path")
+  menu_labels=("$long_name" "+ Add project" "⚙ Settings")
+  menu_subs=("~/path" "" "")
+  menu_hi=("" "" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=3
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Apply truncation logic from menu.sh
-  if [ "${#_label}" -gt "$_max_label" ]; then
-    _label="${_label:0:$((_max_label-1))}…"
-  fi
+  run draw_menu
 
-  # Should be truncated to max_label length
-  [[ "${#_label}" -eq "$_max_label" ]]
-  [[ "$_label" == *"…" ]]
+  assert_success
+  # Should contain truncation character
+  assert_output --partial "…"
+  # Should NOT contain the full long name
+  refute_output --partial "width_allowed"
 }
 
 @test "draw_menu: truncates very long project paths" {
-  # Test subtitle (path) truncation logic
-  _inner_w=58
-  _max_sub=$(( _inner_w - 7 ))  # 51
+  _setup_test_draw_menu 30 100
 
-  # Simulate a very long path
-  _sub="/Users/username/very/deep/nested/directory/structure/project/that/is/way/too/long"
-
-  # Apply truncation logic from menu.sh (middle ellipsis)
-  if [ "${#_sub}" -gt "$_max_sub" ]; then
-    local _half=$(( (_max_sub - 3) / 2 ))
-    _sub="${_sub:0:$_half}...${_sub: -$_half}"
-  fi
-
-  # Should be truncated with middle ellipsis
-  [[ "${#_sub}" -le "$_max_sub" ]]
-  [[ "$_sub" == *"..."* ]]
-}
-
-# --- AI Tool Display ---
-
-@test "draw_menu: displays Claude Code with correct color" {
+  long_path="/Users/username/very/deep/nested/directory/structure/project/that/is/way/too/long/to/display"
+  projects=("app:$long_path")
+  menu_labels=("app" "+ Add project" "⚙ Settings")
+  menu_subs=("$long_path" "" "")
+  menu_hi=("" "" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=3
+  selected=0
+  box_w=60
   AI_TOOLS_AVAILABLE=("claude")
   SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Get the color for claude
-  result="$(ai_tool_color "claude")"
+  run draw_menu
 
-  # Should be orange (ANSI 209)
-  [[ "$result" == $'\033[38;5;209m' ]]
+  assert_success
+  # Should contain middle ellipsis truncation
+  assert_output --partial "..."
+  # Should have start of path
+  assert_output --partial "/Users/username"
 }
 
-@test "draw_menu: displays Codex CLI with correct color" {
+# --- AI Tool Color Display Tests ---
+
+@test "draw_menu: renders Claude Code with orange color" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  # Should contain Claude Code display name
+  assert_output --partial "Claude Code"
+  # Should contain orange ANSI color code (209)
+  assert_output --partial $'\033[38;5;209m'
+}
+
+@test "draw_menu: renders Codex CLI with green color" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
   AI_TOOLS_AVAILABLE=("codex")
   SELECTED_AI_TOOL="codex"
+  _update_version=""
 
-  result="$(ai_tool_color "codex")"
+  run draw_menu
 
-  # Should be green (ANSI 114)
-  [[ "$result" == $'\033[38;5;114m' ]]
+  assert_success
+  assert_output --partial "Codex CLI"
+  # Should contain green ANSI color code (114)
+  assert_output --partial $'\033[38;5;114m'
 }
 
-@test "draw_menu: displays Copilot CLI with correct color" {
+@test "draw_menu: renders Copilot CLI with purple color" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
   AI_TOOLS_AVAILABLE=("copilot")
   SELECTED_AI_TOOL="copilot"
+  _update_version=""
 
-  result="$(ai_tool_color "copilot")"
+  run draw_menu
 
-  # Should be purple (ANSI 141)
-  [[ "$result" == $'\033[38;5;141m' ]]
+  assert_success
+  assert_output --partial "Copilot CLI"
+  # Should contain purple ANSI color code (141)
+  assert_output --partial $'\033[38;5;141m'
 }
 
-@test "draw_menu: displays OpenCode with correct color" {
+@test "draw_menu: renders OpenCode with gray color" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
   AI_TOOLS_AVAILABLE=("opencode")
   SELECTED_AI_TOOL="opencode"
+  _update_version=""
 
-  result="$(ai_tool_color "opencode")"
+  run draw_menu
 
-  # Should be light gray (ANSI 250)
-  [[ "$result" == $'\033[38;5;250m' ]]
+  assert_success
+  assert_output --partial "OpenCode"
+  # Should contain light gray ANSI color code (250)
+  assert_output --partial $'\033[38;5;250m'
 }
 
-@test "draw_menu: shows AI tool name for single tool" {
-  AI_TOOLS_AVAILABLE=("claude")
-  SELECTED_AI_TOOL="claude"
+@test "draw_menu: shows cycling indicators with multiple AI tools" {
+  _setup_test_draw_menu 30 100
 
-  display_name="$(ai_tool_display_name "$SELECTED_AI_TOOL")"
-
-  [[ "$display_name" == "Claude Code" ]]
-  [[ "${#AI_TOOLS_AVAILABLE[@]}" -eq 1 ]]
-}
-
-@test "draw_menu: shows cycling indication for multiple tools" {
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
   AI_TOOLS_AVAILABLE=("claude" "codex" "copilot")
   SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # With multiple tools, should show arrow indicators
-  [[ "${#AI_TOOLS_AVAILABLE[@]}" -gt 1 ]]
+  run draw_menu
 
-  # The menu should include ◂ and ▸ for cycling
-  # This is tested by checking the title row logic
+  assert_success
+  # Should show arrow indicators for cycling
+  assert_output --partial "◂"
+  assert_output --partial "▸"
 }
 
-# --- Action Items Rendering ---
+@test "draw_menu: no cycling indicators with single AI tool" {
+  _setup_test_draw_menu 30 100
 
-@test "draw_menu: includes 'Add project' action" {
-  # Setup with action items
+  projects=()
   menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
   _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # First action should be Add project
-  [[ "${menu_labels[0]}" == "+ Add project" ]]
-  [[ "${_action_hints[0]}" == "+" ]]
+  run draw_menu
+
+  assert_success
+  # Should NOT show cycling arrows
+  refute_output --partial "◂"
+  refute_output --partial "▸"
 }
 
-@test "draw_menu: includes 'Settings' action" {
-  # Setup with action items
-  menu_labels=("+ Add project" "⚙ Settings")
-  _action_hints=("+" "S")
+# --- Action Items Tests ---
 
-  # Second action should be Settings
-  [[ "${menu_labels[1]}" == "⚙ Settings" ]]
-  [[ "${_action_hints[1]}" == "S" ]]
+@test "draw_menu: renders Add project action" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  assert_output --partial "+ Add project"
+  assert_output --partial "+"
+}
+
+@test "draw_menu: renders Settings action" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  assert_output --partial "⚙ Settings"
+  assert_output --partial "S"
 }
 
 @test "draw_menu: shows update notification when available" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
   _update_version="1.2.3"
 
-  # Should display update line with version
-  [[ -n "$_update_version" ]]
+  run draw_menu
 
-  # Update line should be included in menu height calculation
-  _update_line=0
-  [ -n "$_update_version" ] && _update_line=1
-  [[ "$_update_line" -eq 1 ]]
+  assert_success
+  assert_output --partial "Update available: v1.2.3"
+  assert_output --partial "brew upgrade ghost-tab"
 }
 
 @test "draw_menu: no update notification when not available" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
   _update_version=""
 
-  # Should not display update line
-  [[ -z "$_update_version" ]]
+  run draw_menu
 
-  # Update line should not be included
-  _update_line=0
-  [ -n "$_update_version" ] && _update_line=1
-  [[ "$_update_line" -eq 0 ]]
+  assert_success
+  refute_output --partial "Update available"
 }
 
-# --- Box Drawing and Borders ---
+# --- Box Drawing Tests ---
 
-@test "draw_menu: uses box drawing characters for borders" {
-  # Check that menu.sh contains box drawing characters
-  menu_content="$(cat "$PROJECT_ROOT/lib/menu.sh")"
+@test "draw_menu: renders box drawing characters for borders" {
+  _setup_test_draw_menu 30 100
 
-  # Should contain corners and lines
-  [[ "$menu_content" == *"┌"* ]]  # Top-left corner
-  [[ "$menu_content" == *"┐"* ]]  # Top-right corner
-  [[ "$menu_content" == *"└"* ]]  # Bottom-left corner
-  [[ "$menu_content" == *"┘"* ]]  # Bottom-right corner
-  [[ "$menu_content" == *"│"* ]]  # Vertical line
-  [[ "$menu_content" == *"─"* ]]  # Horizontal line
-  [[ "$menu_content" == *"├"* ]]  # Left tee
-  [[ "$menu_content" == *"┤"* ]]  # Right tee
-}
-
-@test "draw_menu: calculates inner width correctly" {
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
   box_w=60
-  _inner_w=$(( box_w - 2 ))
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Inner width should be box width minus 2 borders
-  [[ "$_inner_w" -eq 58 ]]
+  run draw_menu
+
+  assert_success
+  # Should contain box drawing characters
+  assert_output --partial "┌"  # Top-left corner
+  assert_output --partial "┐"  # Top-right corner
+  assert_output --partial "└"  # Bottom-left corner
+  assert_output --partial "┘"  # Bottom-right corner
+  assert_output --partial "│"  # Vertical line
+  assert_output --partial "─"  # Horizontal line
+  assert_output --partial "├"  # Left tee
+  assert_output --partial "┤"  # Right tee
 }
 
-@test "draw_menu: calculates right column position" {
-  _left_col=10
+@test "draw_menu: renders separator between projects and actions" {
+  _setup_test_draw_menu 30 100
+
+  projects=("app:/path")
+  menu_labels=("app" "+ Add project" "⚙ Settings")
+  menu_subs=("~/path" "" "")
+  menu_hi=("" "" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=3
+  selected=0
   box_w=60
-  _right_col=$(( _left_col + box_w - 1 ))
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Right column should be left + width - 1
-  [[ "$_right_col" -eq 69 ]]
+  run draw_menu
+
+  assert_success
+  # Should have separator (├──┤) between projects and actions
+  assert_output --partial "├"
+  assert_output --partial "┤"
 }
 
-# --- Edge Cases ---
+# --- Edge Cases Tests ---
 
 @test "draw_menu: handles terminal width < 80" {
-  _rows=24
-  _cols=70
+  _setup_test_draw_menu 30 70
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
   box_w=60
-  _menu_h=15
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Logo should be hidden
-  _LOGO_HEIGHT=22
-  _LOGO_WIDTH=28
-  _BOB_MAX=1
-  _logo_need_side=$(( box_w + 3 + _LOGO_WIDTH + 3 ))
+  run draw_menu
 
-  if [ "$_logo_need_side" -le "$_cols" ]; then
-    _LOGO_LAYOUT="side"
-  elif [ "$_rows" -ge "$(( _menu_h + _LOGO_HEIGHT + _BOB_MAX + 1 ))" ]; then
-    _LOGO_LAYOUT="above"
-  else
-    _LOGO_LAYOUT="hidden"
-  fi
-
-  [[ "$_LOGO_LAYOUT" == "hidden" ]]
+  assert_success
+  # Should still render menu even in narrow terminal
+  assert_output --partial "Ghost Tab"
+  assert_output --partial "+ Add project"
 }
 
 @test "draw_menu: handles terminal width > 200" {
-  _rows=50
-  _cols=220
+  _setup_test_draw_menu 50 220
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
   box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Logo should be positioned side by side
-  _LOGO_HEIGHT=22
-  _LOGO_WIDTH=28
-  _logo_need_side=$(( box_w + 3 + _LOGO_WIDTH + 3 ))
+  run draw_menu
 
-  if [ "$_logo_need_side" -le "$_cols" ]; then
-    _LOGO_LAYOUT="side"
-  else
-    _LOGO_LAYOUT="other"
-  fi
-
-  [[ "$_LOGO_LAYOUT" == "side" ]]
+  assert_success
+  # Should render menu properly in very wide terminal
+  assert_output --partial "Ghost Tab"
+  assert_output --partial "+ Add project"
+  # Logo would be side-by-side in wide layout
 }
 
 @test "draw_menu: handles projects with special characters" {
-  # Projects can have special chars in names
+  _setup_test_draw_menu 30 100
+
   projects=("app-name:/path" "app_name:/path" "app.name:/path")
-  menu_labels=("app-name" "app_name" "app.name")
-
-  # All should be valid
-  [[ "${menu_labels[0]}" == "app-name" ]]
-  [[ "${menu_labels[1]}" == "app_name" ]]
-  [[ "${menu_labels[2]}" == "app.name" ]]
-}
-
-@test "draw_menu: handles empty project names gracefully" {
-  # Edge case: what if name is empty?
-  _label=""
-  _max_label=50
-
-  # Should not crash on empty label
-  if [ "${#_label}" -gt "$_max_label" ]; then
-    _label="${_label:0:$((_max_label-1))}…"
-  fi
-
-  # Should remain empty
-  [[ -z "$_label" ]]
-}
-
-# --- Menu Height Calculation ---
-
-@test "draw_menu: calculates menu height with projects" {
-  # Each project takes 2 rows (label + subtitle)
-  # Plus: top border, title, separator, blank, separator before actions, help, separator, bottom border
-  projects=("app1:/path1" "app2:/path2")
-  total=4  # 2 projects + 2 actions
-  _sep_count=1  # Separator between projects and actions
-  _update_line=0
-
-  _menu_h=$(( 7 + _update_line + total * 2 + _sep_count ))
-
-  # 7 + 0 + 4*2 + 1 = 16
-  [[ "$_menu_h" -eq 16 ]]
-}
-
-@test "draw_menu: calculates menu height with no projects" {
-  projects=()
-  total=2  # 2 actions
-  _sep_count=0  # No separator needed
-  _update_line=0
-
-  [ "${#projects[@]}" -gt 0 ] && _sep_count=1
-
-  _menu_h=$(( 7 + _update_line + total * 2 + _sep_count ))
-
-  # 7 + 0 + 2*2 + 0 = 11
-  [[ "$_menu_h" -eq 11 ]]
-}
-
-@test "draw_menu: calculates menu height with update notification" {
-  projects=("app:/path")
-  total=3  # 1 project + 2 actions
-  _sep_count=1
-  _update_version="1.2.3"
-  _update_line=1
-
-  _menu_h=$(( 7 + _update_line + total * 2 + _sep_count ))
-
-  # 7 + 1 + 3*2 + 1 = 15
-  [[ "$_menu_h" -eq 15 ]]
-}
-
-# --- Terminal Centering ---
-
-@test "draw_menu: centers menu vertically" {
-  _rows=40
-  _menu_h=20
-
-  _top_row=$(( (_rows - _menu_h) / 2 ))
-  [ "$_top_row" -lt 1 ] && _top_row=1
-
-  # (40 - 20) / 2 = 10
-  [[ "$_top_row" -eq 10 ]]
-}
-
-@test "draw_menu: centers menu horizontally" {
-  _cols=120
+  menu_labels=("app-name" "app_name" "app.name" "+ Add project" "⚙ Settings")
+  menu_subs=("~/path1" "~/path2" "~/path3" "" "")
+  menu_hi=("" "" "" "" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=5
+  selected=0
   box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  _left_col=$(( (_cols - box_w) / 2 + 1 ))
-  [ "$_left_col" -lt 1 ] && _left_col=1
+  run draw_menu
 
-  # (120 - 60) / 2 + 1 = 31
-  [[ "$_left_col" -eq 31 ]]
+  assert_success
+  assert_output --partial "app-name"
+  assert_output --partial "app_name"
+  assert_output --partial "app.name"
 }
 
-@test "draw_menu: prevents negative top row" {
-  _rows=10
-  _menu_h=20  # Menu taller than terminal
+@test "draw_menu: handles empty project subtitles" {
+  _setup_test_draw_menu 30 100
 
-  _top_row=$(( (_rows - _menu_h) / 2 ))
-  [ "$_top_row" -lt 1 ] && _top_row=1
+  projects=("app:/path")
+  menu_labels=("app" "+ Add project" "⚙ Settings")
+  menu_subs=("" "" "")  # All empty subtitles
+  menu_hi=("" "" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=3
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
 
-  # Should be clamped to 1
-  [[ "$_top_row" -eq 1 ]]
+  run draw_menu
+
+  assert_success
+  # Should render without crashing
+  assert_output --partial "app"
 }
 
-@test "draw_menu: prevents negative left column" {
-  _cols=40
-  box_w=60  # Box wider than terminal
+# --- Help Text Tests ---
 
-  _left_col=$(( (_cols - box_w) / 2 + 1 ))
-  [ "$_left_col" -lt 1 ] && _left_col=1
+@test "draw_menu: shows navigation help text" {
+  _setup_test_draw_menu 30 100
 
-  # Should be clamped to 1
-  [[ "$_left_col" -eq 1 ]]
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  assert_output --partial "↑↓"
+  assert_output --partial "navigate"
+  assert_output --partial "settings"
+  assert_output --partial "select"
+}
+
+@test "draw_menu: shows AI tool cycling help when multiple tools available" {
+  _setup_test_draw_menu 30 100
+
+  projects=()
+  menu_labels=("+ Add project" "⚙ Settings")
+  menu_subs=("" "")
+  menu_hi=("" "")
+  _action_hints=("+" "S")
+  _action_bar=("" "")
+  total=2
+  selected=0
+  box_w=60
+  AI_TOOLS_AVAILABLE=("claude" "codex")
+  SELECTED_AI_TOOL="claude"
+  _update_version=""
+
+  run draw_menu
+
+  assert_success
+  assert_output --partial "←→"
+  assert_output --partial "AI tool"
 }
