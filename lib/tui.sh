@@ -40,18 +40,3 @@ moveto() { printf '\033[%d;%dH' "$1" "$2"; }
 
 # Print N spaces
 pad() { printf "%*s" "$1" ""; }
-
-# Draw logo using ghost-tab-tui binary
-# Usage: draw_logo tool_name [row] [col]
-# If row/col provided, they are ignored (for compatibility)
-draw_logo() {
-  # shellcheck disable=SC2034  # tool parameter reserved for future use
-  local tool="$1"
-
-  if command -v ghost-tab-tui &>/dev/null; then
-    ghost-tab-tui show-logo 2>/dev/null || true
-  else
-    # Fallback: no logo if binary missing
-    return 0
-  fi
-}
