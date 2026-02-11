@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/jackuait/ghost-tab/internal/tui"
+	"github.com/jackuait/ghost-tab/internal/util"
 )
 
 var confirmCmd = &cobra.Command{
@@ -25,7 +26,14 @@ func runConfirm(cmd *cobra.Command, args []string) error {
 	message := args[0]
 
 	model := tui.NewConfirmDialog(message)
-	p := tea.NewProgram(model)
+
+	ttyOpts, cleanup, err := util.TUITeaOptions()
+	if err != nil {
+		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+	defer cleanup()
+
+	p := tea.NewProgram(model, ttyOpts...)
 
 	finalModel, err := p.Run()
 	if err != nil {

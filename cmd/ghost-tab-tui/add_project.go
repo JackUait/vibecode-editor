@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/jackuait/ghost-tab/internal/tui"
+	"github.com/jackuait/ghost-tab/internal/util"
 )
 
 var addProjectCmd = &cobra.Command{
@@ -22,7 +23,14 @@ func init() {
 
 func runAddProject(cmd *cobra.Command, args []string) error {
 	model := tui.NewProjectInput()
-	p := tea.NewProgram(model)
+
+	ttyOpts, cleanup, err := util.TUITeaOptions()
+	if err != nil {
+		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+	defer cleanup()
+
+	p := tea.NewProgram(model, ttyOpts...)
 
 	finalModel, err := p.Run()
 	if err != nil {
