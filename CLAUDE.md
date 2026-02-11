@@ -134,6 +134,17 @@ shellcheck lib/*.sh bin/ghost-tab ghostty/*.sh  # Lint all scripts
 
 ## Architecture
 
+Ghost Tab uses a **hybrid architecture** combining Go for interactive TUI and bash for orchestration.
+
+**Layer 1: Go TUI Binary (`ghost-tab-tui`)**
+- Interactive terminal UI components built with Bubbletea
+- Project selector, AI tool selector, settings menu, input forms
+- Outputs structured JSON for bash consumption
+- Binary: `~/.local/bin/ghost-tab-tui`
+- Source: `cmd/ghost-tab-tui/`, `internal/tui/`, `internal/models/`, `internal/util/`
+
+**Layer 2: Bash Orchestration**
+
 **Entry Points:**
 - `bin/ghost-tab` - Main installer script, sources all modules
 - `ghostty/claude-wrapper.sh` - Runtime wrapper launched by Ghostty
@@ -144,11 +155,12 @@ All reusable functionality lives in `lib/` as sourced shell scripts:
 - **tui.sh**: Terminal UI helpers (header, success, error, info, warn)
 - **install.sh**: Package installation (Homebrew, casks, commands)
 - **ai-tools.sh**: AI tool detection and management
-- **ai-select.sh**: Interactive AI tool selection menu
+- **ai-select-tui.sh**: Interactive AI tool selection wrapper (Go TUI)
 - **projects.sh**: Project file parsing and validation
 - **project-actions.sh**: Add/delete project operations
-- **menu.sh**: Main interactive project selector
-- **settings-menu.sh**: Settings configuration menu
+- **project-actions-tui.sh**: Interactive project input wrapper (Go TUI)
+- **menu-tui.sh**: Project selection wrapper (Go TUI)
+- **settings-menu-tui.sh**: Settings menu wrapper (Go TUI)
 - **tmux-session.sh**: tmux session creation and pane setup
 - **process.sh**: Process tree management and cleanup
 - **ghostty-config.sh**: Ghostty config file operations
@@ -157,8 +169,6 @@ All reusable functionality lives in `lib/` as sourced shell scripts:
 - **notification-setup.sh**: Sound notification setup
 - **settings-json.sh**: JSON manipulation for settings files
 - **input.sh**: User input helpers with validation
-- **autocomplete.sh**: Path completion for project entry
-- **logo-animation.sh**: Animated ASCII logo display
 - **update.sh**: Self-update functionality
 
 **Data Files:**
@@ -319,6 +329,32 @@ for item in ${array[@]}; do  # Missing quotes
   echo "$item"
 done
 ```
+
+### Go Code Conventions
+
+**Project Structure:**
+```
+cmd/ghost-tab-tui/     # CLI entry point and subcommands
+internal/tui/          # Bubbletea UI components
+internal/models/       # Data types (Project, Config)
+internal/util/         # Utilities (path, JSON)
+```
+
+**Testing:**
+- Unit tests alongside implementation: `*_test.go`
+- Run with: `go test ./...`
+- Mock external dependencies in tests
+
+**Bubbletea Patterns:**
+- Each TUI component implements tea.Model interface
+- Init() for initialization
+- Update() for message handling
+- View() for rendering
+
+**JSON Output:**
+- All subcommands output JSON to stdout
+- Errors go to stderr
+- Use util.OutputJSON() helper for consistency
 
 ### Project-Specific Patterns
 
@@ -578,3 +614,35 @@ If you catch yourself thinking ANY of these, STOP:
 8. **Symlink Management**: Use `ln -sf` for idempotent linking
 9. **Path Expansion**: Always expand `~` to `$HOME` for validation
 10. **Sound Notification**: Pluggable hook system for AI idle events
+
+## JSON Interface Schemas
+
+### select-project
+```json
+{"name": "ghost-tab", "path": "/path/to/ghost-tab", "selected": true}
+{"selected": false}  // Cancelled
+```
+
+### select-ai-tool
+```json
+{"tool": "claude", "command": "claude", "selected": true}
+{"selected": false}  // Cancelled
+```
+
+### add-project
+```json
+{"name": "new-project", "path": "/path/to/project", "confirmed": true}
+{"confirmed": false}  // Cancelled
+```
+
+### confirm
+```json
+{"confirmed": true}
+{"confirmed": false}
+```
+
+### settings-menu
+```json
+{"action": "toggle-ghost"}
+{"action": "quit"}
+```

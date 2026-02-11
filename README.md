@@ -160,3 +160,40 @@ The wrapper automatically:
 4. **Self-destructs** the session via `destroy-unattached` if the **`tmux`** client disconnects without triggering cleanup
 
 This prevents zombie **`Claude Code`** processes from accumulating.
+
+---
+
+## Architecture
+
+Ghost Tab uses a **hybrid architecture**:
+
+**Layer 1: Go TUI Binary (`ghost-tab-tui`)**
+- Interactive terminal UI components built with Bubbletea
+- Project selector, AI tool selector, settings menu, input forms
+- Outputs structured JSON for bash consumption
+- Binary: `~/.local/bin/ghost-tab-tui`
+
+**Layer 2: Bash Orchestration (`ghost-tab`)**
+- Entry point and session orchestration
+- Process management, config file operations
+- Calls ghost-tab-tui for interactive parts
+- Parses JSON responses with jq
+- Script: `~/.local/bin/ghost-tab`
+
+**Dependencies:**
+- Go 1.21+ (for building)
+- jq (for JSON parsing)
+- tmux (session management)
+- Ghostty (terminal emulator)
+
+**Communication:**
+```bash
+# Bash calls Go with subcommand
+result=$(ghost-tab-tui select-project --projects-file ~/.config/ghost-tab/projects)
+
+# Go returns JSON
+{"name": "my-project", "path": "/home/user/code/my-project", "selected": true}
+
+# Bash parses with jq
+project_name=$(echo "$result" | jq -r '.name')
+```
