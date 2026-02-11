@@ -784,3 +784,88 @@ EOF
   final=$(get_ghost_display_setting)
   [ "$final" = "static" ]
 }
+
+# --- TUI Wrapper Tests (Phase 3) ---
+
+@test "settings_menu_interactive: calls ghost-tab-tui and parses action" {
+  # Mock ghost-tab-tui
+  ghost-tab-tui() {
+    if [[ "$1" == "settings-menu" ]]; then
+      echo '{"action":"toggle-ghost"}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  # Source the TUI wrapper if it exists
+  if [ -f "$PROJECT_ROOT/lib/settings-menu-tui.sh" ]; then
+    source "$PROJECT_ROOT/lib/settings-menu-tui.sh"
+  fi
+
+  run settings_menu_interactive
+
+  assert_success
+  assert_output "toggle-ghost"
+}
+
+@test "settings_menu_interactive: handles jq parse error" {
+  # Mock ghost-tab-tui to return invalid JSON
+  ghost-tab-tui() {
+    echo "not json"
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  # Mock jq to fail
+  jq() {
+    return 1
+  }
+  export -f jq
+
+  # Source the TUI wrapper if it exists
+  if [ -f "$PROJECT_ROOT/lib/settings-menu-tui.sh" ]; then
+    source "$PROJECT_ROOT/lib/settings-menu-tui.sh"
+  fi
+
+  run settings_menu_interactive
+
+  assert_failure
+}
+
+@test "settings_menu_interactive: validates null action" {
+  # Mock ghost-tab-tui to return null action
+  ghost-tab-tui() {
+    echo '{"action":null}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  # Source the TUI wrapper if it exists
+  if [ -f "$PROJECT_ROOT/lib/settings-menu-tui.sh" ]; then
+    source "$PROJECT_ROOT/lib/settings-menu-tui.sh"
+  fi
+
+  run settings_menu_interactive
+
+  assert_failure
+}
+
+@test "settings_menu_interactive: handles empty action for quit" {
+  # Mock ghost-tab-tui to return empty action (user quit)
+  ghost-tab-tui() {
+    echo '{"action":""}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  # Source the TUI wrapper if it exists
+  if [ -f "$PROJECT_ROOT/lib/settings-menu-tui.sh" ]; then
+    source "$PROJECT_ROOT/lib/settings-menu-tui.sh"
+  fi
+
+  run settings_menu_interactive
+
+  assert_success
+  assert_output ""
+}
