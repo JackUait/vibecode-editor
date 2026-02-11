@@ -47,8 +47,7 @@ fi
 
 # ---------- Dependencies ----------
 header "Installing dependencies..."
-ensure_base_requirements
-for pkg in lazygit broot; do
+for pkg in tmux lazygit broot; do
   ensure_brew_pkg "$pkg"
 done
 
@@ -98,7 +97,8 @@ else
 fi
 
 # ---------- Ghostty ----------
-# (Ghostty is now installed via ensure_base_requirements above)
+header "Checking Ghostty..."
+ensure_cask "ghostty" "Ghostty"
 
 # Verify supporting files exist (will fail if run via curl|bash without clone)
 if [ ! -f "$SHARE_DIR/ghostty/claude-wrapper.sh" ] || [ ! -f "$SHARE_DIR/ghostty/config" ] || [ ! -d "$SHARE_DIR/templates" ]; then
