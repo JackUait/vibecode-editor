@@ -229,6 +229,48 @@ func (m *MainMenuModel) CalculateLayout(width, height int) MenuLayout {
 	}
 }
 
+// MapRowToItem maps a terminal Y coordinate (0-indexed click row within the
+// menu box) to a selectable item index. Returns -1 if the click is not on a
+// valid item row.
+func (m *MainMenuModel) MapRowToItem(clickY int) int {
+	// Menu box row layout:
+	// Row 0: top border
+	// Row 1: title row
+	// Row 2: separator
+	// (optional) update notification row
+	// Row 3/4: empty row
+	// Then items start
+	startRow := 4
+	if m.updateVersion != "" {
+		startRow++ // update notification takes a row
+	}
+
+	numProjects := len(m.projects)
+
+	// Check project items (2 rows each: name line + path line)
+	for i := 0; i < numProjects; i++ {
+		projectRow := startRow + (i * 2)
+		if clickY == projectRow || clickY == projectRow+1 {
+			return i
+		}
+	}
+
+	// After projects: separator row (if projects exist)
+	actionStart := startRow + (numProjects * 2)
+	if numProjects > 0 {
+		actionStart++ // separator between projects and actions
+	}
+
+	// Action items (1 row each)
+	for i := 0; i < len(actionNames); i++ {
+		if clickY == actionStart+i {
+			return numProjects + i
+		}
+	}
+
+	return -1
+}
+
 // selectCurrent produces a result for the currently selected item.
 func (m *MainMenuModel) selectCurrent() {
 	idx := m.selectedItem
@@ -308,6 +350,26 @@ func (m *MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.SetSize(msg.Width, msg.Height)
+		return m, nil
+
+	case tea.MouseMsg:
+		// Reset sleep state on any mouse click
+		m.sleepTimer = 0
+		if m.ghostSleeping {
+			m.ghostSleeping = false
+		}
+
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+			item := m.MapRowToItem(msg.Y)
+			if item >= 0 {
+				if m.selectedItem == item {
+					// Already selected, activate (double-click-like behavior)
+					m.selectCurrent()
+					return m, tea.Quit
+				}
+				m.selectedItem = item
+			}
+		}
 		return m, nil
 
 	case tea.KeyMsg:

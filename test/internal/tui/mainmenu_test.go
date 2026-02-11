@@ -909,3 +909,249 @@ func TestMainMenu_SleepTimerResetOnKeypress(t *testing.T) {
 		t.Error("sleep timer should be reset after keypress")
 	}
 }
+
+func TestMainMenu_MapRowToItem_Projects(t *testing.T) {
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+		{Name: "p2", Path: "/p2"},
+	}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// First project at rows 4-5 (row 0: border, 1: title, 2: separator, 3: empty)
+	if m.MapRowToItem(4) != 0 {
+		t.Errorf("click at row 4 should map to item 0, got %d", m.MapRowToItem(4))
+	}
+	if m.MapRowToItem(5) != 0 {
+		t.Errorf("click at row 5 should map to item 0 (path line), got %d", m.MapRowToItem(5))
+	}
+	// Second project at rows 6-7
+	if m.MapRowToItem(6) != 1 {
+		t.Errorf("click at row 6 should map to item 1, got %d", m.MapRowToItem(6))
+	}
+	if m.MapRowToItem(7) != 1 {
+		t.Errorf("click at row 7 should map to item 1 (path line), got %d", m.MapRowToItem(7))
+	}
+}
+
+func TestMainMenu_MapRowToItem_Actions(t *testing.T) {
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+	}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// 1 project at rows 4-5, separator at row 6, actions start at row 7
+	if m.MapRowToItem(7) != 1 {
+		t.Errorf("click at first action row should map to item 1 (add-project), got %d", m.MapRowToItem(7))
+	}
+	if m.MapRowToItem(8) != 2 {
+		t.Errorf("click at second action row should map to item 2 (delete-project), got %d", m.MapRowToItem(8))
+	}
+	if m.MapRowToItem(9) != 3 {
+		t.Errorf("click at third action row should map to item 3 (open-once), got %d", m.MapRowToItem(9))
+	}
+	if m.MapRowToItem(10) != 4 {
+		t.Errorf("click at fourth action row should map to item 4 (plain-terminal), got %d", m.MapRowToItem(10))
+	}
+}
+
+func TestMainMenu_MapRowToItem_Invalid(t *testing.T) {
+	projects := []models.Project{{Name: "p1", Path: "/p1"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// Row 0 is border
+	if m.MapRowToItem(0) != -1 {
+		t.Errorf("click on border should return -1, got %d", m.MapRowToItem(0))
+	}
+	// Row 1 is title
+	if m.MapRowToItem(1) != -1 {
+		t.Errorf("click on title should return -1, got %d", m.MapRowToItem(1))
+	}
+	// Row 2 is separator
+	if m.MapRowToItem(2) != -1 {
+		t.Errorf("click on separator should return -1, got %d", m.MapRowToItem(2))
+	}
+	// Row 3 is empty
+	if m.MapRowToItem(3) != -1 {
+		t.Errorf("click on empty row should return -1, got %d", m.MapRowToItem(3))
+	}
+	// Row 6 is separator between projects and actions
+	if m.MapRowToItem(6) != -1 {
+		t.Errorf("click on project/action separator should return -1, got %d", m.MapRowToItem(6))
+	}
+	// Row way beyond menu should return -1
+	if m.MapRowToItem(100) != -1 {
+		t.Errorf("click beyond menu should return -1, got %d", m.MapRowToItem(100))
+	}
+}
+
+func TestMainMenu_MapRowToItem_NoProjects(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// No projects, no separator. Actions start at row 4
+	if m.MapRowToItem(4) != 0 {
+		t.Errorf("first action at row 4 should map to item 0, got %d", m.MapRowToItem(4))
+	}
+	if m.MapRowToItem(5) != 1 {
+		t.Errorf("second action at row 5 should map to item 1, got %d", m.MapRowToItem(5))
+	}
+}
+
+func TestMainMenu_MapRowToItem_WithUpdateVersion(t *testing.T) {
+	projects := []models.Project{{Name: "p1", Path: "/p1"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetUpdateVersion("v1.2.3")
+	m.SetSize(80, 30)
+
+	// With update version, rows shift down by 1:
+	// Row 0: border, 1: title, 2: separator, 3: update notification, 4: empty, 5-6: project
+	if m.MapRowToItem(5) != 0 {
+		t.Errorf("with update version, project should be at row 5, got %d", m.MapRowToItem(5))
+	}
+	if m.MapRowToItem(6) != 0 {
+		t.Errorf("with update version, project path at row 6 should map to 0, got %d", m.MapRowToItem(6))
+	}
+}
+
+func TestMainMenu_MouseClickSelectsItem(t *testing.T) {
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+		{Name: "p2", Path: "/p2"},
+	}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// Click on second project (row 6)
+	mouseMsg := tea.MouseMsg{
+		X:      10,
+		Y:      6,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	}
+	newModel, _ := m.Update(mouseMsg)
+	mm := newModel.(*tui.MainMenuModel)
+	if mm.SelectedItem() != 1 {
+		t.Errorf("clicking on second project should select item 1, got %d", mm.SelectedItem())
+	}
+	// Should not quit (single click on non-selected item just selects)
+	if mm.Result() != nil {
+		t.Error("single click on non-selected item should not produce a result")
+	}
+}
+
+func TestMainMenu_MouseDoubleClickActivates(t *testing.T) {
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+		{Name: "p2", Path: "/p2"},
+	}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// First click selects item 0 (it's already selected, so this acts as double-click)
+	mouseMsg := tea.MouseMsg{
+		X:      10,
+		Y:      4,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	}
+	newModel, cmd := m.Update(mouseMsg)
+	mm := newModel.(*tui.MainMenuModel)
+	result := mm.Result()
+
+	if result == nil {
+		t.Fatal("clicking already-selected item should produce a result (double-click)")
+	}
+	if result.Action != "select-project" {
+		t.Errorf("expected action 'select-project', got %q", result.Action)
+	}
+	if result.Name != "p1" {
+		t.Errorf("expected name 'p1', got %q", result.Name)
+	}
+	if cmd == nil {
+		t.Error("expected tea.Quit cmd on activation")
+	}
+}
+
+func TestMainMenu_MouseClickInvalidRow(t *testing.T) {
+	projects := []models.Project{{Name: "p1", Path: "/p1"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// Click on border row 0 should not change selection
+	mouseMsg := tea.MouseMsg{
+		X:      10,
+		Y:      0,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	}
+	newModel, _ := m.Update(mouseMsg)
+	mm := newModel.(*tui.MainMenuModel)
+	if mm.SelectedItem() != 0 {
+		t.Errorf("clicking on border should not change selection, got %d", mm.SelectedItem())
+	}
+}
+
+func TestMainMenu_MouseClickResetsSleeTimer(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	m.SetSleepTimer(100)
+
+	// Click anywhere
+	mouseMsg := tea.MouseMsg{
+		X:      10,
+		Y:      4,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	}
+	m.Update(mouseMsg)
+	if m.ShouldSleep() {
+		t.Error("mouse click should reset sleep timer")
+	}
+}
+
+func TestMainMenu_MouseRightClickIgnored(t *testing.T) {
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+		{Name: "p2", Path: "/p2"},
+	}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// Right click should not change selection
+	mouseMsg := tea.MouseMsg{
+		X:      10,
+		Y:      6,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonRight,
+	}
+	newModel, _ := m.Update(mouseMsg)
+	mm := newModel.(*tui.MainMenuModel)
+	if mm.SelectedItem() != 0 {
+		t.Errorf("right click should not change selection, got %d", mm.SelectedItem())
+	}
+}
+
+func TestMainMenu_MouseReleaseIgnored(t *testing.T) {
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+		{Name: "p2", Path: "/p2"},
+	}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+
+	// Mouse release should not trigger selection
+	mouseMsg := tea.MouseMsg{
+		X:      10,
+		Y:      6,
+		Action: tea.MouseActionRelease,
+		Button: tea.MouseButtonLeft,
+	}
+	newModel, _ := m.Update(mouseMsg)
+	mm := newModel.(*tui.MainMenuModel)
+	if mm.SelectedItem() != 0 {
+		t.Errorf("mouse release should not change selection, got %d", mm.SelectedItem())
+	}
+}
