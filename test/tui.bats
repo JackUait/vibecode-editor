@@ -73,3 +73,22 @@ setup() {
   tui_init_interactive
   [ -n "$_HIDE_CURSOR" ]
 }
+
+# --- draw_logo ---
+
+@test "draw_logo calls ghost-tab-tui show-logo" {
+  # Mock ghost-tab-tui
+  ghost-tab-tui() {
+    if [[ "$1" == "show-logo" ]]; then
+      echo "MOCK_LOGO_OUTPUT"
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  run draw_logo "claude"
+
+  assert_success
+  assert_output "MOCK_LOGO_OUTPUT"
+}
