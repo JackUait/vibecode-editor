@@ -21,6 +21,7 @@ for _gt_lib in "${_gt_libs[@]}"; do
     read -rsn1
     exit 1
   fi
+  # shellcheck disable=SC1090  # Dynamic module loading
   source "$_WRAPPER_DIR/lib/${_gt_lib}.sh"
 done
 unset _gt_libs _gt_lib
@@ -53,6 +54,7 @@ validate_ai_tool
 PROJECTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/projects"
 
 # Version update check (Homebrew only)
+# shellcheck disable=SC2034  # Used in sourced update.sh module
 UPDATE_CACHE="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/.update-check"
 _update_version=""
 
@@ -78,7 +80,8 @@ elif [ -z "$1" ]; then
   fi
 fi
 
-export PROJECT_DIR="$(pwd)"
+PROJECT_DIR="$(pwd)"
+export PROJECT_DIR
 export PROJECT_NAME="${PROJECT_NAME:-$(basename "$PROJECT_DIR")}"
 SESSION_NAME="dev-${PROJECT_NAME}-$$"
 
