@@ -813,3 +813,70 @@ teardown() {
   assert_success
   assert_output "MOCK_LOGO_OUTPUT"
 }
+
+@test "select_project_interactive calls ghost-tab-tui and parses JSON" {
+  PROJECTS_FILE="$TEST_DIR/projects"
+  echo "proj1:/tmp/p1" > "$PROJECTS_FILE"
+
+  # Mock ghost-tab-tui
+  ghost-tab-tui() {
+    if [[ "$1" == "select-project" ]]; then
+      echo '{"name":"proj1","path":"/tmp/p1","selected":true}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  # Source the actual menu-tui.sh
+  source "$PROJECT_ROOT/lib/menu-tui.sh"
+
+  # Call function without run to preserve variable assignments
+  select_project_interactive "$PROJECTS_FILE"
+
+  # Check that variables were set
+  [ "$_selected_project_name" = "proj1" ]
+  [ "$_selected_project_path" = "/tmp/p1" ]
+}
+
+@test "select_project_interactive handles cancellation" {
+  PROJECTS_FILE="$TEST_DIR/projects"
+  echo "proj1:/tmp/p1" > "$PROJECTS_FILE"
+
+  # Mock ghost-tab-tui to return cancelled
+  ghost-tab-tui() {
+    if [[ "$1" == "select-project" ]]; then
+      echo '{"selected":false}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  source "$PROJECT_ROOT/lib/menu-tui.sh"
+
+  run select_project_interactive "$PROJECTS_FILE"
+
+  assert_failure
+}
+
+@test "select_project_interactive validates null fields" {
+  PROJECTS_FILE="$TEST_DIR/projects"
+
+  # Mock ghost-tab-tui to return null name
+  ghost-tab-tui() {
+    if [[ "$1" == "select-project" ]]; then
+      echo '{"name":null,"path":"/tmp/p1","selected":true}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  source "$PROJECT_ROOT/lib/menu-tui.sh"
+
+  run select_project_interactive "$PROJECTS_FILE"
+
+  assert_failure
+  assert_output --partial "invalid project name"
+}
