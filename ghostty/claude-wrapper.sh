@@ -12,7 +12,7 @@ if [ ! -d "$_WRAPPER_DIR/lib" ]; then
   exit 1
 fi
 
-_gt_libs=(ai-tools projects process input tui update menu menu-tui autocomplete project-actions tmux-session settings-menu)
+_gt_libs=(ai-tools projects process input tui update menu-tui autocomplete project-actions tmux-session settings-menu)
 for _gt_lib in "${_gt_libs[@]}"; do
   if [ ! -f "$_WRAPPER_DIR/lib/${_gt_lib}.sh" ]; then
     printf '\033[31mError:\033[0m Missing library %s/lib/%s.sh\n' "$_WRAPPER_DIR" "$_gt_lib" >&2
