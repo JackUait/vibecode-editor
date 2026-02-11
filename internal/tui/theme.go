@@ -1,0 +1,82 @@
+package tui
+
+import "github.com/charmbracelet/lipgloss"
+
+// AIToolTheme defines the color palette for an AI tool's TUI appearance.
+type AIToolTheme struct {
+	Name         string
+	Primary      lipgloss.Color
+	Dim          lipgloss.Color
+	Bright       lipgloss.Color
+	Accent       lipgloss.Color
+	Cap          lipgloss.Color
+	DarkFeet     lipgloss.Color
+	EyeWhite     lipgloss.Color
+	EyePupil     lipgloss.Color
+	SleepPrimary lipgloss.Color
+	SleepAccent  lipgloss.Color
+}
+
+var themes = map[string]AIToolTheme{
+	"claude": {
+		Name:         "claude",
+		Primary:      lipgloss.Color("209"),
+		Dim:          lipgloss.Color("166"),
+		Bright:       lipgloss.Color("209"),
+		Accent:       lipgloss.Color("220"),
+		Cap:          lipgloss.Color("223"),
+		DarkFeet:     lipgloss.Color("166"),
+		EyeWhite:     lipgloss.Color("255"),
+		EyePupil:     lipgloss.Color("232"),
+		SleepPrimary: lipgloss.Color("166"),
+		SleepAccent:  lipgloss.Color("178"),
+	},
+	"codex": {
+		Name:         "codex",
+		Primary:      lipgloss.Color("114"),
+		Dim:          lipgloss.Color("71"),
+		Bright:       lipgloss.Color("114"),
+		Accent:       lipgloss.Color("78"),
+		Cap:          lipgloss.Color("157"),
+		DarkFeet:     lipgloss.Color("71"),
+		EyeWhite:     lipgloss.Color("255"),
+		EyePupil:     lipgloss.Color("232"),
+		SleepPrimary: lipgloss.Color("71"),
+		SleepAccent:  lipgloss.Color("65"),
+	},
+	"copilot": {
+		Name:         "copilot",
+		Primary:      lipgloss.Color("141"),
+		Dim:          lipgloss.Color("98"),
+		Bright:       lipgloss.Color("141"),
+		Accent:       lipgloss.Color("134"),
+		Cap:          lipgloss.Color("183"),
+		DarkFeet:     lipgloss.Color("98"),
+		EyeWhite:     lipgloss.Color("255"),
+		EyePupil:     lipgloss.Color("232"),
+		SleepPrimary: lipgloss.Color("98"),
+		SleepAccent:  lipgloss.Color("96"),
+	},
+	"opencode": {
+		Name:         "opencode",
+		Primary:      lipgloss.Color("250"),
+		Dim:          lipgloss.Color("244"),
+		Bright:       lipgloss.Color("255"),
+		Accent:       lipgloss.Color("240"),
+		Cap:          lipgloss.Color("252"),
+		DarkFeet:     lipgloss.Color("240"),
+		EyeWhite:     lipgloss.Color("255"),
+		EyePupil:     lipgloss.Color("238"),
+		SleepPrimary: lipgloss.Color("238"),
+		SleepAccent:  lipgloss.Color("234"),
+	},
+}
+
+// ThemeForTool returns the color theme for the given AI tool.
+// Unknown tools fall back to the claude theme.
+func ThemeForTool(tool string) AIToolTheme {
+	if theme, ok := themes[tool]; ok {
+		return theme
+	}
+	return themes["claude"]
+}
