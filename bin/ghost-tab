@@ -6,6 +6,9 @@ set -e
 # line-by-line from the pipe and `read` consumes script lines as input.
 main() {
 
+# Ensure ~/.local/bin is in PATH (where ghost-tab-tui gets installed)
+export PATH="$HOME/.local/bin:$PATH"
+
 # Determine where supporting files live
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 _brew_prefix="$(brew --prefix 2>/dev/null || true)"
@@ -49,6 +52,12 @@ header "Installing dependencies..."
 for pkg in tmux lazygit broot; do
   ensure_brew_pkg "$pkg"
 done
+
+# ---------- TUI Binary ----------
+header "Checking TUI binary..."
+if ! ensure_ghost_tab_tui "$SHARE_DIR"; then
+  exit 1
+fi
 
 # ---------- AI Coding Tools ----------
 header "Setting up AI coding tools..."
@@ -170,6 +179,7 @@ echo ""
 
 while [[ "$add_project" =~ ^[yY]$ ]]; do
   if add_project_interactive; then
+    # shellcheck disable=SC2154  # _add_project_name and _add_project_path are set by add_project_interactive
     add_project_to_file "$_add_project_name" "$_add_project_path" "$PROJECTS_FILE"
     success "Added project: $_add_project_name"
   else

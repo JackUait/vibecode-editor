@@ -230,6 +230,160 @@ setup() {
 
 # --- ensure_base_requirements ---
 
+# --- ensure_ghost_tab_tui ---
+
+@test "ensure_ghost_tab_tui: skips when binary already in PATH" {
+  # Mock command to report ghost-tab-tui exists
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      echo "/usr/local/bin/ghost-tab-tui"
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  run ensure_ghost_tab_tui "/some/share/dir"
+
+  assert_success
+  assert_output --partial "ghost-tab-tui already available"
+}
+
+@test "ensure_ghost_tab_tui: builds from source when go available" {
+  TEST_TMP="$(mktemp -d)"
+
+  # Mock command: ghost-tab-tui not found, go found
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "-v" && "$2" == "go" ]]; then
+      echo "/usr/local/bin/go"
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  # Mock go build
+  go() {
+    if [[ "$1" == "build" ]]; then
+      # Create a fake binary at the -o path
+      touch "$3"
+      chmod +x "$3"
+      return 0
+    fi
+    return 1
+  }
+  export -f go
+
+  mkdir -p "$TEST_TMP/.local/bin"
+  export HOME="$TEST_TMP"
+
+  run ensure_ghost_tab_tui "$PROJECT_ROOT"
+
+  assert_success
+  assert_output --partial "Building ghost-tab-tui"
+  assert_output --partial "ghost-tab-tui built and installed"
+
+  rm -rf "$TEST_TMP"
+}
+
+@test "ensure_ghost_tab_tui: fails when go not available" {
+  TEST_TMP="$(mktemp -d)"
+
+  # Mock command: neither ghost-tab-tui nor go found
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "-v" && "$2" == "go" ]]; then
+      return 1
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  run ensure_ghost_tab_tui "$PROJECT_ROOT"
+
+  assert_failure
+  assert_output --partial "Go is required"
+
+  rm -rf "$TEST_TMP"
+}
+
+@test "ensure_ghost_tab_tui: fails when go build fails" {
+  TEST_TMP="$(mktemp -d)"
+
+  # Mock command: ghost-tab-tui not found, go found
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "-v" && "$2" == "go" ]]; then
+      echo "/usr/local/bin/go"
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  # Mock go build failure
+  go() {
+    echo "build error" >&2
+    return 1
+  }
+  export -f go
+
+  mkdir -p "$TEST_TMP/.local/bin"
+  export HOME="$TEST_TMP"
+
+  run ensure_ghost_tab_tui "$PROJECT_ROOT"
+
+  assert_failure
+  assert_output --partial "Failed to build ghost-tab-tui"
+
+  rm -rf "$TEST_TMP"
+}
+
+@test "ensure_ghost_tab_tui: creates local bin directory if missing" {
+  TEST_TMP="$(mktemp -d)"
+
+  # Mock command
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "-v" && "$2" == "go" ]]; then
+      echo "/usr/local/bin/go"
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  # Mock go build
+  go() {
+    if [[ "$1" == "build" ]]; then
+      touch "$3"
+      chmod +x "$3"
+      return 0
+    fi
+    return 1
+  }
+  export -f go
+
+  export HOME="$TEST_TMP"
+  # Don't create .local/bin — function should create it
+
+  run ensure_ghost_tab_tui "$PROJECT_ROOT"
+
+  assert_success
+  assert [ -d "$TEST_TMP/.local/bin" ]
+
+  rm -rf "$TEST_TMP"
+}
+
 @test "jq is in PATH after ensure_base_requirements" {
   # Mock ensure_command to just echo
   ensure_command() {
