@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -668,5 +669,172 @@ func TestMainMenu_NoProjects_ActionIndices(t *testing.T) {
 	}
 	if result.Action != "add-project" {
 		t.Errorf("Expected 'add-project' at index 0 with no projects, got %q", result.Action)
+	}
+}
+
+func TestMainMenu_ViewContainsBorders(t *testing.T) {
+	projects := []models.Project{{Name: "test", Path: "/test"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	view := m.View()
+	// Should contain box-drawing borders
+	if !strings.Contains(view, "\u250c") || !strings.Contains(view, "\u2518") {
+		t.Error("view should contain box-drawing borders")
+	}
+	if !strings.Contains(view, "Ghost Tab") {
+		t.Error("view should contain 'Ghost Tab' title")
+	}
+	if !strings.Contains(view, "test") {
+		t.Error("view should contain project name")
+	}
+}
+
+func TestMainMenu_ViewShowsAIToolWithArrows(t *testing.T) {
+	projects := []models.Project{}
+	tools := []string{"claude", "codex"}
+	m := tui.NewMainMenu(projects, tools, "claude", "animated")
+	m.SetSize(80, 30)
+	view := m.View()
+	if !strings.Contains(view, "\u25c2") || !strings.Contains(view, "\u25b8") {
+		t.Error("view should show AI tool cycling arrows when multiple tools")
+	}
+	if !strings.Contains(view, "Claude Code") {
+		t.Error("view should show AI tool display name")
+	}
+}
+
+func TestMainMenu_ViewNoArrowsSingleTool(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	view := m.View()
+	if strings.Contains(view, "\u25c2") || strings.Contains(view, "\u25b8") {
+		t.Error("should not show cycling arrows with single tool")
+	}
+}
+
+func TestMainMenu_ViewHelpRow(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude", "codex"}, "claude", "animated")
+	m.SetSize(80, 30)
+	view := m.View()
+	if !strings.Contains(view, "navigate") {
+		t.Error("help row should mention navigate")
+	}
+	if !strings.Contains(view, "AI tool") {
+		t.Error("help row should mention AI tool when multiple available")
+	}
+}
+
+func TestMainMenu_ViewActionItems(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	view := m.View()
+	if !strings.Contains(view, "Add") {
+		t.Error("view should contain Add action")
+	}
+	if !strings.Contains(view, "Delete") {
+		t.Error("view should contain Delete action")
+	}
+}
+
+func TestMainMenu_ViewSelectedMarker(t *testing.T) {
+	projects := []models.Project{{Name: "p1", Path: "/p1"}, {Name: "p2", Path: "/p2"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	view := m.View()
+	// Selected item (first) should have marker
+	if !strings.Contains(view, "\u258e") {
+		t.Error("view should contain selection marker \u258e")
+	}
+}
+
+func TestMainMenu_ViewWithGhostSide(t *testing.T) {
+	projects := []models.Project{{Name: "test", Path: "/test"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(100, 40) // Wide enough for side layout
+	view := m.View()
+	// Ghost art uses block characters
+	if !strings.Contains(view, "\u2588") {
+		t.Error("view should contain ghost art block characters in side layout")
+	}
+}
+
+func TestMainMenu_ViewGhostHiddenWhenNone(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "none")
+	m.SetSize(100, 40)
+	view := m.View()
+	// Ghost should not appear -- but menu should still render
+	if !strings.Contains(view, "Ghost Tab") {
+		t.Error("menu should still render when ghost is hidden")
+	}
+}
+
+func TestMainMenu_AIToolDisplayName(t *testing.T) {
+	tests := []struct {
+		tool     string
+		expected string
+	}{
+		{"claude", "Claude Code"},
+		{"codex", "Codex CLI"},
+		{"copilot", "Copilot CLI"},
+		{"opencode", "OpenCode"},
+		{"unknown", "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.tool, func(t *testing.T) {
+			got := tui.AIToolDisplayName(tt.tool)
+			if got != tt.expected {
+				t.Errorf("AIToolDisplayName(%q): expected %q, got %q", tt.tool, tt.expected, got)
+			}
+		})
+	}
+}
+
+func TestMainMenu_ViewHelpRowSingleTool(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	view := m.View()
+	if !strings.Contains(view, "navigate") {
+		t.Error("help row should mention navigate")
+	}
+	// Single tool: no AI tool mention in help
+	if strings.Contains(view, "AI tool") {
+		t.Error("help row should NOT mention AI tool when single tool")
+	}
+}
+
+func TestMainMenu_ViewUpdateVersion(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetUpdateVersion("v1.2.3")
+	m.SetSize(80, 30)
+	view := m.View()
+	if !strings.Contains(view, "v1.2.3") {
+		t.Error("view should show update version when set")
+	}
+	if !strings.Contains(view, "Update available") {
+		t.Error("view should show 'Update available' message")
+	}
+}
+
+func TestMainMenu_ViewNoUpdateVersion(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	view := m.View()
+	if strings.Contains(view, "Update available") {
+		t.Error("view should NOT show update message when version is empty")
+	}
+}
+
+func TestMainMenu_ViewGhostAbove(t *testing.T) {
+	projects := []models.Project{{Name: "test", Path: "/test"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	// Width too narrow for side (< 82), but height enough for above
+	m.SetSize(60, 50)
+	view := m.View()
+	// Should still contain ghost block characters
+	if !strings.Contains(view, "\u2588") {
+		t.Error("view should contain ghost art block characters in above layout")
+	}
+	if !strings.Contains(view, "Ghost Tab") {
+		t.Error("view should contain menu title in above layout")
 	}
 }
