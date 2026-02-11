@@ -31,8 +31,18 @@ add_project_interactive() {
     return 1
   fi
 
+  if [[ -z "$name" || "$name" == "null" ]]; then
+    error "TUI returned invalid project name"
+    return 1
+  fi
+
   if ! path=$(echo "$result" | jq -r '.path' 2>/dev/null); then
     error "Failed to parse project path"
+    return 1
+  fi
+
+  if [[ -z "$path" || "$path" == "null" ]]; then
+    error "TUI returned invalid project path"
     return 1
   fi
 

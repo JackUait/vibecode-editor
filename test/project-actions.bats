@@ -483,3 +483,21 @@ EOF
   assert_failure
   assert_output --partial "not found"
 }
+
+@test "add_project_interactive rejects null values from TUI" {
+  ghost-tab-tui() {
+    if [[ "$1" == "add-project" ]]; then
+      echo '{"name":null,"path":null,"confirmed":true}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  source "$BATS_TEST_DIRNAME/../lib/project-actions-tui.sh"
+  source "$BATS_TEST_DIRNAME/../lib/tui.sh"
+
+  run add_project_interactive
+  assert_failure
+  assert_output --partial "invalid"
+}
