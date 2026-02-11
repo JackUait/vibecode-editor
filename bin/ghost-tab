@@ -20,6 +20,7 @@ source "$SHARE_DIR/lib/install.sh"
 source "$SHARE_DIR/lib/ghostty-config.sh"
 source "$SHARE_DIR/lib/settings-json.sh"
 source "$SHARE_DIR/lib/ai-select.sh"
+source "$SHARE_DIR/lib/ai-select-tui.sh"
 source "$SHARE_DIR/lib/statusline-setup.sh"
 source "$SHARE_DIR/lib/notification-setup.sh"
 source "$SHARE_DIR/lib/project-actions.sh"
@@ -56,30 +57,46 @@ done
 header "Setting up AI coding tools..."
 echo ""
 echo -e "  Ghost Tab supports multiple AI coding assistants."
-echo -e "  Select which ones to install:"
+echo -e "  Select your preferred AI tool:"
 echo ""
 
-# Detect already installed tools
-_cc_installed=0; command -v claude &>/dev/null && _cc_installed=1
-_codex_installed=0; command -v codex &>/dev/null && _codex_installed=1
-_copilot_installed=0; command -v copilot &>/dev/null && _copilot_installed=1
-_oc_installed=0; command -v opencode &>/dev/null && _oc_installed=1
+# Use TUI to select AI tool
+if select_ai_tool_interactive; then
+  # Variable set by select_ai_tool_interactive: _selected_ai_tool
+  if [[ -z "$_selected_ai_tool" ]]; then
+    error "Internal error: TUI did not set AI tool"
+    exit 1
+  fi
+  SELECTED_AI_TOOL="$_selected_ai_tool"
 
-run_ai_tool_select "$_cc_installed" "$_codex_installed" "$_copilot_installed" "$_oc_installed"
+  # Save preference
+  AI_TOOL_PREF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
+  mkdir -p "$AI_TOOL_PREF_DIR"
+  echo "$SELECTED_AI_TOOL" > "$AI_TOOL_PREF_DIR/ai-tool"
 
-echo ""
+  echo ""
+  success "Selected AI tool: $SELECTED_AI_TOOL"
 
-# Install selected AI tools
-[ "$_sel_claude" -eq 1 ] && ensure_command "claude" "curl -fsSL https://claude.ai/install.sh | bash" \
-  "Run 'claude' to authenticate before opening Ghostty." "Claude Code"
-[ "$_sel_codex" -eq 1 ] && ensure_command "codex" "brew install --cask codex" "" "Codex CLI"
-[ "$_sel_copilot" -eq 1 ] && ensure_command "copilot" "brew install copilot-cli" "" "Copilot CLI"
-[ "$_sel_opencode" -eq 1 ] && ensure_command "opencode" "brew install anomalyco/tap/opencode" "" "OpenCode"
-
-# Save default AI tool preference
-AI_TOOL_PREF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
-save_ai_tool_preference "$_sel_claude" "$_sel_codex" "$_sel_copilot" "$_sel_opencode" "$AI_TOOL_PREF_DIR"
-success "Default AI tool set to $(cat "$AI_TOOL_PREF_DIR/ai-tool")"
+  # Install the selected tool
+  case "$SELECTED_AI_TOOL" in
+    claude)
+      ensure_command "claude" "curl -fsSL https://claude.ai/install.sh | bash" \
+        "Run 'claude' to authenticate before opening Ghostty." "Claude Code"
+      ;;
+    codex)
+      ensure_command "codex" "brew install --cask codex" "" "Codex CLI"
+      ;;
+    copilot)
+      ensure_command "copilot" "brew install copilot-cli" "" "Copilot CLI"
+      ;;
+    opencode)
+      ensure_command "opencode" "brew install anomalyco/tap/opencode" "" "OpenCode"
+      ;;
+  esac
+else
+  info "AI tool selection cancelled"
+  exit 1
+fi
 
 # ---------- Ghostty ----------
 # (Ghostty is now installed via ensure_base_requirements above)
@@ -174,7 +191,7 @@ else
 fi
 
 # ---------- Claude Code Status Line ----------
-if [ "$_sel_claude" -eq 1 ]; then
+if [ "$SELECTED_AI_TOOL" = "claude" ]; then
   header "Setting up Claude Code status line..."
   CLAUDE_SETTINGS="$HOME/.claude/settings.json"
   setup_statusline "$SHARE_DIR" "$CLAUDE_SETTINGS" "$HOME"
@@ -183,11 +200,11 @@ else
   info "Status line features are only available with Claude Code"
 fi
 
-# Check if any selected tool supports sound
+# Check if selected tool supports sound
 _supports_sound=0
-[ "$_sel_claude" -eq 1 ] && _supports_sound=1
-[ "$_sel_codex" -eq 1 ] && _supports_sound=1
-[ "$_sel_opencode" -eq 1 ] && _supports_sound=1
+[ "$SELECTED_AI_TOOL" = "claude" ] && _supports_sound=1
+[ "$SELECTED_AI_TOOL" = "codex" ] && _supports_sound=1
+[ "$SELECTED_AI_TOOL" = "opencode" ] && _supports_sound=1
 
 # ---------- Sound Notification ----------
 _sound_enabled=0
@@ -209,7 +226,7 @@ else
 fi
 
 # ---------- Claude Code notification hooks ----------
-if [ "$_sel_claude" -eq 1 ]; then
+if [ "$SELECTED_AI_TOOL" = "claude" ]; then
   CLAUDE_SETTINGS="$HOME/.claude/settings.json"
   if [ "$_sound_enabled" -eq 1 ]; then
     setup_sound_notification "$CLAUDE_SETTINGS" "afplay /System/Library/Sounds/Bottle.aiff &"
@@ -217,7 +234,7 @@ if [ "$_sel_claude" -eq 1 ]; then
 fi
 
 # ---------- Codex CLI Features ----------
-if [ "$_sel_codex" -eq 1 ] && [ "$_sound_enabled" -eq 1 ]; then
+if [ "$SELECTED_AI_TOOL" = "codex" ] && [ "$_sound_enabled" -eq 1 ]; then
   header "Setting up Codex CLI features..."
   mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"
 
@@ -280,7 +297,7 @@ PYEOF
 fi
 
 # Codex CLI status line (always configure if Codex is selected)
-if [ "$_sel_codex" -eq 1 ]; then
+if [ "$SELECTED_AI_TOOL" = "codex" ]; then
   header "Setting up Codex CLI status line..."
   mkdir -p ~/.codex
   # Only add status_line if not already present
@@ -296,7 +313,7 @@ if [ "$_sel_codex" -eq 1 ]; then
 fi
 
 # ---------- OpenCode Features ----------
-if [ "$_sel_opencode" -eq 1 ] && [ "$_sound_enabled" -eq 1 ]; then
+if [ "$SELECTED_AI_TOOL" = "opencode" ] && [ "$_sound_enabled" -eq 1 ]; then
   header "Setting up OpenCode features..."
   mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins"
   mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab"

@@ -95,3 +95,92 @@ _run_ai_select_with_keys() {
   # After re-checking claude, _sel_claude=1; all others stay 0
   assert_output "1 0 0 0"
 }
+
+# --- select_ai_tool_interactive ---
+
+@test "select_ai_tool_interactive: calls ghost-tab-tui and parses JSON" {
+  # Source the TUI wrapper module
+  source "$PROJECT_ROOT/lib/ai-select-tui.sh"
+
+  # Mock ghost-tab-tui
+  ghost-tab-tui() {
+    if [[ "$1" == "select-ai-tool" ]]; then
+      echo '{"tool":"claude","command":"claude","selected":true}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  # Call function directly (not via run) to check variables
+  select_ai_tool_interactive
+
+  # Check that global variable is set
+  [ "$_selected_ai_tool" = "claude" ]
+}
+
+@test "select_ai_tool_interactive: returns error when cancelled" {
+  source "$PROJECT_ROOT/lib/ai-select-tui.sh"
+
+  # Mock ghost-tab-tui returning cancelled
+  ghost-tab-tui() {
+    if [[ "$1" == "select-ai-tool" ]]; then
+      echo '{"tool":"","command":"","selected":false}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  run select_ai_tool_interactive
+
+  assert_failure
+}
+
+@test "select_ai_tool_interactive: handles jq parse error" {
+  source "$PROJECT_ROOT/lib/ai-select-tui.sh"
+
+  # Mock ghost-tab-tui returning invalid JSON
+  ghost-tab-tui() {
+    echo "not valid json"
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  run select_ai_tool_interactive
+
+  assert_failure
+  assert_output --partial "Failed to parse"
+}
+
+@test "select_ai_tool_interactive: validates null values" {
+  source "$PROJECT_ROOT/lib/ai-select-tui.sh"
+
+  # Mock ghost-tab-tui returning null tool
+  ghost-tab-tui() {
+    echo '{"tool":null,"command":null,"selected":true}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  run select_ai_tool_interactive
+
+  assert_failure
+  assert_output --partial "invalid tool name"
+}
+
+@test "select_ai_tool_interactive: selects codex" {
+  source "$PROJECT_ROOT/lib/ai-select-tui.sh"
+
+  ghost-tab-tui() {
+    echo '{"tool":"codex","command":"codex","selected":true}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  # Call function directly (not via run) to check variables
+  select_ai_tool_interactive
+
+  # Check that global variable is set
+  [ "$_selected_ai_tool" = "codex" ]
+}
