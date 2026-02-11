@@ -2,8 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -13,17 +11,15 @@ import (
 )
 
 type ProjectInputModel struct {
-	nameInput       textinput.Model
-	pathInput       textinput.Model
-	focusName       bool
-	name            string
-	path            string
-	confirmed       bool
-	quitting        bool
-	err             error
-	suggestions     []string
-	sugSelected     int
-	showSuggestions bool
+	nameInput    textinput.Model
+	pathInput    textinput.Model
+	focusName    bool
+	name         string
+	path         string
+	confirmed    bool
+	quitting     bool
+	err          error
+	autocomplete AutocompleteModel
 }
 
 func NewProjectInput() ProjectInputModel {
@@ -35,9 +31,10 @@ func NewProjectInput() ProjectInputModel {
 	pathInput.Placeholder = "Project path (e.g., ~/code/project)"
 
 	return ProjectInputModel{
-		nameInput: nameInput,
-		pathInput: pathInput,
-		focusName: true,
+		nameInput:    nameInput,
+		pathInput:    pathInput,
+		focusName:    true,
+		autocomplete: NewAutocomplete(PathSuggestionProvider(8), 8),
 	}
 }
 
@@ -56,56 +53,44 @@ func (m ProjectInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "esc":
-			if m.showSuggestions {
-				m.showSuggestions = false
-				m.suggestions = nil
+			if m.autocomplete.ShowSuggestions() {
+				m.autocomplete.Dismiss()
 				return m, nil
 			}
 			m.quitting = true
 			return m, tea.Quit
 
 		case "up":
-			if m.showSuggestions && len(m.suggestions) > 0 {
-				m.sugSelected--
-				if m.sugSelected < 0 {
-					m.sugSelected = len(m.suggestions) - 1
-				}
+			if m.autocomplete.ShowSuggestions() && len(m.autocomplete.Suggestions()) > 0 {
+				m.autocomplete.MoveUp()
 				return m, nil
 			}
 
 		case "down":
-			if m.showSuggestions && len(m.suggestions) > 0 {
-				m.sugSelected++
-				if m.sugSelected >= len(m.suggestions) {
-					m.sugSelected = 0
-				}
+			if m.autocomplete.ShowSuggestions() && len(m.autocomplete.Suggestions()) > 0 {
+				m.autocomplete.MoveDown()
 				return m, nil
 			}
 
 		case "tab":
-			if !m.focusName && m.showSuggestions && len(m.suggestions) > 0 {
-				// Accept selected suggestion
-				m.pathInput.SetValue(m.suggestions[m.sugSelected])
-				// Refresh suggestions for the new path
-				m.suggestions = GetPathSuggestions(m.pathInput.Value())
-				m.sugSelected = 0
-				m.showSuggestions = len(m.suggestions) > 0
+			if !m.focusName && m.autocomplete.ShowSuggestions() && len(m.autocomplete.Suggestions()) > 0 {
+				accepted := m.autocomplete.AcceptSelected()
+				m.pathInput.SetValue(accepted)
+				m.autocomplete.SetInput(m.pathInput.Value())
+				m.autocomplete.RefreshSuggestions()
 				return m, nil
 			}
 
 		case "enter":
-			if !m.focusName && m.showSuggestions && len(m.suggestions) > 0 {
-				// Accept selected suggestion
-				m.pathInput.SetValue(m.suggestions[m.sugSelected])
-				// Refresh suggestions for the new path
-				m.suggestions = GetPathSuggestions(m.pathInput.Value())
-				m.sugSelected = 0
-				m.showSuggestions = len(m.suggestions) > 0
+			if !m.focusName && m.autocomplete.ShowSuggestions() && len(m.autocomplete.Suggestions()) > 0 {
+				accepted := m.autocomplete.AcceptSelected()
+				m.pathInput.SetValue(accepted)
+				m.autocomplete.SetInput(m.pathInput.Value())
+				m.autocomplete.RefreshSuggestions()
 				return m, nil
 			}
 
 			if m.focusName {
-				// Move to path input
 				m.name = strings.TrimSpace(m.nameInput.Value())
 				if m.name == "" {
 					m.err = fmt.Errorf("project name cannot be empty")
@@ -116,14 +101,12 @@ func (m ProjectInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pathInput.Focus()
 				return m, textinput.Blink
 			} else {
-				// Validate and confirm
 				m.path = strings.TrimSpace(m.pathInput.Value())
 				if m.path == "" {
 					m.err = fmt.Errorf("project path cannot be empty")
 					return m, nil
 				}
 
-				// Validate path
 				if err := util.ValidatePath(m.path); err != nil {
 					m.err = err
 					return m, nil
@@ -140,15 +123,12 @@ func (m ProjectInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.nameInput, cmd = m.nameInput.Update(msg)
 	} else {
 		m.pathInput, cmd = m.pathInput.Update(msg)
-		// Update suggestions on every keystroke while in path input
 		current := m.pathInput.Value()
 		if current != "" {
-			m.suggestions = GetPathSuggestions(current)
-			m.sugSelected = 0
-			m.showSuggestions = len(m.suggestions) > 0
+			m.autocomplete.SetInput(current)
+			m.autocomplete.RefreshSuggestions()
 		} else {
-			m.suggestions = nil
-			m.showSuggestions = false
+			m.autocomplete.Dismiss()
 		}
 	}
 
@@ -173,8 +153,8 @@ func (m ProjectInputModel) View() string {
 	b.WriteString(m.pathInput.View())
 	b.WriteString("\n")
 
-	if m.showSuggestions && len(m.suggestions) > 0 {
-		b.WriteString(m.renderSuggestions())
+	if acView := m.autocomplete.View(); acView != "" {
+		b.WriteString(acView)
 		b.WriteString("\n")
 	} else {
 		b.WriteString("\n")
@@ -186,53 +166,6 @@ func (m ProjectInputModel) View() string {
 	}
 
 	b.WriteString(hintStyle.Render("Tab: autocomplete path | Enter: next/confirm | Esc: cancel"))
-
-	return b.String()
-}
-
-func (m ProjectInputModel) renderSuggestions() string {
-	borderColor := lipgloss.Color("241")
-	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
-	selectedStyle := lipgloss.NewStyle().Reverse(true)
-
-	// Find the maximum suggestion width for the box
-	maxWidth := 0
-	for _, s := range m.suggestions {
-		if len(s) > maxWidth {
-			maxWidth = len(s)
-		}
-	}
-	// Minimum box width and padding
-	if maxWidth < 20 {
-		maxWidth = 20
-	}
-	boxWidth := maxWidth + 2 // 1 space padding on each side
-
-	var b strings.Builder
-
-	// Top border
-	b.WriteString(borderStyle.Render("┌" + strings.Repeat("─", boxWidth) + "┐"))
-	b.WriteString("\n")
-
-	// Suggestion rows
-	for i, s := range m.suggestions {
-		padded := s + strings.Repeat(" ", boxWidth-2-len(s))
-		var content string
-		if i == m.sugSelected {
-			content = selectedStyle.Render(" " + padded + " ")
-		} else {
-			content = " " + padded + " "
-		}
-		b.WriteString(borderStyle.Render("│") + content + borderStyle.Render("│"))
-		b.WriteString("\n")
-	}
-
-	// Bottom border
-	b.WriteString(borderStyle.Render("└" + strings.Repeat("─", boxWidth) + "┘"))
-	b.WriteString("\n")
-
-	// Help text
-	b.WriteString(hintStyle.Render("↑↓ navigate  ⏎ complete  Esc cancel"))
 
 	return b.String()
 }
@@ -249,63 +182,11 @@ func (m ProjectInputModel) Confirmed() bool {
 	return m.confirmed
 }
 
-// GetPathSuggestions returns matching directory entries for a partial path input.
-// It handles tilde expansion, case-insensitive prefix matching, and returns
-// up to 8 suggestions with trailing slashes for directories.
+// GetPathSuggestions is a convenience wrapper around PathSuggestionProvider.
+// Unlike PathSuggestionProvider, it returns nil for empty input (backward-compatible).
 func GetPathSuggestions(input string) []string {
 	if input == "" {
 		return nil
 	}
-
-	expanded := util.ExpandPath(input)
-
-	var dir string
-	var prefix string
-
-	if strings.HasSuffix(input, "/") {
-		// List contents of the directory
-		dir = expanded
-		prefix = ""
-	} else {
-		// Match partial filename in parent directory
-		dir = filepath.Dir(expanded)
-		prefix = filepath.Base(expanded)
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-
-	const maxSuggestions = 8
-	var suggestions []string
-
-	lowerPrefix := strings.ToLower(prefix)
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		// Skip hidden directories
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		if prefix == "" || strings.HasPrefix(strings.ToLower(name), lowerPrefix) {
-			// Build the full suggestion path preserving original format
-			var suggestion string
-			if strings.HasSuffix(input, "/") {
-				suggestion = input + name + "/"
-			} else {
-				parentInput := input[:len(input)-len(filepath.Base(input))]
-				suggestion = parentInput + name + "/"
-			}
-			suggestions = append(suggestions, suggestion)
-			if len(suggestions) >= maxSuggestions {
-				break
-			}
-		}
-	}
-
-	return suggestions
+	return PathSuggestionProvider(8)(input)
 }
