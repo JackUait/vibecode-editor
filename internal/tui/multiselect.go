@@ -80,31 +80,31 @@ func (m MultiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorMsg = ""
 		}
 
-		switch msg.String() {
-		case "ctrl+c", "esc":
+		switch msg.Type {
+		case tea.KeyCtrlC, tea.KeyEscape:
 			m.result = &MultiSelectResult{Confirmed: false}
 			m.quitting = true
 			return m, tea.Quit
 
-		case "up", "k":
+		case tea.KeyUp:
 			m.cursor--
 			if m.cursor < 0 {
 				m.cursor = len(m.tools) - 1
 			}
 			return m, nil
 
-		case "down", "j":
+		case tea.KeyDown:
 			m.cursor++
 			if m.cursor >= len(m.tools) {
 				m.cursor = 0
 			}
 			return m, nil
 
-		case " ":
+		case tea.KeySpace:
 			m.checked[m.cursor] = !m.checked[m.cursor]
 			return m, nil
 
-		case "enter":
+		case tea.KeyEnter:
 			// Collect selected tools in list order
 			var selected []string
 			for i, t := range m.tools {
@@ -124,6 +124,28 @@ func (m MultiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.quitting = true
 			return m, tea.Quit
+
+		case tea.KeyRunes:
+			if len(msg.Runes) == 1 {
+				r := TranslateRune(msg.Runes[0])
+				switch r {
+				case ' ':
+					m.checked[m.cursor] = !m.checked[m.cursor]
+					return m, nil
+				case 'k':
+					m.cursor--
+					if m.cursor < 0 {
+						m.cursor = len(m.tools) - 1
+					}
+					return m, nil
+				case 'j':
+					m.cursor++
+					if m.cursor >= len(m.tools) {
+						m.cursor = 0
+					}
+					return m, nil
+				}
+			}
 		}
 	}
 

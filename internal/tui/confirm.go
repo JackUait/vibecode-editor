@@ -31,15 +31,25 @@ func (m ConfirmDialogModel) Init() tea.Cmd {
 func (m ConfirmDialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "y", "Y":
-			m.Confirmed = true
-			m.quitting = true
-			return m, tea.Quit
-		case "n", "N", "ctrl+c", "esc":
+		switch msg.Type {
+		case tea.KeyCtrlC, tea.KeyEscape:
 			m.Confirmed = false
 			m.quitting = true
 			return m, tea.Quit
+		case tea.KeyRunes:
+			if len(msg.Runes) == 1 {
+				r := TranslateRune(msg.Runes[0])
+				switch r {
+				case 'y', 'Y':
+					m.Confirmed = true
+					m.quitting = true
+					return m, tea.Quit
+				case 'n', 'N':
+					m.Confirmed = false
+					m.quitting = true
+					return m, tea.Quit
+				}
+			}
 		}
 	}
 	return m, nil

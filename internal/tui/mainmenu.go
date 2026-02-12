@@ -651,6 +651,7 @@ func (m *MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleRune processes a single rune keypress.
 func (m *MainMenuModel) handleRune(r rune) (tea.Model, tea.Cmd) {
+	r = TranslateRune(r)
 	switch r {
 	case 'j':
 		m.MoveDown()
@@ -712,7 +713,8 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyRunes:
 		if len(msg.Runes) == 1 {
-			switch msg.Runes[0] {
+			r := TranslateRune(msg.Runes[0])
+			switch r {
 			case 'b', 'B':
 				m.settingsMode = false
 				return m, nil
@@ -919,7 +921,7 @@ func (m *MainMenuModel) updateDeleteMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.confirmDelete()
 	case tea.KeyRunes:
 		if len(msg.Runes) == 1 {
-			r := msg.Runes[0]
+			r := TranslateRune(msg.Runes[0])
 			switch {
 			case r == 'q' || r == 'Q':
 				m.exitDeleteMode()
