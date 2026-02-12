@@ -397,6 +397,45 @@ teardown() {
   grep -q 'tab_title=project' "$TEST_TMP/ghost-tab/settings"
 }
 
+@test "select_project_interactive persists ai_tool change to ai-tool file" {
+  XDG_CONFIG_HOME="$TEST_TMP"
+  mkdir -p "$TEST_TMP/ghost-tab"
+
+  AI_TOOLS_AVAILABLE=("claude" "codex")
+  SELECTED_AI_TOOL="claude"
+
+  ghost-tab-tui() {
+    echo '{"action":"select-project","name":"proj1","path":"/tmp/p1","ai_tool":"codex"}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  select_project_interactive "$PROJECTS_FILE"
+
+  # AI tool preference file should be updated
+  [[ -f "$TEST_TMP/ghost-tab/ai-tool" ]]
+  [[ "$(cat "$TEST_TMP/ghost-tab/ai-tool")" == "codex" ]]
+}
+
+@test "select_project_interactive does not write ai-tool file when tool unchanged" {
+  XDG_CONFIG_HOME="$TEST_TMP"
+  mkdir -p "$TEST_TMP/ghost-tab"
+
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+
+  ghost-tab-tui() {
+    echo '{"action":"select-project","name":"proj1","path":"/tmp/p1","ai_tool":"claude"}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  select_project_interactive "$PROJECTS_FILE"
+
+  # Should not write file when tool didn't change
+  [[ ! -f "$TEST_TMP/ghost-tab/ai-tool" ]]
+}
+
 @test "select_project_interactive updates existing tab_title in settings" {
   XDG_CONFIG_HOME="$TEST_TMP"
   mkdir -p "$TEST_TMP/ghost-tab"

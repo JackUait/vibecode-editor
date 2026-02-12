@@ -64,6 +64,12 @@ select_project_interactive() {
   ai_tool=$(echo "$result" | jq -r '.ai_tool // ""' 2>/dev/null)
   if [[ -n "$ai_tool" && "$ai_tool" != "null" ]]; then
     _selected_ai_tool="$ai_tool"
+    # Persist for next session if tool changed
+    if [[ "$ai_tool" != "${SELECTED_AI_TOOL:-}" ]]; then
+      local ai_tool_file="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/ai-tool"
+      mkdir -p "$(dirname "$ai_tool_file")"
+      echo "$ai_tool" > "$ai_tool_file"
+    fi
   fi
 
   # Persist ghost display if changed
