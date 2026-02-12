@@ -105,37 +105,9 @@ teardown() {
   assert_failure
 }
 
-@test "select_project_interactive handles add-project action" {
+@test "select_project_interactive handles open-once action with name and path" {
   ghost-tab-tui() {
-    echo '{"action":"add-project","ai_tool":"claude"}'
-    return 0
-  }
-  export -f ghost-tab-tui
-
-  select_project_interactive "$PROJECTS_FILE"
-  local result=$?
-
-  [[ $result -eq 0 ]]
-  [[ "$_selected_project_action" == "add-project" ]]
-}
-
-@test "select_project_interactive handles delete-project action" {
-  ghost-tab-tui() {
-    echo '{"action":"delete-project","ai_tool":"claude"}'
-    return 0
-  }
-  export -f ghost-tab-tui
-
-  select_project_interactive "$PROJECTS_FILE"
-  local result=$?
-
-  [[ $result -eq 0 ]]
-  [[ "$_selected_project_action" == "delete-project" ]]
-}
-
-@test "select_project_interactive handles open-once action" {
-  ghost-tab-tui() {
-    echo '{"action":"open-once","ai_tool":"claude"}'
+    echo '{"action":"open-once","name":"temp","path":"/tmp/temp","ai_tool":"claude"}'
     return 0
   }
   export -f ghost-tab-tui
@@ -145,6 +117,8 @@ teardown() {
 
   [[ $result -eq 0 ]]
   [[ "$_selected_project_action" == "open-once" ]]
+  [[ "$_selected_project_name" == "temp" ]]
+  [[ "$_selected_project_path" == "/tmp/temp" ]]
 }
 
 @test "select_project_interactive handles plain-terminal action" {
@@ -436,21 +410,6 @@ teardown() {
   [[ ! -f "$TEST_TMP/ghost-tab/ai-tool" ]]
 }
 
-@test "select_project_interactive sets _selected_ai_tool for add-project action" {
-  AI_TOOLS_AVAILABLE=("claude" "codex")
-  SELECTED_AI_TOOL="claude"
-
-  ghost-tab-tui() {
-    echo '{"action":"add-project","ai_tool":"codex"}'
-    return 0
-  }
-  export -f ghost-tab-tui
-
-  select_project_interactive "$PROJECTS_FILE"
-
-  [[ "$_selected_ai_tool" == "codex" ]]
-}
-
 @test "select_project_interactive sets _selected_ai_tool for settings action" {
   AI_TOOLS_AVAILABLE=("claude" "codex")
   SELECTED_AI_TOOL="claude"
@@ -464,26 +423,6 @@ teardown() {
   select_project_interactive "$PROJECTS_FILE"
 
   [[ "$_selected_ai_tool" == "codex" ]]
-}
-
-@test "select_project_interactive persists ai_tool for non-select actions" {
-  XDG_CONFIG_HOME="$TEST_TMP"
-  mkdir -p "$TEST_TMP/ghost-tab"
-
-  AI_TOOLS_AVAILABLE=("claude" "codex")
-  SELECTED_AI_TOOL="claude"
-
-  ghost-tab-tui() {
-    echo '{"action":"add-project","ai_tool":"codex"}'
-    return 0
-  }
-  export -f ghost-tab-tui
-
-  select_project_interactive "$PROJECTS_FILE"
-
-  # AI tool preference file should be updated even for non-select-project actions
-  [[ -f "$TEST_TMP/ghost-tab/ai-tool" ]]
-  [[ "$(cat "$TEST_TMP/ghost-tab/ai-tool")" == "codex" ]]
 }
 
 @test "select_project_interactive updates existing tab_title in settings" {

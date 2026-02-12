@@ -99,7 +99,7 @@ select_project_interactive() {
   _selected_project_action="$action"
 
   case "$action" in
-    select-project)
+    select-project|open-once)
       local name path
       name=$(echo "$result" | jq -r '.name' 2>/dev/null)
       path=$(echo "$result" | jq -r '.path' 2>/dev/null)
@@ -121,7 +121,7 @@ select_project_interactive() {
       return 1
       ;;
     *)
-      # Other actions (add-project, delete-project, open-once, plain-terminal, settings)
+      # Other actions (plain-terminal, settings)
       return 0
       ;;
   esac

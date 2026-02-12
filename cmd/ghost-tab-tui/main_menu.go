@@ -51,6 +51,7 @@ func runMainMenu(cmd *cobra.Command, args []string) error {
 
 	model := tui.NewMainMenu(projects, aiTools, mainMenuAITool, mainMenuGhostDisplay)
 	model.SetTabTitle(mainMenuTabTitle)
+	model.SetProjectsFile(mainMenuProjectsFile)
 
 	ttyOpts, cleanup, err := util.TUITeaOptions()
 	if err != nil {
