@@ -488,6 +488,27 @@ teardown() {
   [[ "$(cat "$TEST_TMP/ghost-tab/ai-tool")" == "codex" ]]
 }
 
+@test "select_project_interactive does not persist ai_tool change on quit" {
+  XDG_CONFIG_HOME="$TEST_TMP"
+  mkdir -p "$TEST_TMP/ghost-tab"
+  echo "claude" > "$TEST_TMP/ghost-tab/ai-tool"
+
+  AI_TOOLS_AVAILABLE=("claude" "codex")
+  SELECTED_AI_TOOL="claude"
+
+  # User cycles to codex but then quits (Esc/Ctrl+C)
+  ghost-tab-tui() {
+    echo '{"action":"quit","ai_tool":"codex"}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  select_project_interactive "$PROJECTS_FILE" || true
+
+  # ai-tool file should still have "claude" — quit should not persist the change
+  [[ "$(cat "$TEST_TMP/ghost-tab/ai-tool")" == "claude" ]]
+}
+
 @test "select_project_interactive updates existing tab_title in settings" {
   XDG_CONFIG_HOME="$TEST_TMP"
   mkdir -p "$TEST_TMP/ghost-tab"
