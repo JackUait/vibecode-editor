@@ -1,27 +1,21 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 )
-
-// c returns an ANSI 256-color foreground escape sequence for color n.
-func c(n int) string {
-	return fmt.Sprintf("\033[38;5;%dm", n)
-}
 
 // r is the ANSI reset escape sequence.
 const r = "\033[0m"
 
 // ghostClaude returns the awake Claude ghost ASCII art (15 lines, 28 visible chars wide).
-func ghostClaude() []string {
-	O := c(209)  // orange
-	D := c(208)  // deeper orange
-	B := c(166)  // dark orange
-	L := c(223)  // peach
-	W := c(255)  // white
-	K := c(232)  // black
-	Y := c(220)  // gold
+func ghostClaude(theme AIToolTheme) []string {
+	O := AnsiFromThemeColor(theme.Primary)   // orange
+	D := AnsiFromThemeColor(theme.Bright)    // deeper orange
+	B := AnsiFromThemeColor(theme.DarkFeet)  // dark orange
+	L := AnsiFromThemeColor(theme.Cap)       // peach
+	W := AnsiFromThemeColor(theme.EyeWhite)  // white
+	K := AnsiFromThemeColor(theme.EyePupil)  // black
+	Y := AnsiFromThemeColor(theme.Accent)    // gold
 
 	return []string{
 		r + "       " + L + "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584" + r + "       ",
@@ -43,12 +37,12 @@ func ghostClaude() []string {
 }
 
 // ghostClaudeSleeping returns the sleeping Claude ghost (dimmed colors, closed eyes).
-func ghostClaudeSleeping() []string {
-	O := c(166)  // dimmed orange
-	D := c(166)  // dimmed deeper
-	B := c(94)   // dimmed dark
-	L := c(180)  // dimmed peach
-	K := c(232)  // black
+func ghostClaudeSleeping(theme AIToolTheme) []string {
+	O := AnsiFromThemeColor(theme.SleepPrimary)  // dimmed orange
+	D := AnsiFromThemeColor(theme.SleepDim)      // dimmed deeper
+	B := AnsiFromThemeColor(theme.SleepDarkFeet) // dimmed dark
+	L := AnsiFromThemeColor(theme.SleepCap)      // dimmed peach
+	K := AnsiFromThemeColor(theme.EyePupil)      // black
 
 	return []string{
 		r + "       " + L + "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584" + r + "       ",
@@ -70,14 +64,14 @@ func ghostClaudeSleeping() []string {
 }
 
 // ghostCodex returns the awake Codex ghost ASCII art.
-func ghostCodex() []string {
-	G := c(114)  // green
-	Y := c(113)  // yellow-green
-	D := c(71)   // dark green
-	L := c(157)  // light green
-	W := c(255)  // white
-	K := c(232)  // black
-	H := c(78)   // teal
+func ghostCodex(theme AIToolTheme) []string {
+	G := AnsiFromThemeColor(theme.Primary)   // green
+	Y := AnsiFromThemeColor(theme.Bright)    // yellow-green
+	D := AnsiFromThemeColor(theme.DarkFeet)  // dark green
+	L := AnsiFromThemeColor(theme.Cap)       // light green
+	W := AnsiFromThemeColor(theme.EyeWhite)  // white
+	K := AnsiFromThemeColor(theme.EyePupil)  // black
+	H := AnsiFromThemeColor(theme.Accent)    // teal
 
 	return []string{
 		r + "       " + L + "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584" + r + "       ",
@@ -99,12 +93,12 @@ func ghostCodex() []string {
 }
 
 // ghostCodexSleeping returns the sleeping Codex ghost (dimmed, closed eyes).
-func ghostCodexSleeping() []string {
-	G := c(71)   // dimmed green
-	Y := c(71)   // dimmed yellow-green
-	D := c(58)   // dimmed dark
-	L := c(114)  // dimmed light
-	K := c(232)  // black
+func ghostCodexSleeping(theme AIToolTheme) []string {
+	G := AnsiFromThemeColor(theme.SleepPrimary)  // dimmed green
+	Y := AnsiFromThemeColor(theme.SleepDim)      // dimmed yellow-green
+	D := AnsiFromThemeColor(theme.SleepDarkFeet) // dimmed dark
+	L := AnsiFromThemeColor(theme.SleepCap)      // dimmed light
+	K := AnsiFromThemeColor(theme.EyePupil)      // black
 
 	return []string{
 		r + "       " + L + "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584" + r + "       ",
@@ -126,14 +120,14 @@ func ghostCodexSleeping() []string {
 }
 
 // ghostCopilot returns the awake Copilot ghost ASCII art.
-func ghostCopilot() []string {
-	P := c(141)   // purple
-	LP := c(140)  // light purple
-	DP := c(98)   // dark purple
-	LV := c(183)  // lavender
-	W := c(255)   // white
-	K := c(232)   // black
-	M := c(134)   // magenta
+func ghostCopilot(theme AIToolTheme) []string {
+	P := AnsiFromThemeColor(theme.Primary)   // purple
+	LP := AnsiFromThemeColor(theme.Bright)   // light purple
+	DP := AnsiFromThemeColor(theme.DarkFeet) // dark purple
+	LV := AnsiFromThemeColor(theme.Cap)      // lavender
+	W := AnsiFromThemeColor(theme.EyeWhite)  // white
+	K := AnsiFromThemeColor(theme.EyePupil)  // black
+	M := AnsiFromThemeColor(theme.Accent)    // magenta
 
 	return []string{
 		r + "       " + LV + "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584" + r + "       ",
@@ -155,13 +149,13 @@ func ghostCopilot() []string {
 }
 
 // ghostCopilotSleeping returns the sleeping Copilot ghost (dimmed, closed eyes).
-func ghostCopilotSleeping() []string {
-	P := c(98)    // dimmed purple
-	LP := c(98)   // dimmed light purple
-	DP := c(60)   // dimmed dark purple
-	LV := c(140)  // dimmed lavender
-	K := c(232)   // black
-	M := c(96)    // dimmed magenta
+func ghostCopilotSleeping(theme AIToolTheme) []string {
+	P := AnsiFromThemeColor(theme.SleepPrimary)  // dimmed purple
+	LP := AnsiFromThemeColor(theme.SleepDim)     // dimmed light purple
+	DP := AnsiFromThemeColor(theme.SleepDarkFeet) // dimmed dark purple
+	LV := AnsiFromThemeColor(theme.SleepCap)     // dimmed lavender
+	K := AnsiFromThemeColor(theme.EyePupil)      // black
+	M := AnsiFromThemeColor(theme.SleepAccent)   // dimmed magenta
 
 	return []string{
 		r + "       " + LV + "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584" + r + "       ",
@@ -183,15 +177,15 @@ func ghostCopilotSleeping() []string {
 }
 
 // ghostOpencode returns the awake OpenCode ghost ASCII art.
-func ghostOpencode() []string {
-	W := c(255)   // white
-	VL := c(252)  // very light gray
-	ML := c(246)  // medium light gray
-	M := c(244)   // medium gray
-	MD := c(242)  // medium dark gray
-	D := c(240)   // dark gray
-	K := c(238)   // near-black
-	SM := c(240)  // smile color
+func ghostOpencode(theme AIToolTheme) []string {
+	W := AnsiFromThemeColor(theme.Bright)    // white (upper body)
+	VL := AnsiFromThemeColor(theme.Cap)      // very light gray
+	ML := AnsiFromThemeColor(theme.Primary)  // medium light gray
+	M := AnsiFromThemeColor(theme.Dim)       // medium gray
+	MD := AnsiFromThemeColor(theme.Accent)   // medium dark gray
+	D := AnsiFromThemeColor(theme.DarkFeet)  // dark gray
+	K := AnsiFromThemeColor(theme.EyePupil)  // near-black
+	SM := AnsiFromThemeColor(theme.DarkFeet) // smile color
 
 	return []string{
 		r + "       " + VL + "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584" + r + "       ",
@@ -213,14 +207,14 @@ func ghostOpencode() []string {
 }
 
 // ghostOpencodeSleeping returns the sleeping OpenCode ghost (dimmed, closed eyes).
-func ghostOpencodeSleeping() []string {
-	W := c(244)   // dimmed white
-	VL := c(242)  // dimmed very light
-	ML := c(238)  // dimmed medium light
-	M := c(236)   // dimmed medium
-	MD := c(234)  // dimmed medium dark
-	D := c(232)   // dimmed dark
-	K := c(232)   // black
+func ghostOpencodeSleeping(theme AIToolTheme) []string {
+	W := AnsiFromThemeColor(theme.SleepPrimary)  // dimmed white
+	VL := AnsiFromThemeColor(theme.SleepCap)     // dimmed very light
+	ML := AnsiFromThemeColor(theme.SleepDim)     // dimmed medium light
+	M := AnsiFromThemeColor(theme.SleepDim)      // dimmed medium
+	MD := AnsiFromThemeColor(theme.SleepAccent)  // dimmed medium dark
+	D := AnsiFromThemeColor(theme.SleepDarkFeet) // dimmed dark
+	K := AnsiFromThemeColor(theme.EyePupil)      // black
 
 	return []string{
 		r + "       " + VL + "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584" + r + "       ",
@@ -244,28 +238,29 @@ func ghostOpencodeSleeping() []string {
 // GhostForTool returns the ghost ASCII art lines for the given tool.
 // Unknown tools fall back to the claude ghost.
 func GhostForTool(tool string, sleeping bool) []string {
+	theme := ThemeForTool(tool)
 	switch tool {
 	case "codex":
 		if sleeping {
-			return ghostCodexSleeping()
+			return ghostCodexSleeping(theme)
 		}
-		return ghostCodex()
+		return ghostCodex(theme)
 	case "copilot":
 		if sleeping {
-			return ghostCopilotSleeping()
+			return ghostCopilotSleeping(theme)
 		}
-		return ghostCopilot()
+		return ghostCopilot(theme)
 	case "opencode":
 		if sleeping {
-			return ghostOpencodeSleeping()
+			return ghostOpencodeSleeping(theme)
 		}
-		return ghostOpencode()
+		return ghostOpencode(theme)
 	default:
 		// claude and unknown tools
 		if sleeping {
-			return ghostClaudeSleeping()
+			return ghostClaudeSleeping(theme)
 		}
-		return ghostClaude()
+		return ghostClaude(theme)
 	}
 }
 

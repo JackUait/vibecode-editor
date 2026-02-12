@@ -93,3 +93,27 @@ func TestRenderGhost_Empty(t *testing.T) {
 		t.Errorf("RenderGhost(empty): expected empty string, got %q", result)
 	}
 }
+
+func TestGhostForToolWithTheme_UsesThemeColors(t *testing.T) {
+	theme := tui.ThemeForTool("claude")
+	expectedColor := tui.AnsiFromThemeColor(theme.Primary)
+
+	lines := tui.GhostForTool("claude", false)
+	rendered := tui.RenderGhost(lines)
+
+	if !strings.Contains(rendered, expectedColor) {
+		t.Errorf("awake claude ghost should contain theme Primary color %q", expectedColor)
+	}
+}
+
+func TestGhostForToolWithTheme_SleepingUsesDimmedColors(t *testing.T) {
+	theme := tui.ThemeForTool("claude")
+	sleepColor := tui.AnsiFromThemeColor(theme.SleepPrimary)
+
+	lines := tui.GhostForTool("claude", true)
+	rendered := tui.RenderGhost(lines)
+
+	if !strings.Contains(rendered, sleepColor) {
+		t.Errorf("sleeping claude ghost should contain theme SleepPrimary color %q", sleepColor)
+	}
+}
