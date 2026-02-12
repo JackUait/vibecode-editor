@@ -34,6 +34,7 @@ type MainMenuResult struct {
 	Path         string `json:"path,omitempty"`
 	AITool       string `json:"ai_tool"`
 	GhostDisplay string `json:"ghost_display,omitempty"`
+	TabTitle     string `json:"tab_title,omitempty"`
 }
 
 // MenuLayout describes how the ghost and menu are arranged at a given terminal size.
@@ -95,6 +96,9 @@ type MainMenuModel struct {
 	settingsSelected    int
 	initialGhostDisplay string
 	ghostDisplayChanged bool
+	tabTitle            string
+	initialTabTitle     string
+	tabTitleChanged     bool
 	zzz                 *ZzzAnimation
 	centerOffsetY       int
 }
@@ -188,6 +192,27 @@ func (m *MainMenuModel) SetSize(width, height int) {
 // GhostDisplay returns the ghost display mode.
 func (m *MainMenuModel) GhostDisplay() string {
 	return m.ghostDisplay
+}
+
+// TabTitle returns the tab title mode.
+func (m *MainMenuModel) TabTitle() string {
+	return m.tabTitle
+}
+
+// SetTabTitle sets the tab title mode and records the initial value.
+func (m *MainMenuModel) SetTabTitle(mode string) {
+	m.tabTitle = mode
+	m.initialTabTitle = mode
+}
+
+// CycleTabTitle cycles between "full" and "project".
+func (m *MainMenuModel) CycleTabTitle() {
+	if m.tabTitle == "full" {
+		m.tabTitle = "project"
+	} else {
+		m.tabTitle = "full"
+	}
+	m.tabTitleChanged = m.tabTitle != m.initialTabTitle
 }
 
 // InSettingsMode returns true if the menu is currently showing the settings panel.
@@ -341,6 +366,15 @@ func (m *MainMenuModel) ghostDisplayForResult() string {
 	return ""
 }
 
+// tabTitleForResult returns the tab title value to include in the result,
+// or empty string if unchanged.
+func (m *MainMenuModel) tabTitleForResult() string {
+	if m.tabTitleChanged {
+		return m.tabTitle
+	}
+	return ""
+}
+
 // selectCurrent produces a result for the currently selected item.
 func (m *MainMenuModel) selectCurrent() {
 	idx := m.selectedItem
@@ -353,6 +387,7 @@ func (m *MainMenuModel) selectCurrent() {
 			Path:         m.projects[idx].Path,
 			AITool:       m.CurrentAITool(),
 			GhostDisplay: m.ghostDisplayForResult(),
+			TabTitle:     m.tabTitleForResult(),
 		}
 	} else {
 		actionIdx := idx - numProjects
@@ -361,6 +396,7 @@ func (m *MainMenuModel) selectCurrent() {
 				Action:       actionNames[actionIdx],
 				AITool:       m.CurrentAITool(),
 				GhostDisplay: m.ghostDisplayForResult(),
+				TabTitle:     m.tabTitleForResult(),
 			}
 		}
 	}
@@ -373,6 +409,7 @@ func (m *MainMenuModel) setActionResult(action string) {
 		Action:       action,
 		AITool:       m.CurrentAITool(),
 		GhostDisplay: m.ghostDisplayForResult(),
+		TabTitle:     m.tabTitleForResult(),
 	}
 	m.quitting = true
 }
@@ -531,14 +568,22 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case tea.KeyEnter:
 		// Activate current settings item
-		if m.settingsSelected == 0 {
+		switch m.settingsSelected {
+		case 0:
 			m.CycleGhostDisplay()
+		case 1:
+			m.CycleTabTitle()
 		}
 		return m, nil
 	case tea.KeyUp:
-		// Future extensibility: navigate settings items
+		if m.settingsSelected > 0 {
+			m.settingsSelected--
+		}
 		return m, nil
 	case tea.KeyDown:
+		if m.settingsSelected < 1 {
+			m.settingsSelected++
+		}
 		return m, nil
 	case tea.KeyRunes:
 		if len(msg.Runes) == 1 {
@@ -547,11 +592,22 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.settingsMode = false
 				return m, nil
 			case 'a', 'A':
-				m.CycleGhostDisplay()
+				switch m.settingsSelected {
+				case 0:
+					m.CycleGhostDisplay()
+				case 1:
+					m.CycleTabTitle()
+				}
 				return m, nil
 			case 'j':
+				if m.settingsSelected < 1 {
+					m.settingsSelected++
+				}
 				return m, nil
 			case 'k':
+				if m.settingsSelected > 0 {
+					m.settingsSelected--
+				}
 				return m, nil
 			}
 		}
@@ -568,6 +624,40 @@ func ghostDisplayLabel(mode string) string {
 		return "Static"
 	case "none":
 		return "None"
+	default:
+		return mode
+	}
+}
+
+// renderSettingsItem renders a single settings item row.
+func (m *MainMenuModel) renderSettingsItem(index int, label, stateText string, stateStyle, brightBoldStyle lipgloss.Style, leftBorder, rightBorder string) string {
+	if m.settingsSelected == index {
+		marker := brightBoldStyle.Render("\u258e")
+		labelText := brightBoldStyle.Render(label)
+		stateRendered := stateStyle.Render(stateText)
+		content := "  " + marker + " " + labelText + "    " + stateRendered
+		padding := menuInnerWidth - lipgloss.Width(content)
+		if padding < 0 {
+			padding = 0
+		}
+		return leftBorder + content + strings.Repeat(" ", padding) + rightBorder
+	}
+	stateRendered := stateStyle.Render(stateText)
+	content := "    " + label + "    " + stateRendered
+	padding := menuInnerWidth - lipgloss.Width(content)
+	if padding < 0 {
+		padding = 0
+	}
+	return leftBorder + content + strings.Repeat(" ", padding) + rightBorder
+}
+
+// tabTitleLabel returns a display label for the tab title mode.
+func tabTitleLabel(mode string) string {
+	switch mode {
+	case "full":
+		return "Project \u00b7 Tool"
+	case "project":
+		return "Project Only"
 	default:
 		return mode
 	}
@@ -621,29 +711,21 @@ func (m *MainMenuModel) renderSettingsBox() string {
 	lines = append(lines, emptyRow)
 
 	// Ghost Display item
-	label := "Ghost Display"
-	stateText := "[" + ghostDisplayLabel(m.ghostDisplay) + "]"
-	if m.settingsSelected == 0 {
-		marker := brightBoldStyle.Render("\u258e")
-		labelText := brightBoldStyle.Render(label)
-		stateRendered := stateStyle.Render(stateText)
-		content := "  " + marker + " " + labelText + "    " + stateRendered
-		padding := menuInnerWidth - lipgloss.Width(content)
-		if padding < 0 {
-			padding = 0
-		}
-		itemRow := leftBorder + content + strings.Repeat(" ", padding) + rightBorder
-		lines = append(lines, itemRow)
+	ghostLabel := "Ghost Display"
+	ghostState := "[" + ghostDisplayLabel(m.ghostDisplay) + "]"
+	lines = append(lines, m.renderSettingsItem(0, ghostLabel, ghostState, stateStyle, brightBoldStyle, leftBorder, rightBorder))
+
+	// Tab Title item
+	var tabTitleColor lipgloss.Color
+	if m.tabTitle == "full" {
+		tabTitleColor = lipgloss.Color("114") // green
 	} else {
-		stateRendered := stateStyle.Render(stateText)
-		content := "    " + label + "    " + stateRendered
-		padding := menuInnerWidth - lipgloss.Width(content)
-		if padding < 0 {
-			padding = 0
-		}
-		itemRow := leftBorder + content + strings.Repeat(" ", padding) + rightBorder
-		lines = append(lines, itemRow)
+		tabTitleColor = lipgloss.Color("220") // yellow
 	}
+	tabTitleStyle := lipgloss.NewStyle().Foreground(tabTitleColor)
+	tabLabel := "Tab Title"
+	tabState := "[" + tabTitleLabel(m.tabTitle) + "]"
+	lines = append(lines, m.renderSettingsItem(1, tabLabel, tabState, tabTitleStyle, brightBoldStyle, leftBorder, rightBorder))
 
 	// Empty row
 	lines = append(lines, emptyRow)
@@ -652,7 +734,7 @@ func (m *MainMenuModel) renderSettingsBox() string {
 	lines = append(lines, separator)
 
 	// Help row
-	helpText := "A cycle  B back  Esc close"
+	helpText := "\u2191\u2193 navigate  A cycle  B back  Esc close"
 	helpContent := helpStyle.Render(helpText)
 	helpPadding := menuInnerWidth - lipgloss.Width(helpContent) - 1
 	if helpPadding < 0 {
@@ -668,6 +750,19 @@ func (m *MainMenuModel) renderSettingsBox() string {
 }
 
 const menuInnerWidth = 46
+
+// TruncateMiddle truncates s in the middle with "…" if it exceeds maxWidth.
+func TruncateMiddle(s string, maxWidth int) string {
+	if len(s) <= maxWidth {
+		return s
+	}
+	if maxWidth <= 1 {
+		return "\u2026"
+	}
+	left := (maxWidth - 1 + 1) / 2
+	right := maxWidth - 1 - left
+	return s[:left] + "\u2026" + s[len(s)-right:]
+}
 
 // shortenHomePath replaces $HOME prefix with ~ for display.
 func shortenHomePath(path string) string {
@@ -746,11 +841,12 @@ func (m *MainMenuModel) renderMenuBox() string {
 		var nameLine string
 		var pathLine string
 
-		shortPath := shortenHomePath(proj.Path)
+		shortPath := TruncateMiddle(shortenHomePath(proj.Path), menuInnerWidth-7)
 
 		if selected {
 			marker := brightBoldStyle.Render("\u258e")
-			nameText := brightBoldStyle.Render(num + "  " + proj.Name)
+			truncName := TruncateMiddle(proj.Name, menuInnerWidth-7-len(num))
+			nameText := brightBoldStyle.Render(num + "  " + truncName)
 			// "  ▎ 1  name" -> 2 spaces + marker + space + num + 2 spaces + name
 			nameContent := "  " + marker + " " + nameText
 			namePadding := menuInnerWidth - lipgloss.Width(nameContent)
@@ -767,7 +863,8 @@ func (m *MainMenuModel) renderMenuBox() string {
 			pathLine = leftBorder + pathContent + strings.Repeat(" ", pathPadding) + rightBorder
 		} else {
 			numText := dimStyle.Render(num)
-			nameText := brightStyle.Render(proj.Name)
+			truncName := TruncateMiddle(proj.Name, menuInnerWidth-6-len(num))
+			nameText := brightStyle.Render(truncName)
 			nameContent := "    " + numText + "  " + nameText
 			namePadding := menuInnerWidth - lipgloss.Width(nameContent)
 			if namePadding < 0 {
@@ -872,12 +969,29 @@ func (m *MainMenuModel) View() string {
 	case "side":
 		ghostLines := GhostForTool(m.CurrentAITool(), m.ghostSleeping)
 		ghostStr := RenderGhost(ghostLines)
-		if m.ghostDisplay == "animated" && bobOffsets[m.bobStep] == 1 {
-			ghostStr = "\n" + ghostStr
-		}
 		if m.ghostSleeping && m.zzz != nil {
 			zzzColor := AnsiFromThemeColor(m.theme.SleepAccent)
-			ghostStr += "\n" + m.zzz.ViewColored(zzzColor)
+			zzzStr := m.zzz.ViewColored(zzzColor)
+			zzzLines := strings.Split(zzzStr, "\n")
+			maxW := 0
+			for _, line := range zzzLines {
+				if w := lipgloss.Width(line); w > maxW {
+					maxW = w
+				}
+			}
+			pad := 28 - maxW
+			if pad < 0 {
+				pad = 0
+			}
+			prefix := strings.Repeat(" ", pad)
+			var paddedZzz []string
+			for _, line := range zzzLines {
+				paddedZzz = append(paddedZzz, prefix+line)
+			}
+			ghostStr = strings.Join(paddedZzz, "\n") + "\n" + ghostStr
+		}
+		if m.ghostDisplay == "animated" && bobOffsets[m.bobStep] == 1 {
+			ghostStr = "\n" + ghostStr
 		}
 		spacer := strings.Repeat(" ", 3)
 		content = lipgloss.JoinHorizontal(lipgloss.Top, menuBox, spacer, ghostStr)
@@ -885,12 +999,29 @@ func (m *MainMenuModel) View() string {
 	case "above":
 		ghostLines := GhostForTool(m.CurrentAITool(), m.ghostSleeping)
 		ghostStr := RenderGhost(ghostLines)
-		if m.ghostDisplay == "animated" && bobOffsets[m.bobStep] == 1 {
-			ghostStr = "\n" + ghostStr
-		}
 		if m.ghostSleeping && m.zzz != nil {
 			zzzColor := AnsiFromThemeColor(m.theme.SleepAccent)
-			ghostStr += "\n" + m.zzz.ViewColored(zzzColor)
+			zzzStr := m.zzz.ViewColored(zzzColor)
+			zzzLines := strings.Split(zzzStr, "\n")
+			maxW := 0
+			for _, line := range zzzLines {
+				if w := lipgloss.Width(line); w > maxW {
+					maxW = w
+				}
+			}
+			pad := 28 - maxW
+			if pad < 0 {
+				pad = 0
+			}
+			prefix := strings.Repeat(" ", pad)
+			var paddedZzz []string
+			for _, line := range zzzLines {
+				paddedZzz = append(paddedZzz, prefix+line)
+			}
+			ghostStr = strings.Join(paddedZzz, "\n") + "\n" + ghostStr
+		}
+		if m.ghostDisplay == "animated" && bobOffsets[m.bobStep] == 1 {
+			ghostStr = "\n" + ghostStr
 		}
 		content = lipgloss.JoinVertical(lipgloss.Center, ghostStr, "", menuBox)
 

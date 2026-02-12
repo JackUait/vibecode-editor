@@ -340,3 +340,76 @@ teardown() {
   captured_args=$(<"$TEST_TMP/captured_args")
   [[ "$captured_args" != *"--update-version"* ]]
 }
+
+@test "select_project_interactive reads tab_title from settings file" {
+  XDG_CONFIG_HOME="$TEST_TMP"
+  mkdir -p "$TEST_TMP/ghost-tab"
+  echo "tab_title=project" > "$TEST_TMP/ghost-tab/settings"
+
+  ghost-tab-tui() {
+    echo "$*" > "$TEST_TMP/captured_args"
+    echo '{"action":"quit"}'
+    return 0
+  }
+  export -f ghost-tab-tui
+  export TEST_TMP
+
+  select_project_interactive "$PROJECTS_FILE" || true
+
+  local captured_args
+  captured_args=$(<"$TEST_TMP/captured_args")
+  [[ "$captured_args" == *"--tab-title project"* ]]
+}
+
+@test "select_project_interactive defaults tab_title to full" {
+  XDG_CONFIG_HOME="$TEST_TMP"
+  # No settings file
+
+  ghost-tab-tui() {
+    echo "$*" > "$TEST_TMP/captured_args"
+    echo '{"action":"quit"}'
+    return 0
+  }
+  export -f ghost-tab-tui
+  export TEST_TMP
+
+  select_project_interactive "$PROJECTS_FILE" || true
+
+  local captured_args
+  captured_args=$(<"$TEST_TMP/captured_args")
+  [[ "$captured_args" == *"--tab-title"* ]]
+  [[ "$captured_args" == *"full"* ]]
+}
+
+@test "select_project_interactive persists tab_title change" {
+  XDG_CONFIG_HOME="$TEST_TMP"
+  mkdir -p "$TEST_TMP/ghost-tab"
+
+  ghost-tab-tui() {
+    echo '{"action":"select-project","name":"proj1","path":"/tmp/p1","ai_tool":"claude","tab_title":"project"}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  select_project_interactive "$PROJECTS_FILE"
+
+  [[ -f "$TEST_TMP/ghost-tab/settings" ]]
+  grep -q 'tab_title=project' "$TEST_TMP/ghost-tab/settings"
+}
+
+@test "select_project_interactive updates existing tab_title in settings" {
+  XDG_CONFIG_HOME="$TEST_TMP"
+  mkdir -p "$TEST_TMP/ghost-tab"
+  echo "tab_title=full" > "$TEST_TMP/ghost-tab/settings"
+
+  ghost-tab-tui() {
+    echo '{"action":"select-project","name":"proj1","path":"/tmp/p1","ai_tool":"claude","tab_title":"project"}'
+    return 0
+  }
+  export -f ghost-tab-tui
+
+  select_project_interactive "$PROJECTS_FILE"
+
+  grep -q 'tab_title=project' "$TEST_TMP/ghost-tab/settings"
+  ! grep -q 'tab_title=full' "$TEST_TMP/ghost-tab/settings"
+}

@@ -13,14 +13,20 @@ select_project_interactive() {
     return 1
   fi
 
-  # Read ghost display preference
+  # Read preferences from settings file
   local ghost_display="animated"
+  local tab_title="full"
   local settings_file="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/settings"
   if [ -f "$settings_file" ]; then
     local saved_display
     saved_display=$(grep '^ghost_display=' "$settings_file" 2>/dev/null | cut -d= -f2)
     if [ -n "$saved_display" ]; then
       ghost_display="$saved_display"
+    fi
+    local saved_tab_title
+    saved_tab_title=$(grep '^tab_title=' "$settings_file" 2>/dev/null | cut -d= -f2)
+    if [ -n "$saved_tab_title" ]; then
+      tab_title="$saved_tab_title"
     fi
   fi
 
@@ -33,6 +39,7 @@ select_project_interactive() {
   cmd_args+=("--ai-tool" "${SELECTED_AI_TOOL:-claude}")
   cmd_args+=("--ai-tools" "$ai_tools_csv")
   cmd_args+=("--ghost-display" "$ghost_display")
+  cmd_args+=("--tab-title" "$tab_title")
   if [ -n "${_update_version:-}" ]; then
     cmd_args+=("--update-version" "$_update_version")
   fi
@@ -68,6 +75,18 @@ select_project_interactive() {
       sed -i '' "s/^ghost_display=.*/ghost_display=$ghost_display_new/" "$settings_file"
     else
       echo "ghost_display=$ghost_display_new" >> "$settings_file"
+    fi
+  fi
+
+  # Persist tab title if changed
+  local tab_title_new
+  tab_title_new=$(echo "$result" | jq -r '.tab_title // ""' 2>/dev/null)
+  if [[ -n "$tab_title_new" && "$tab_title_new" != "null" ]]; then
+    mkdir -p "$(dirname "$settings_file")"
+    if [ -f "$settings_file" ] && grep -q '^tab_title=' "$settings_file" 2>/dev/null; then
+      sed -i '' "s/^tab_title=.*/tab_title=$tab_title_new/" "$settings_file"
+    else
+      echo "tab_title=$tab_title_new" >> "$settings_file"
     fi
   fi
 

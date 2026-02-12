@@ -1615,6 +1615,80 @@ func TestMainMenu_MouseClickWakesAndResetsZzz(t *testing.T) {
 	}
 }
 
+func TestMainMenu_ZzzAppearsAboveGhost(t *testing.T) {
+	t.Run("side_layout", func(t *testing.T) {
+		projects := []models.Project{{Name: "test", Path: "/test"}}
+		m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+		m.SetSize(100, 40) // Wide enough for side layout
+		// Put ghost to sleep
+		m.SetSleepTimer(119)
+		m.Update(tui.NewSleepTickMsg())
+		if !m.IsSleeping() {
+			t.Fatal("ghost should be sleeping")
+		}
+		view := m.View()
+
+		// Find line indices for zzz content (z/Z letters) and ghost cap art (▄)
+		// Menu text contains neither z/Z nor ▄, so these are unambiguous markers
+		lines := strings.Split(view, "\n")
+		firstZzzLine := -1
+		firstGhostCapLine := -1
+		for i, line := range lines {
+			if firstZzzLine == -1 && strings.ContainsAny(line, "zZ") {
+				firstZzzLine = i
+			}
+			if firstGhostCapLine == -1 && strings.Contains(line, "\u2584") {
+				firstGhostCapLine = i
+			}
+		}
+
+		if firstZzzLine == -1 {
+			t.Fatal("could not find zzz content in view")
+		}
+		if firstGhostCapLine == -1 {
+			t.Fatal("could not find ghost cap art in view")
+		}
+		if firstZzzLine >= firstGhostCapLine {
+			t.Errorf("zzz should appear above ghost: zzz at line %d, ghost cap at line %d", firstZzzLine, firstGhostCapLine)
+		}
+	})
+
+	t.Run("above_layout", func(t *testing.T) {
+		projects := []models.Project{{Name: "test", Path: "/test"}}
+		m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+		m.SetSize(60, 50) // Narrow for above layout
+		// Put ghost to sleep
+		m.SetSleepTimer(119)
+		m.Update(tui.NewSleepTickMsg())
+		if !m.IsSleeping() {
+			t.Fatal("ghost should be sleeping")
+		}
+		view := m.View()
+
+		lines := strings.Split(view, "\n")
+		firstZzzLine := -1
+		firstGhostCapLine := -1
+		for i, line := range lines {
+			if firstZzzLine == -1 && strings.ContainsAny(line, "zZ") {
+				firstZzzLine = i
+			}
+			if firstGhostCapLine == -1 && strings.Contains(line, "\u2584") {
+				firstGhostCapLine = i
+			}
+		}
+
+		if firstZzzLine == -1 {
+			t.Fatal("could not find zzz content in view")
+		}
+		if firstGhostCapLine == -1 {
+			t.Fatal("could not find ghost cap art in view")
+		}
+		if firstZzzLine >= firstGhostCapLine {
+			t.Errorf("zzz should appear above ghost: zzz at line %d, ghost cap at line %d", firstZzzLine, firstGhostCapLine)
+		}
+	})
+}
+
 func TestMainMenu_ViewIsCentered(t *testing.T) {
 	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "none")
 	m.SetSize(80, 40)
@@ -1680,5 +1754,167 @@ func TestMainMenu_MouseClickWorksWithCentering(t *testing.T) {
 	mm := newModel.(*tui.MainMenuModel)
 	if mm.SelectedItem() != 1 {
 		t.Errorf("clicking centered second project should select item 1, got %d", mm.SelectedItem())
+	}
+}
+
+func TestMainMenu_TabTitle(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetTabTitle("full")
+
+	if m.TabTitle() != "full" {
+		t.Errorf("expected 'full', got %q", m.TabTitle())
+	}
+}
+
+func TestMainMenu_CycleTabTitle(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetTabTitle("full")
+
+	m.CycleTabTitle()
+	if m.TabTitle() != "project" {
+		t.Errorf("expected 'project' after cycling from full, got %q", m.TabTitle())
+	}
+
+	m.CycleTabTitle()
+	if m.TabTitle() != "full" {
+		t.Errorf("expected 'full' after cycling from project, got %q", m.TabTitle())
+	}
+}
+
+func TestMainMenu_TabTitleInResult(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetTabTitle("full")
+	m.SetSize(80, 30)
+
+	// Enter settings, cycle tab title, exit settings
+	m.EnterSettings()
+	m.CycleTabTitle()
+	m.ExitSettings()
+
+	// Quit to get result
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm := newModel.(*tui.MainMenuModel)
+	result := mm.Result()
+
+	if result == nil {
+		t.Fatal("expected result after quit")
+	}
+	if result.TabTitle != "project" {
+		t.Errorf("expected tab_title 'project' in result, got %q", result.TabTitle)
+	}
+}
+
+func TestMainMenu_NoTabTitleInResultWhenUnchanged(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetTabTitle("full")
+	m.SetSize(80, 30)
+
+	// Quit without changing tab title
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm := newModel.(*tui.MainMenuModel)
+	result := mm.Result()
+
+	if result == nil {
+		t.Fatal("expected result after quit")
+	}
+	if result.TabTitle != "" {
+		t.Errorf("expected empty tab_title when unchanged, got %q", result.TabTitle)
+	}
+}
+
+func TestMainMenu_SettingsViewShowsTabTitle(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetTabTitle("full")
+	m.SetSize(80, 30)
+	m.EnterSettings()
+	view := m.View()
+
+	if !strings.Contains(view, "Tab Title") {
+		t.Error("settings view should show 'Tab Title' option")
+	}
+	if !strings.Contains(view, "Project") {
+		t.Error("settings view should show current state label")
+	}
+}
+
+func TestTruncateMiddle_Short(t *testing.T) {
+	got := tui.TruncateMiddle("hello", 10)
+	if got != "hello" {
+		t.Errorf("short string should pass through unchanged, got %q", got)
+	}
+}
+
+func TestTruncateMiddle_Exact(t *testing.T) {
+	got := tui.TruncateMiddle("hello", 5)
+	if got != "hello" {
+		t.Errorf("exact-length string should pass through unchanged, got %q", got)
+	}
+}
+
+func TestTruncateMiddle_Long(t *testing.T) {
+	got := tui.TruncateMiddle("abcdefghij", 7)
+	// 7 chars: 3 left + … + 3 right = "abc…hij"
+	if got != "abc\u2026hij" {
+		t.Errorf("expected %q, got %q", "abc\u2026hij", got)
+	}
+	if lipgloss.Width(got) != 7 {
+		t.Errorf("visual width should be 7, got %d", lipgloss.Width(got))
+	}
+}
+
+func TestTruncateMiddle_VerySmallMax(t *testing.T) {
+	got := tui.TruncateMiddle("abcdefghij", 1)
+	if got != "\u2026" {
+		t.Errorf("maxWidth=1 should return just ellipsis, got %q", got)
+	}
+}
+
+func TestMainMenu_ViewTruncatesLongPath(t *testing.T) {
+	lipgloss.SetDefaultRenderer(lipgloss.NewRenderer(termenv.NewOutput(termenv.DefaultOutput().TTY(), termenv.WithProfile(termenv.Ascii))))
+	longPath := "/Users/jack/Packages/shiftmanager-frontend/microfrontends/backoffice-elements"
+	projects := []models.Project{{Name: "proj", Path: longPath}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "none")
+	m.SetSize(80, 30)
+	view := m.View()
+	found := false
+	for _, line := range strings.Split(view, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "shiftmanager") || strings.Contains(trimmed, "backoffice") {
+			found = true
+			if !strings.Contains(trimmed, "\u2026") {
+				t.Error("long path should be truncated with ellipsis")
+			}
+			if lipgloss.Width(trimmed) > 48 {
+				t.Errorf("path line content should not exceed box width 48, got %d: %q", lipgloss.Width(trimmed), trimmed)
+			}
+		}
+	}
+	if !found {
+		t.Error("view should contain the project path (truncated)")
+	}
+}
+
+func TestMainMenu_ViewTruncatesLongName(t *testing.T) {
+	lipgloss.SetDefaultRenderer(lipgloss.NewRenderer(termenv.NewOutput(termenv.DefaultOutput().TTY(), termenv.WithProfile(termenv.Ascii))))
+	longName := "my-extremely-long-project-name-that-overflows-the-box"
+	projects := []models.Project{{Name: longName, Path: "/short"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "none")
+	m.SetSize(80, 30)
+	view := m.View()
+	found := false
+	for _, line := range strings.Split(view, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "extremely") || strings.Contains(trimmed, "overflows") {
+			found = true
+			if !strings.Contains(trimmed, "\u2026") {
+				t.Error("long name should be truncated with ellipsis")
+			}
+			if lipgloss.Width(trimmed) > 48 {
+				t.Errorf("name line content should not exceed box width 48, got %d: %q", lipgloss.Width(trimmed), trimmed)
+			}
+		}
+	}
+	if !found {
+		t.Error("view should contain the project name (truncated)")
 	}
 }

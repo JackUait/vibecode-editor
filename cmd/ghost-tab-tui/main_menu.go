@@ -23,6 +23,7 @@ var (
 	mainMenuAITool       string
 	mainMenuAITools      string
 	mainMenuGhostDisplay string
+	mainMenuTabTitle     string
 	mainMenuUpdateVer    string
 )
 
@@ -32,6 +33,7 @@ func init() {
 	mainMenuCmd.Flags().StringVar(&mainMenuAITool, "ai-tool", "claude", "Current AI tool name")
 	mainMenuCmd.Flags().StringVar(&mainMenuAITools, "ai-tools", "claude", "Comma-separated available tool names")
 	mainMenuCmd.Flags().StringVar(&mainMenuGhostDisplay, "ghost-display", "animated", "Ghost display mode (animated, static, none)")
+	mainMenuCmd.Flags().StringVar(&mainMenuTabTitle, "tab-title", "full", "Tab title mode (full, project)")
 	mainMenuCmd.Flags().StringVar(&mainMenuUpdateVer, "update-version", "", "Optional update notification version")
 	rootCmd.AddCommand(mainMenuCmd)
 }
@@ -48,6 +50,7 @@ func runMainMenu(cmd *cobra.Command, args []string) error {
 	}
 
 	model := tui.NewMainMenu(projects, aiTools, mainMenuAITool, mainMenuGhostDisplay)
+	model.SetTabTitle(mainMenuTabTitle)
 
 	ttyOpts, cleanup, err := util.TUITeaOptions()
 	if err != nil {

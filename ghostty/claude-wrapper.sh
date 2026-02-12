@@ -179,8 +179,20 @@ export PROJECT_DIR
 export PROJECT_NAME="${PROJECT_NAME:-$(basename "$PROJECT_DIR")}"
 SESSION_NAME="dev-${PROJECT_NAME}-$$"
 
-# Set terminal/tab title
-set_tab_title "$PROJECT_NAME" "$SELECTED_AI_TOOL"
+# Set terminal/tab title based on tab_title setting
+_tab_title_setting="full"
+_settings_file="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/settings"
+if [ -f "$_settings_file" ]; then
+  _saved_tab_title=$(grep '^tab_title=' "$_settings_file" 2>/dev/null | cut -d= -f2)
+  if [ -n "$_saved_tab_title" ]; then
+    _tab_title_setting="$_saved_tab_title"
+  fi
+fi
+if [ "$_tab_title_setting" = "full" ]; then
+  set_tab_title "$PROJECT_NAME" "$SELECTED_AI_TOOL"
+else
+  set_tab_title "$PROJECT_NAME"
+fi
 
 # Background watcher: switch to Claude pane once it's ready
 (

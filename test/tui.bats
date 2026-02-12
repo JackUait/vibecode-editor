@@ -87,6 +87,11 @@ setup() {
   [[ "$result" == $'\033]0;myproject · codex\007' ]]
 }
 
+@test "set_tab_title: omits tool name when empty" {
+  result="$(set_tab_title "myproject" "")"
+  [[ "$result" == $'\033]0;myproject\007' ]]
+}
+
 # --- draw_logo ---
 
 @test "draw_logo calls ghost-tab-tui show-logo" {
