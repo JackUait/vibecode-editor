@@ -962,26 +962,25 @@ func ghostDisplayLabel(mode string) string {
 	}
 }
 
-// renderSettingsItem renders a single settings item row.
+// renderSettingsItem renders a single settings item row with state right-aligned.
 func (m *MainMenuModel) renderSettingsItem(index int, label, stateText string, stateStyle, brightBoldStyle lipgloss.Style, leftBorder, rightBorder string) string {
+	stateRendered := stateStyle.Render(stateText)
 	if m.settingsSelected == index {
 		marker := brightBoldStyle.Render("\u258e")
 		labelText := brightBoldStyle.Render(label)
-		stateRendered := stateStyle.Render(stateText)
-		content := "  " + marker + " " + labelText + "    " + stateRendered
-		padding := menuInnerWidth - lipgloss.Width(content)
-		if padding < 0 {
-			padding = 0
+		prefix := "  " + marker + " " + labelText
+		gap := menuInnerWidth - lipgloss.Width(prefix) - lipgloss.Width(stateRendered) - 1
+		if gap < 1 {
+			gap = 1
 		}
-		return leftBorder + content + strings.Repeat(" ", padding) + rightBorder
+		return leftBorder + prefix + strings.Repeat(" ", gap) + stateRendered + " " + rightBorder
 	}
-	stateRendered := stateStyle.Render(stateText)
-	content := "    " + label + "    " + stateRendered
-	padding := menuInnerWidth - lipgloss.Width(content)
-	if padding < 0 {
-		padding = 0
+	prefix := "    " + label
+	gap := menuInnerWidth - lipgloss.Width(prefix) - lipgloss.Width(stateRendered) - 1
+	if gap < 1 {
+		gap = 1
 	}
-	return leftBorder + content + strings.Repeat(" ", padding) + rightBorder
+	return leftBorder + prefix + strings.Repeat(" ", gap) + stateRendered + " " + rightBorder
 }
 
 // tabTitleLabel returns a display label for the tab title mode.
@@ -1000,7 +999,7 @@ func tabTitleLabel(mode string) string {
 func (m *MainMenuModel) renderSettingsBox() string {
 	dimStyle := lipgloss.NewStyle().Foreground(m.theme.Dim)
 	primaryBoldStyle := lipgloss.NewStyle().Foreground(m.theme.Primary).Bold(true)
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("247"))
 
 	// State color depends on ghost display mode
 	var stateColor lipgloss.Color
@@ -1111,7 +1110,7 @@ func (m *MainMenuModel) renderMenuBox() string {
 	primaryStyle := lipgloss.NewStyle().Foreground(m.theme.Primary)
 	primaryBoldStyle := lipgloss.NewStyle().Foreground(m.theme.Primary).Bold(true)
 	textStyle := lipgloss.NewStyle().Foreground(m.theme.Text)
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("247"))
 	updateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
 
 	hLine := strings.Repeat("\u2500", menuInnerWidth)
@@ -1135,13 +1134,12 @@ func (m *MainMenuModel) renderMenuBox() string {
 	} else {
 		aiPart = " " + primaryStyle.Render(aiDisplay)
 	}
-	titleContent := title + aiPart
-	// Pad the title row to inner width. We need to calculate visual width.
-	titlePadding := menuInnerWidth - lipgloss.Width(titleContent) - 1 // -1 for leading space
-	if titlePadding < 0 {
-		titlePadding = 0
+	// Right-align AI tool chooser: "⬡ Ghost Tab" left, "◂ Claude Code ▸" right
+	aiPadding := menuInnerWidth - lipgloss.Width(title) - lipgloss.Width(aiPart) - 1 // -1 for leading space
+	if aiPadding < 1 {
+		aiPadding = 1
 	}
-	titleRow := leftBorder + " " + titleContent + strings.Repeat(" ", titlePadding) + rightBorder
+	titleRow := leftBorder + " " + title + strings.Repeat(" ", aiPadding) + aiPart + rightBorder
 	lines = append(lines, titleRow)
 
 	// Separator after title
@@ -1294,7 +1292,7 @@ func (m *MainMenuModel) renderMenuBox() string {
 func (m *MainMenuModel) renderInputBox() string {
 	dimStyle := lipgloss.NewStyle().Foreground(m.theme.Dim)
 	primaryBoldStyle := lipgloss.NewStyle().Foreground(m.theme.Primary).Bold(true)
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("247"))
 	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 
 	hLine := strings.Repeat("\u2500", menuInnerWidth)
@@ -1392,7 +1390,7 @@ func (m *MainMenuModel) renderInputBox() string {
 func (m *MainMenuModel) renderDeleteBox() string {
 	dimStyle := lipgloss.NewStyle().Foreground(m.theme.Dim)
 	primaryBoldStyle := lipgloss.NewStyle().Foreground(m.theme.Primary).Bold(true)
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("247"))
 	deleteHighlight := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.Color("15"))
 
 	hLine := strings.Repeat("\u2500", menuInnerWidth)
