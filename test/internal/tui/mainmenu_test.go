@@ -887,6 +887,24 @@ func TestMainMenu_BobOffset_TransitionsDuringCycle(t *testing.T) {
 	}
 }
 
+func TestMainMenu_BobAnimation_VisibleInView(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	projects := []models.Project{{Name: "test", Path: "/test"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(100, 40) // Side layout
+
+	// Collect distinct full views across a full bob cycle
+	views := make(map[string]bool)
+	for i := 0; i < 200; i++ {
+		m.Update(tui.NewBobTickMsg())
+		views[m.View()] = true
+	}
+	// If the ghost actually bobs, we should see at least 2 distinct view outputs
+	if len(views) < 2 {
+		t.Error("ghost bob animation should produce visibly different views during a full cycle, but all views were identical (centering may be absorbing the movement)")
+	}
+}
+
 func TestMainMenu_BobPhase_Wraps(t *testing.T) {
 	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
 	// Run through enough ticks for multiple full cycles

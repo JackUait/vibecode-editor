@@ -1008,8 +1008,12 @@ func (m *MainMenuModel) View() string {
 			}
 			ghostStr = strings.Join(paddedZzz, "\n") + "\n" + ghostStr
 		}
-		if m.ghostDisplay == "animated" && m.BobOffset() == 1 {
-			ghostStr = "\n" + ghostStr
+		if m.ghostDisplay == "animated" {
+			if m.BobOffset() == 1 {
+				ghostStr = "\n" + ghostStr
+			} else {
+				ghostStr = ghostStr + "\n"
+			}
 		}
 		spacer := strings.Repeat(" ", 3)
 		content = lipgloss.JoinHorizontal(lipgloss.Center, menuBox, spacer, ghostStr)
@@ -1038,8 +1042,12 @@ func (m *MainMenuModel) View() string {
 			}
 			ghostStr = strings.Join(paddedZzz, "\n") + "\n" + ghostStr
 		}
-		if m.ghostDisplay == "animated" && m.BobOffset() == 1 {
-			ghostStr = "\n" + ghostStr
+		if m.ghostDisplay == "animated" {
+			if m.BobOffset() == 1 {
+				ghostStr = "\n" + ghostStr
+			} else {
+				ghostStr = ghostStr + "\n"
+			}
 		}
 		content = lipgloss.JoinVertical(lipgloss.Center, ghostStr, "", menuBox)
 
