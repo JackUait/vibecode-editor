@@ -95,3 +95,21 @@ func TestAllThemes(t *testing.T) {
 		}
 	}
 }
+
+func TestThemeTextColors(t *testing.T) {
+	expectedText := map[string]lipgloss.Color{
+		"claude":   lipgloss.Color("223"),
+		"codex":    lipgloss.Color("157"),
+		"copilot":  lipgloss.Color("183"),
+		"opencode": lipgloss.Color("252"),
+	}
+
+	for tool, expected := range expectedText {
+		t.Run(tool, func(t *testing.T) {
+			theme := tui.ThemeForTool(tool)
+			if theme.Text != expected {
+				t.Errorf("ThemeForTool(%q).Text: expected %q, got %q", tool, expected, theme.Text)
+			}
+		})
+	}
+}

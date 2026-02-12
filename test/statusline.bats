@@ -188,6 +188,126 @@ setup() {
   assert_output "0M"
 }
 
+# --- get_tree_rss_kb ---
+
+# Helper: create PATH-based mock scripts for ps and pgrep
+_setup_tree_mocks() {
+  MOCK_BIN="$(mktemp -d)"
+  export PATH="$MOCK_BIN:$PATH"
+}
+
+_teardown_tree_mocks() {
+  rm -rf "$MOCK_BIN"
+}
+
+@test "get_tree_rss_kb: sums memory of process and its children" {
+  _setup_tree_mocks
+
+  cat > "$MOCK_BIN/pgrep" <<'SCRIPT'
+#!/bin/bash
+pid="${@: -1}"
+case "$pid" in
+  100) printf '101\n102\n' ;;
+  101) printf '103\n' ;;
+  *) exit 1 ;;
+esac
+SCRIPT
+  chmod +x "$MOCK_BIN/pgrep"
+
+  cat > "$MOCK_BIN/ps" <<'SCRIPT'
+#!/bin/bash
+pid="${@: -1}"
+case "$pid" in
+  100) echo "  51200" ;;
+  101) echo "  25600" ;;
+  102) echo "  10240" ;;
+  103) echo "  5120" ;;
+  *) echo "" ;;
+esac
+SCRIPT
+  chmod +x "$MOCK_BIN/ps"
+
+  run get_tree_rss_kb 100
+  _teardown_tree_mocks
+  assert_success
+  # 51200 + 25600 + 10240 + 5120 = 92160
+  assert_output "92160"
+}
+
+@test "get_tree_rss_kb: handles process with no children" {
+  _setup_tree_mocks
+
+  cat > "$MOCK_BIN/pgrep" <<'SCRIPT'
+#!/bin/bash
+exit 1
+SCRIPT
+  chmod +x "$MOCK_BIN/pgrep"
+
+  cat > "$MOCK_BIN/ps" <<'SCRIPT'
+#!/bin/bash
+echo "  51200"
+SCRIPT
+  chmod +x "$MOCK_BIN/ps"
+
+  run get_tree_rss_kb 100
+  _teardown_tree_mocks
+  assert_success
+  assert_output "51200"
+}
+
+@test "get_tree_rss_kb: handles disappeared process gracefully" {
+  _setup_tree_mocks
+
+  cat > "$MOCK_BIN/pgrep" <<'SCRIPT'
+#!/bin/bash
+exit 1
+SCRIPT
+  chmod +x "$MOCK_BIN/pgrep"
+
+  cat > "$MOCK_BIN/ps" <<'SCRIPT'
+#!/bin/bash
+echo ""
+SCRIPT
+  chmod +x "$MOCK_BIN/ps"
+
+  run get_tree_rss_kb 999
+  _teardown_tree_mocks
+  assert_success
+  assert_output "0"
+}
+
+@test "get_tree_rss_kb: handles child that disappears mid-walk" {
+  _setup_tree_mocks
+
+  cat > "$MOCK_BIN/pgrep" <<'SCRIPT'
+#!/bin/bash
+pid="${@: -1}"
+case "$pid" in
+  100) printf '101\n102\n' ;;
+  *) exit 1 ;;
+esac
+SCRIPT
+  chmod +x "$MOCK_BIN/pgrep"
+
+  cat > "$MOCK_BIN/ps" <<'SCRIPT'
+#!/bin/bash
+pid="${@: -1}"
+case "$pid" in
+  100) echo "  51200" ;;
+  101) echo "" ;;
+  102) echo "  10240" ;;
+  *) echo "" ;;
+esac
+SCRIPT
+  chmod +x "$MOCK_BIN/ps"
+
+  run get_tree_rss_kb 100
+  _teardown_tree_mocks
+  assert_success
+  # 51200 + 0 + 10240 = 61440
+  assert_output "61440"
+}
+
 @test "format_memory: handles missing bc command" {
   # Mock bc to fail
   bc() {

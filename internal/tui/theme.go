@@ -22,6 +22,7 @@ type AIToolTheme struct {
 	SleepDim      lipgloss.Color
 	SleepDarkFeet lipgloss.Color
 	SleepCap      lipgloss.Color
+	Text          lipgloss.Color
 }
 
 var themes = map[string]AIToolTheme{
@@ -40,6 +41,7 @@ var themes = map[string]AIToolTheme{
 		SleepDim:      lipgloss.Color("166"),
 		SleepDarkFeet: lipgloss.Color("94"),
 		SleepCap:      lipgloss.Color("180"),
+		Text:          lipgloss.Color("223"),
 	},
 	"codex": {
 		Name:          "codex",
@@ -56,6 +58,7 @@ var themes = map[string]AIToolTheme{
 		SleepDim:      lipgloss.Color("71"),
 		SleepDarkFeet: lipgloss.Color("58"),
 		SleepCap:      lipgloss.Color("114"),
+		Text:          lipgloss.Color("157"),
 	},
 	"copilot": {
 		Name:          "copilot",
@@ -72,6 +75,7 @@ var themes = map[string]AIToolTheme{
 		SleepDim:      lipgloss.Color("98"),
 		SleepDarkFeet: lipgloss.Color("60"),
 		SleepCap:      lipgloss.Color("140"),
+		Text:          lipgloss.Color("183"),
 	},
 	"opencode": {
 		Name:          "opencode",
@@ -88,6 +92,7 @@ var themes = map[string]AIToolTheme{
 		SleepDim:      lipgloss.Color("236"),
 		SleepDarkFeet: lipgloss.Color("232"),
 		SleepCap:      lipgloss.Color("242"),
+		Text:          lipgloss.Color("252"),
 	},
 }
 
