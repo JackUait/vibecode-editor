@@ -72,6 +72,14 @@ func TestApplyTheme_UnknownFallback(t *testing.T) {
 	// No panic means success
 }
 
+func TestAnsiFromThemeColor(t *testing.T) {
+	result := tui.AnsiFromThemeColor(lipgloss.Color("209"))
+	expected := "\033[38;5;209m"
+	if result != expected {
+		t.Errorf("AnsiFromThemeColor(209): expected %q, got %q", expected, result)
+	}
+}
+
 func TestAllThemes(t *testing.T) {
 	expectedNames := map[string]string{
 		"claude":   "claude",

@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // AIToolTheme defines the color palette for an AI tool's TUI appearance.
 type AIToolTheme struct {
@@ -79,6 +83,13 @@ func ThemeForTool(tool string) AIToolTheme {
 		return theme
 	}
 	return themes["claude"]
+}
+
+// AnsiFromThemeColor converts a lipgloss.Color (ANSI 256 string) to an
+// ANSI escape sequence. This bridges lipgloss theme colors with raw
+// escape-code rendering used by ghost ASCII art.
+func AnsiFromThemeColor(c lipgloss.Color) string {
+	return fmt.Sprintf("\033[38;5;%sm", string(c))
 }
 
 // ApplyTheme updates the package-level styles (titleStyle, selectedItemStyle,
