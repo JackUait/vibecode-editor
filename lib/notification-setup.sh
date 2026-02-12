@@ -69,3 +69,33 @@ remove_sound_notification() {
   result="$(remove_sound_notification_hook "$settings_path" "$sound_command")"
   echo "$result"
 }
+
+# Toggle sound notification for the given AI tool.
+# Usage: toggle_sound_notification <tool> <config_dir> <settings_path>
+# Reads current state, flips it, applies the change.
+toggle_sound_notification() {
+  local tool="$1" config_dir="$2" settings_path="$3"
+  local current
+  current="$(is_sound_enabled "$tool" "$config_dir")"
+  local sound_command="afplay /System/Library/Sounds/Bottle.aiff &"
+
+  if [[ "$current" == "true" ]]; then
+    # Disable
+    set_sound_feature_flag "$tool" "$config_dir" false
+    case "$tool" in
+      claude)
+        remove_sound_notification "$settings_path" "$sound_command"
+        ;;
+    esac
+    success "Sound notifications disabled"
+  else
+    # Enable
+    set_sound_feature_flag "$tool" "$config_dir" true
+    case "$tool" in
+      claude)
+        setup_sound_notification "$settings_path" "$sound_command"
+        ;;
+    esac
+    success "Sound notifications enabled"
+  fi
+}

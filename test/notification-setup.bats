@@ -152,3 +152,54 @@ EOF
   run python3 -c "import json; d=json.load(open('$TEST_TMP/claude-features.json')); print(d['sound'], d['other'])"
   assert_output "True 42"
 }
+
+# --- toggle_sound_notification ---
+
+@test "toggle_sound_notification: enables for claude" {
+  source "$PROJECT_ROOT/lib/settings-json.sh"
+  local config_dir="$TEST_TMP/config"
+  mkdir -p "$config_dir"
+  echo '{}' > "$TEST_TMP/settings.json"
+
+  run toggle_sound_notification "claude" "$config_dir" "$TEST_TMP/settings.json"
+  assert_success
+  assert_output --partial "enabled"
+
+  # Verify feature flag was set
+  run python3 -c "import json; print(json.load(open('$config_dir/claude-features.json'))['sound'])"
+  assert_output "True"
+
+  # Verify hook was added
+  run cat "$TEST_TMP/settings.json"
+  assert_output --partial "Stop"
+}
+
+@test "toggle_sound_notification: disables for claude" {
+  source "$PROJECT_ROOT/lib/settings-json.sh"
+  local config_dir="$TEST_TMP/config"
+  mkdir -p "$config_dir"
+  echo '{"sound": true}' > "$config_dir/claude-features.json"
+  cat > "$TEST_TMP/settings.json" << 'EOF'
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [{"type": "command", "command": "afplay /System/Library/Sounds/Bottle.aiff &"}]
+      }
+    ]
+  }
+}
+EOF
+
+  run toggle_sound_notification "claude" "$config_dir" "$TEST_TMP/settings.json"
+  assert_success
+  assert_output --partial "disabled"
+
+  # Verify feature flag was set
+  run python3 -c "import json; print(json.load(open('$config_dir/claude-features.json'))['sound'])"
+  assert_output "False"
+
+  # Verify hook was removed
+  run cat "$TEST_TMP/settings.json"
+  refute_output --partial "afplay"
+}
