@@ -26,7 +26,6 @@ func GetSettingsMenuItems() []SettingsMenuItem {
 		{ItemTitle: "Add Project", ItemDesc: "Add a new project to the list", Action: "add-project"},
 		{ItemTitle: "Delete Project", ItemDesc: "Remove a project from the list", Action: "delete-project"},
 		{ItemTitle: "Select AI Tool", ItemDesc: "Choose default AI tool", Action: "select-ai-tool"},
-		{ItemTitle: "Manage Features", ItemDesc: "Configure AI tool features", Action: "manage-features"},
 		{ItemTitle: "Quit", ItemDesc: "Exit settings menu", Action: "quit"},
 	}
 }

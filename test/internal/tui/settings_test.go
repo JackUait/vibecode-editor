@@ -10,7 +10,7 @@ import (
 func TestSettingsMenuItems(t *testing.T) {
 	items := tui.GetSettingsMenuItems()
 
-	expectedCount := 5 // add-project, delete-project, select-ai-tool, manage-features, quit
+	expectedCount := 4 // add-project, delete-project, select-ai-tool, quit
 
 	if len(items) != expectedCount {
 		t.Errorf("Expected %d menu items, got %d", expectedCount, len(items))
