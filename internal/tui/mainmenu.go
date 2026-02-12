@@ -95,6 +95,7 @@ type MainMenuModel struct {
 	settingsSelected    int
 	initialGhostDisplay string
 	ghostDisplayChanged bool
+	zzz                 *ZzzAnimation
 }
 
 // NewMainMenu creates a new main menu model.
@@ -115,6 +116,7 @@ func NewMainMenu(projects []models.Project, aiTools []string, currentAI string, 
 		ghostDisplay:        ghostDisplay,
 		initialGhostDisplay: ghostDisplay,
 		theme:               ThemeForTool(currentAI),
+		zzz:                 NewZzzAnimation(),
 	}
 }
 
@@ -226,10 +228,30 @@ func (m *MainMenuModel) ShouldSleep() bool { return m.sleepTimer >= 120 }
 func (m *MainMenuModel) IsSleeping() bool { return m.ghostSleeping }
 
 // Wake resets the ghost to awake state and clears the sleep timer.
-func (m *MainMenuModel) Wake() { m.ghostSleeping = false; m.sleepTimer = 0 }
+func (m *MainMenuModel) Wake() {
+	m.ghostSleeping = false
+	m.sleepTimer = 0
+	if m.zzz != nil {
+		m.zzz.Reset()
+	}
+}
 
 // BobStep returns the current bob animation step index.
 func (m *MainMenuModel) BobStep() int { return m.bobStep }
+
+// ZzzFrame returns the current Zzz animation frame index.
+func (m *MainMenuModel) ZzzFrame() int {
+	if m.zzz == nil {
+		return 0
+	}
+	return m.zzz.Frame()
+}
+
+// NewBobTickMsg creates a bobTickMsg for testing.
+func NewBobTickMsg() tea.Msg { return bobTickMsg{} }
+
+// NewSleepTickMsg creates a sleepTickMsg for testing.
+func NewSleepTickMsg() tea.Msg { return sleepTickMsg{} }
 
 // Result returns the menu result, or nil if the menu has not exited.
 func (m *MainMenuModel) Result() *MainMenuResult {
@@ -381,6 +403,9 @@ func (m *MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bobTickMsg:
 		if m.ghostDisplay == "animated" {
 			m.bobStep = (m.bobStep + 1) % len(BobOffsets())
+			if m.ghostSleeping && m.zzz != nil {
+				m.zzz.Tick()
+			}
 			return m, m.bobTickCmd()
 		}
 		return m, nil
@@ -400,11 +425,8 @@ func (m *MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
-		// Reset sleep state on any mouse click
-		m.sleepTimer = 0
-		if m.ghostSleeping {
-			m.ghostSleeping = false
-		}
+		// Reset sleep state on any mouse activity
+		m.Wake()
 
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
 			item := m.MapRowToItem(msg.Y)
@@ -421,10 +443,7 @@ func (m *MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Reset sleep state on any keypress
-		m.sleepTimer = 0
-		if m.ghostSleeping {
-			m.ghostSleeping = false
-		}
+		m.Wake()
 
 		// Settings mode intercepts all key handling
 		if m.settingsMode {
@@ -848,6 +867,10 @@ func (m *MainMenuModel) View() string {
 		if m.ghostDisplay == "animated" && bobOffsets[m.bobStep] == 1 {
 			ghostStr = "\n" + ghostStr
 		}
+		if m.ghostSleeping && m.zzz != nil {
+			zzzColor := AnsiFromThemeColor(m.theme.SleepAccent)
+			ghostStr += "\n" + m.zzz.ViewColored(zzzColor)
+		}
 		spacer := strings.Repeat(" ", 3)
 		return lipgloss.JoinHorizontal(lipgloss.Top, menuBox, spacer, ghostStr)
 
@@ -856,6 +879,10 @@ func (m *MainMenuModel) View() string {
 		ghostStr := RenderGhost(ghostLines)
 		if m.ghostDisplay == "animated" && bobOffsets[m.bobStep] == 1 {
 			ghostStr = "\n" + ghostStr
+		}
+		if m.ghostSleeping && m.zzz != nil {
+			zzzColor := AnsiFromThemeColor(m.theme.SleepAccent)
+			ghostStr += "\n" + m.zzz.ViewColored(zzzColor)
 		}
 		return lipgloss.JoinVertical(lipgloss.Center, ghostStr, "", menuBox)
 

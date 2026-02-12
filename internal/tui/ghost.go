@@ -269,11 +269,9 @@ func RenderGhost(lines []string) string {
 	return strings.Join(lines, "\n")
 }
 
-// RenderZzz returns a "z Z Z" sleeping indicator with dim ANSI codes.
+// RenderZzz returns a "z Z Z" sleeping indicator.
+// For animated rendering, use ZzzAnimation directly.
 func RenderZzz() string {
-	dim := "\033[2m"
-	reset := "\033[0m"
-	return dim + "         z" + reset + "\n" +
-		dim + "       Z" + reset + "\n" +
-		"     Z"
+	z := NewZzzAnimation()
+	return z.View()
 }

@@ -1397,3 +1397,149 @@ func TestMainMenu_SettingsHelpRow(t *testing.T) {
 		t.Error("settings help row should mention 'back'")
 	}
 }
+
+func TestMainMenu_WakeResetsZzz(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	// Simulate sleeping state: set sleep timer high, send sleepTickMsg to trigger sleep
+	m.SetSleepTimer(119)
+	m.Update(tui.NewSleepTickMsg())
+	if !m.IsSleeping() {
+		t.Fatal("ghost should be sleeping after timer reaches 120")
+	}
+	// Tick the bob (which should advance Zzz when sleeping)
+	m.Update(tui.NewBobTickMsg())
+	m.Update(tui.NewBobTickMsg())
+	// Now wake
+	m.Wake()
+	if m.IsSleeping() {
+		t.Error("should be awake after Wake()")
+	}
+	// Zzz should be reset (frame 0) -- tested via ZzzFrame()
+	if m.ZzzFrame() != 0 {
+		t.Errorf("Zzz should be reset to frame 0 after Wake(), got %d", m.ZzzFrame())
+	}
+}
+
+func TestMainMenu_BobTickAdvancesZzzWhenSleeping(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	// Put ghost to sleep
+	m.SetSleepTimer(119)
+	m.Update(tui.NewSleepTickMsg())
+	if !m.IsSleeping() {
+		t.Fatal("ghost should be sleeping")
+	}
+	// Advance bob tick -- should also advance Zzz
+	initialFrame := m.ZzzFrame()
+	m.Update(tui.NewBobTickMsg())
+	if m.ZzzFrame() != initialFrame+1 {
+		t.Errorf("Zzz frame should advance on bob tick when sleeping, expected %d got %d", initialFrame+1, m.ZzzFrame())
+	}
+}
+
+func TestMainMenu_BobTickDoesNotAdvanceZzzWhenAwake(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	// Ghost is awake by default
+	initialFrame := m.ZzzFrame()
+	m.Update(tui.NewBobTickMsg())
+	if m.ZzzFrame() != initialFrame {
+		t.Errorf("Zzz frame should NOT advance when awake, expected %d got %d", initialFrame, m.ZzzFrame())
+	}
+}
+
+func TestMainMenu_ViewShowsZzzWhenSleeping_Side(t *testing.T) {
+	projects := []models.Project{{Name: "test", Path: "/test"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(100, 40) // Wide enough for side layout
+	// Put ghost to sleep
+	m.SetSleepTimer(119)
+	m.Update(tui.NewSleepTickMsg())
+	if !m.IsSleeping() {
+		t.Fatal("ghost should be sleeping")
+	}
+	view := m.View()
+	// Zzz output contains lowercase z and uppercase Z
+	if !strings.Contains(view, "z") || !strings.Contains(view, "Z") {
+		t.Error("view should contain Zzz animation when ghost is sleeping (side layout)")
+	}
+}
+
+func TestMainMenu_ViewShowsZzzWhenSleeping_Above(t *testing.T) {
+	projects := []models.Project{{Name: "test", Path: "/test"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(60, 50) // Narrow for above layout
+	// Put ghost to sleep
+	m.SetSleepTimer(119)
+	m.Update(tui.NewSleepTickMsg())
+	if !m.IsSleeping() {
+		t.Fatal("ghost should be sleeping")
+	}
+	view := m.View()
+	if !strings.Contains(view, "z") || !strings.Contains(view, "Z") {
+		t.Error("view should contain Zzz animation when ghost is sleeping (above layout)")
+	}
+}
+
+func TestMainMenu_ViewNoZzzWhenAwake(t *testing.T) {
+	projects := []models.Project{{Name: "test", Path: "/test"}}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(100, 40)
+	// Ghost is awake by default
+	view := m.View()
+	// The Zzz animation produces lines with specific spacing patterns
+	// When awake, there should be no Zzz text appended after ghost
+	// We check that the view does NOT contain the Zzz pattern
+	z := tui.NewZzzAnimation()
+	zzzView := z.View()
+	if strings.Contains(view, zzzView) {
+		t.Error("view should NOT contain Zzz animation when ghost is awake")
+	}
+}
+
+func TestMainMenu_KeypressWakesAndResetsZzz(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	// Put ghost to sleep
+	m.SetSleepTimer(119)
+	m.Update(tui.NewSleepTickMsg())
+	if !m.IsSleeping() {
+		t.Fatal("ghost should be sleeping")
+	}
+	// Advance Zzz
+	m.Update(tui.NewBobTickMsg())
+	m.Update(tui.NewBobTickMsg())
+	// Now press a key
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.IsSleeping() {
+		t.Error("keypress should wake the ghost")
+	}
+	if m.ZzzFrame() != 0 {
+		t.Errorf("keypress should reset Zzz frame to 0, got %d", m.ZzzFrame())
+	}
+}
+
+func TestMainMenu_MouseClickWakesAndResetsZzz(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	// Put ghost to sleep
+	m.SetSleepTimer(119)
+	m.Update(tui.NewSleepTickMsg())
+	if !m.IsSleeping() {
+		t.Fatal("ghost should be sleeping")
+	}
+	// Advance Zzz
+	m.Update(tui.NewBobTickMsg())
+	m.Update(tui.NewBobTickMsg())
+	// Click
+	mouseMsg := tea.MouseMsg{
+		X:      10,
+		Y:      4,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	}
+	m.Update(mouseMsg)
+	if m.IsSleeping() {
+		t.Error("mouse click should wake the ghost")
+	}
+	if m.ZzzFrame() != 0 {
+		t.Errorf("mouse click should reset Zzz frame to 0, got %d", m.ZzzFrame())
+	}
+}
