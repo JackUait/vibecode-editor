@@ -88,5 +88,56 @@ else:
 PYEOF
 }
 
+# Remove a sound notification hook (Stop event) from settings.json.
+# Outputs "removed" or "not_found".
+remove_sound_notification_hook() {
+  local path="$1" command="$2"
+  if [ ! -f "$path" ]; then
+    echo "not_found"
+    return 0
+  fi
+  _GT_HOOK_CMD="$command" python3 - "$path" << 'PYEOF'
+import json, sys, os
 
+settings_path = sys.argv[1]
+hook_cmd = os.environ["_GT_HOOK_CMD"]
 
+try:
+    with open(settings_path, "r") as f:
+        settings = json.load(f)
+except (json.JSONDecodeError, ValueError, FileNotFoundError):
+    print("not_found")
+    sys.exit(0)
+
+hooks = settings.get("hooks", {})
+stop_list = hooks.get("Stop", [])
+
+if not stop_list:
+    print("not_found")
+    sys.exit(0)
+
+# Filter out entries containing the matching command
+new_stop = [
+    entry for entry in stop_list
+    if not any(hook_cmd in h.get("command", "") for h in entry.get("hooks", []))
+]
+
+if len(new_stop) == len(stop_list):
+    print("not_found")
+    sys.exit(0)
+
+if new_stop:
+    hooks["Stop"] = new_stop
+else:
+    del hooks["Stop"]
+
+if not hooks:
+    del settings["hooks"]
+
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+
+print("removed")
+PYEOF
+}
