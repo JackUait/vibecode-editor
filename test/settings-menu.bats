@@ -176,3 +176,37 @@ teardown() {
   assert_success
   assert_output ""
 }
+
+@test "select_project_interactive passes --sound-enabled flag when sound enabled" {
+  source "$PROJECT_ROOT/lib/notification-setup.sh"
+  source "$PROJECT_ROOT/lib/menu-tui.sh"
+
+  # Track args passed to ghost-tab-tui via file (run uses subshell)
+  local args_file="$TEST_TMP/captured_args"
+  ghost-tab-tui() {
+    echo "$*" > "$args_file"
+    echo '{"action":"quit"}'
+    return 0
+  }
+  export -f ghost-tab-tui
+  export args_file
+
+  # Set required globals
+  AI_TOOLS_AVAILABLE=("claude")
+  SELECTED_AI_TOOL="claude"
+
+  # Mock is_sound_enabled to return true
+  is_sound_enabled() { echo "true"; }
+  export -f is_sound_enabled
+
+  local projects_file="$TEST_TMP/projects"
+  echo "test:/tmp/test" > "$projects_file"
+
+  run select_project_interactive "$projects_file"
+
+  # Check that --sound-enabled was passed in the captured args
+  [[ -f "$args_file" ]]
+  local captured
+  captured="$(cat "$args_file")"
+  [[ "$captured" == *"--sound-enabled"* ]]
+}
