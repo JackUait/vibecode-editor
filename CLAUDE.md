@@ -126,10 +126,12 @@ Ghost Tab is a Ghostty + tmux wrapper that launches a four-pane dev session with
 ## Commands
 
 ```bash
-./run-tests.sh              # Run full BATS test suite
-./run-tests.sh test/foo.bats  # Run specific test file
+./run-tests.sh                          # Run full Go test suite
+go test ./test/bash/... -run TestFoo    # Run specific test group
+go test ./test/bash/... -run "test_name" # Filter by name
+go test ./... -v -count=1              # Verbose with no caching
 shellcheck lib/*.sh bin/ghost-tab ghostty/*.sh  # Lint all scripts
-./bin/ghost-tab             # Run main installer/setup
+./bin/ghost-tab                         # Run main installer/setup
 ```
 
 ## Architecture
@@ -435,124 +437,78 @@ Write test first. If you write code before test, delete it and start over.
 
 ### Commands
 ```bash
-./run-tests.sh                    # Full suite
-./run-tests.sh test/foo.bats      # Single file
-./run-tests.sh -f "test name"     # Filter by name
+./run-tests.sh                               # Full suite
+go test ./test/bash/... -run TestFoo -v       # Single test group
+go test ./test/bash/... -run "test_name" -v   # Filter by name
 ```
 
-### BATS Test Structure
+### Go Test Structure
 
 **Test Files:**
-- Located in `test/`
-- Named `*.bats` (e.g., `menu.bats`, `projects.bats`)
-- Each file tests one module from `lib/`
+- Go unit tests: `internal/**/*_test.go`, `test/internal/**/*_test.go`
+- Bash integration tests: `test/bash/*_test.go` (call bash functions via `os/exec`)
 
-**Basic Test:**
-```bash
-#!/usr/bin/env bats
+**Bash Integration Test (test/bash/):**
+```go
+package bash_test
 
-load test_helper/bats-support/load
-load test_helper/bats-assert/load
-
-setup() {
-  # Runs before each test
-  source "$BATS_TEST_DIRNAME/../lib/module.sh"
-  TEMP_DIR="$(mktemp -d)"
-}
-
-teardown() {
-  # Runs after each test
-  rm -rf "$TEMP_DIR"
-}
-
-@test "descriptive test name" {
-  # Arrange
-  local input="test"
-
-  # Act
-  run function_to_test "$input"
-
-  # Assert
-  assert_success
-  assert_output "expected output"
+func TestLoadProjects_reads_name_path_lines(t *testing.T) {
+    dir := t.TempDir()
+    writeTempFile(t, dir, "projects", "app:/path/to/app\nweb:~/code/web\n")
+    out, code := runBashFunc(t, "lib/projects.sh", "load_projects",
+        []string{filepath.Join(dir, "projects")}, nil)
+    assertExitCode(t, code, 0)
+    assertContains(t, out, "app:/path/to/app")
 }
 ```
+
+**Shared helpers** in `test/bash/helpers_test.go`:
+- `runBashFunc(t, module, funcName, args, env)` — source module, call function
+- `runBashFuncWithStdin(t, module, funcName, args, env, stdin)` — with stdin
+- `runBashSnippet(t, script, env)` — run arbitrary bash
+- `runBashScript(t, scriptPath, args, env)` — run script directly
+- `mockCommand(t, dir, name, body)` — create mock executable in dir/bin/
+- `writeTempFile(t, dir, name, content)` — create temp file
+- `buildEnv(t, mockDirs, extra...)` — build env with PATH prepended
+- `assertContains/assertNotContains/assertExitCode` — assertion helpers
 
 **Critical Rules:**
 
-**Setup/Teardown:**
-- ALWAYS clean up temp files in teardown
-- NEVER leave test artifacts (files, processes)
-- Source the module being tested in setup()
-- Create isolated temp directories for each test
+**Setup/Cleanup:**
+- Use `t.TempDir()` for auto-cleaned temp directories
+- Use `t.Cleanup()` for deferred cleanup
+- Use `t.Setenv()` for environment variable isolation
 
-**Assertions:**
-```bash
-# BATS run command captures output and exit code
-run command args
-
-# Success/failure
-assert_success        # Exit code 0
-assert_failure        # Exit code non-zero
-assert_failure 127    # Specific exit code
-
-# Output
-assert_output "exact"           # Exact match
-assert_output --partial "sub"   # Contains substring
-assert_output --regexp "^pat"   # Regex match
-refute_output "should not see"  # Should NOT appear
-
-# Line-based
-assert_line "exact line"
-assert_line --index 0 "first"
-assert_line --partial "contains"
-refute_line "should not exist"
+**Mocking External Commands:**
+```go
+// Create mock brew that reports "already installed"
+dir := t.TempDir()
+binDir := mockCommand(t, dir, "brew", `echo "already installed"`)
+env := buildEnv(t, []string{binDir})
+out, code := runBashFunc(t, "lib/install.sh", "ensure_brew_pkg",
+    []string{"pkg"}, env)
 ```
 
-**Mocking:**
-```bash
-# Override functions
-function_name() {
-  echo "mocked output"
-  return 0
-}
-
-# Mock external commands
-command() {
-  if [[ "$1" == "specific" ]]; then
-    return 0
-  fi
-  return 1
-}
-
-# Capture calls to mocked function
-mock_calls=()
-mock_fn() {
-  mock_calls+=("$*")
-}
-```
-
-**File System Tests:**
-```bash
-@test "creates config file" {
-  local config="$TEMP_DIR/config"
-
-  run create_config "$config"
-
-  assert_success
-  assert [ -f "$config" ]  # File exists
-  assert_line --partial "expected content"
-}
-```
-
-**Input Simulation:**
-```bash
-@test "reads user input" {
-  # Simulate user typing "yes"
-  run bash -c 'echo "yes" | function_that_reads'
-
-  assert_success
-  assert_output --partial "Confirmed"
+**Table-Driven Tests:**
+```go
+func TestParseEscSequence(t *testing.T) {
+    tests := []struct {
+        name  string
+        stdin string
+        want  string
+    }{
+        {"up arrow", "[A", "A"},
+        {"down arrow", "[B", "B"},
+    }
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            out, _ := runBashFuncWithStdin(t, "lib/input.sh",
+                "parse_esc_sequence", nil, nil, tt.stdin)
+            if strings.TrimSpace(out) != tt.want {
+                t.Errorf("got %q, want %q", out, tt.want)
+            }
+        })
+    }
 }
 ```
 
@@ -576,13 +532,13 @@ mock_fn() {
 
 | Pitfall | Solution |
 |---------|----------|
-| Temp files leak between tests | Always use teardown() to clean up |
+| Temp files leak between tests | Use `t.TempDir()` for auto-cleanup |
 | Tests depend on order | Each test should be independent |
-| Missing `run` wrapper | Use `run` to capture output/exit code |
-| Unquoted variables in tests | Quote everything: `"$var"` |
-| Assuming clean environment | Set up everything in setup() |
+| Missing assertions | Every test needs assertion checks |
 | Not testing error paths | Test both success and failure |
-| Forgetting assertions | Every test needs assert_* |
+| Assuming clean environment | Set up everything in test setup |
+| Not mocking external commands | Use `mockCommand` + `buildEnv` for PATH isolation |
+| Hardcoded HOME paths | Use `t.TempDir()` and env overrides |
 
 ### Red Flags - You're About to Violate The Rules
 
@@ -600,7 +556,7 @@ If you catch yourself thinking ANY of these, STOP:
 
 ## Configuration
 
-**DO NOT modify** without explicit request: `run-tests.sh`, `.gitignore`, `.gitmodules`, `VERSION`, Homebrew formula
+**DO NOT modify** without explicit request: `run-tests.sh`, `.gitignore`, `VERSION`, Homebrew formula
 
 ## Important Patterns
 
