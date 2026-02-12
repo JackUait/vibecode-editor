@@ -716,7 +716,10 @@ func (m *MainMenuModel) enterInputMode(mode string) (tea.Model, tea.Cmd) {
 	ti := textinput.New()
 	ti.Placeholder = "Project path (e.g., ~/code/project)"
 	ti.Focus()
-	ti.Width = menuInnerWidth - 4
+	// Bubbletea textinput Width is inconsistent: placeholder mode uses it as
+	// total width, but text mode renders prompt + Width + 1 (cursor). Account
+	// for both: 8 (label "  Path: ") + 2 (prompt "> ") + 1 (cursor) = 11.
+	ti.Width = menuInnerWidth - 11
 	m.pathInput = ti
 	m.autocomplete = NewAutocomplete(PathSuggestionProvider(8), 8)
 	return m, textinput.Blink
@@ -1341,10 +1344,37 @@ func (m *MainMenuModel) renderInputBox() string {
 		lines = append(lines, leftBorder+errContent+strings.Repeat(" ", errPadding)+rightBorder)
 	}
 
+	// Autocomplete suggestions rendered inside the box
+	if m.autocomplete.ShowSuggestions() {
+		selectedStyle := lipgloss.NewStyle().Reverse(true)
+		lines = append(lines, emptyRow)
+		lines = append(lines, separator)
+		for i, s := range m.autocomplete.Suggestions() {
+			truncated := TruncateMiddle(s, menuInnerWidth-4) // 2 padding + 2 border spacing
+			var row string
+			if i == m.autocomplete.Selected() {
+				highlighted := selectedStyle.Render(" " + truncated + strings.Repeat(" ", menuInnerWidth-4-lipgloss.Width(truncated)) + " ")
+				row = leftBorder + " " + highlighted + " " + rightBorder
+			} else {
+				padding := menuInnerWidth - lipgloss.Width(truncated) - 2
+				if padding < 0 {
+					padding = 0
+				}
+				row = leftBorder + " " + truncated + strings.Repeat(" ", padding) + " " + rightBorder
+			}
+			lines = append(lines, row)
+		}
+	}
+
 	lines = append(lines, emptyRow)
 	lines = append(lines, separator)
 
-	helpText := "Tab complete  \u23ce confirm  Esc cancel"
+	var helpText string
+	if m.autocomplete.ShowSuggestions() {
+		helpText = "\u2191\u2193 navigate  \u23ce complete  Esc cancel"
+	} else {
+		helpText = "Tab complete  \u23ce confirm  Esc cancel"
+	}
 	helpContent := helpStyle.Render(helpText)
 	helpPadding := menuInnerWidth - lipgloss.Width(helpContent) - 1
 	if helpPadding < 0 {
@@ -1354,10 +1384,6 @@ func (m *MainMenuModel) renderInputBox() string {
 	lines = append(lines, bottomBorder)
 
 	result := strings.Join(lines, "\n")
-
-	if acView := m.autocomplete.View(); acView != "" {
-		result += "\n" + acView
-	}
 
 	return result
 }

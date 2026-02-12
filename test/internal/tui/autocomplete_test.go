@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jackuait/ghost-tab/internal/tui"
@@ -110,6 +111,55 @@ func TestPathSuggestionProvider_TrailingSlash(t *testing.T) {
 		if s[len(s)-1] != '/' {
 			t.Errorf("suggestion %q should end with /", s)
 		}
+	}
+}
+
+func TestPathSuggestionProvider_BarePrefix_SearchesHome(t *testing.T) {
+	// Create a temp "home" dir with a known subdirectory
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, "Projects"), 0755)
+	os.MkdirAll(filepath.Join(home, "Documents"), 0755)
+	t.Setenv("HOME", home)
+
+	provider := tui.PathSuggestionProvider(8)
+
+	// Bare prefix (no / or ~/) should search home directory
+	suggestions := provider("Proj")
+	found := false
+	for _, s := range suggestions {
+		if s == "~/Projects/" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("bare prefix 'Proj' should find ~/Projects/ in home dir, got %v", suggestions)
+	}
+}
+
+func TestPathSuggestionProvider_AbsolutePrefix_IncludesHomeResults(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, "Packages"), 0755)
+	t.Setenv("HOME", home)
+
+	provider := tui.PathSuggestionProvider(20)
+
+	// "/p" matches root dirs AND should also include ~/Packages/
+	suggestions := provider("/p")
+	foundHome := false
+	foundRoot := false
+	for _, s := range suggestions {
+		if s == "~/Packages/" {
+			foundHome = true
+		}
+		if strings.HasPrefix(s, "/") {
+			foundRoot = true
+		}
+	}
+	if !foundHome {
+		t.Errorf("'/p' should include ~/Packages/ from home, got %v", suggestions)
+	}
+	if !foundRoot {
+		t.Errorf("'/p' should also include root matches, got %v", suggestions)
 	}
 }
 

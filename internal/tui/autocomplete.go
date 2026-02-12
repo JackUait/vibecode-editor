@@ -14,7 +14,9 @@ import (
 type SuggestionProvider func(input string) []string
 
 // PathSuggestionProvider returns a SuggestionProvider that suggests directory paths.
-// Empty input defaults to ~/. Results are sorted alphabetically and capped at maxResults.
+// Empty input defaults to ~/. Bare prefixes (no / or ~/) search from home.
+// When an absolute path yields no results, falls back to searching home.
+// Results are sorted alphabetically and capped at maxResults.
 // Matching is case-insensitive and supports substring (glob-style) matching.
 func PathSuggestionProvider(maxResults int) SuggestionProvider {
 	return func(input string) []string {
@@ -22,47 +24,18 @@ func PathSuggestionProvider(maxResults int) SuggestionProvider {
 			input = "~/"
 		}
 
-		expanded := util.ExpandPath(input)
-
-		var dir string
-		var prefix string
-
-		if strings.HasSuffix(input, "/") {
-			dir = expanded
-			prefix = ""
-		} else {
-			dir = filepath.Dir(expanded)
-			prefix = filepath.Base(expanded)
+		// Bare prefix (no / or ~/) is relative to home directory
+		if !strings.HasPrefix(input, "/") && !strings.HasPrefix(input, "~/") && !strings.HasPrefix(input, "~") {
+			input = "~/" + input
 		}
 
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return nil
-		}
+		suggestions := searchPathSuggestions(input)
 
-		lowerPrefix := strings.ToLower(prefix)
-		var suggestions []string
-
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			if strings.HasPrefix(name, ".") {
-				continue
-			}
-			lowerName := strings.ToLower(name)
-			// Glob-style: match if prefix appears anywhere in name
-			if prefix == "" || strings.Contains(lowerName, lowerPrefix) {
-				var suggestion string
-				if strings.HasSuffix(input, "/") {
-					suggestion = input + name + "/"
-				} else {
-					parentInput := input[:len(input)-len(filepath.Base(input))]
-					suggestion = parentInput + name + "/"
-				}
-				suggestions = append(suggestions, suggestion)
-			}
+		// For absolute paths, also include home directory matches
+		if strings.HasPrefix(input, "/") && !strings.HasPrefix(input, util.ExpandPath("~/")) {
+			homeInput := "~" + input // "/Pack" → "~/Pack", "/" → "~/"
+			homeSuggestions := searchPathSuggestions(homeInput)
+			suggestions = append(homeSuggestions, suggestions...)
 		}
 
 		sort.Strings(suggestions)
@@ -73,6 +46,53 @@ func PathSuggestionProvider(maxResults int) SuggestionProvider {
 
 		return suggestions
 	}
+}
+
+// searchPathSuggestions returns directory suggestions for the given input path.
+func searchPathSuggestions(input string) []string {
+	expanded := util.ExpandPath(input)
+
+	var dir string
+	var prefix string
+
+	if strings.HasSuffix(input, "/") {
+		dir = expanded
+		prefix = ""
+	} else {
+		dir = filepath.Dir(expanded)
+		prefix = filepath.Base(expanded)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	lowerPrefix := strings.ToLower(prefix)
+	var suggestions []string
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		lowerName := strings.ToLower(name)
+		if prefix == "" || strings.Contains(lowerName, lowerPrefix) {
+			var suggestion string
+			if strings.HasSuffix(input, "/") {
+				suggestion = input + name + "/"
+			} else {
+				parentInput := input[:len(input)-len(filepath.Base(input))]
+				suggestion = parentInput + name + "/"
+			}
+			suggestions = append(suggestions, suggestion)
+		}
+	}
+
+	return suggestions
 }
 
 // AutocompleteModel is a reusable autocomplete component.

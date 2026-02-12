@@ -2719,6 +2719,92 @@ func TestMainMenu_View_InputMode_OpenOnce(t *testing.T) {
 	}
 }
 
+func assertBoxLinesConsistentWidth(t *testing.T, view string) {
+	t.Helper()
+	lines := strings.Split(view, "\n")
+	boxWidth := -1
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !strings.ContainsAny(trimmed, "┌├└│") {
+			continue
+		}
+		w := lipgloss.Width(line)
+		if boxWidth < 0 {
+			boxWidth = w
+		} else if w != boxWidth {
+			t.Errorf("line width %d differs from expected %d:\n  line: %q", w, boxWidth, line)
+		}
+	}
+	if boxWidth < 0 {
+		t.Fatal("no box lines found in view")
+	}
+}
+
+func TestMainMenu_View_InputBoxLinesHaveConsistentWidth(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+
+	for _, mode := range []struct {
+		name string
+		key  rune
+	}{
+		{"add-project", 'a'},
+		{"open-once", 'o'},
+	} {
+		t.Run(mode.name+"/placeholder", func(t *testing.T) {
+			m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+			newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{mode.key}})
+			mm := newModel.(*tui.MainMenuModel)
+			assertBoxLinesConsistentWidth(t, mm.View())
+		})
+
+		t.Run(mode.name+"/with-text", func(t *testing.T) {
+			m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+			newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{mode.key}})
+			mm := newModel.(*tui.MainMenuModel)
+			// Type "/" to trigger text mode (cursor at end)
+			newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+			mm2 := newModel2.(*tui.MainMenuModel)
+			assertBoxLinesConsistentWidth(t, mm2.View())
+		})
+	}
+}
+
+func TestMainMenu_View_InputBoxSuggestionsInsideBox(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	mm := newModel.(*tui.MainMenuModel)
+	// Type "/" to trigger autocomplete suggestions
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	mm2 := newModel2.(*tui.MainMenuModel)
+
+	view := mm2.View()
+
+	// Suggestions should appear inside the box (between │ borders)
+	lines := strings.Split(view, "\n")
+	foundSuggestion := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// A suggestion line should be inside │...│ borders and contain a path
+		if strings.Contains(trimmed, "/") && strings.HasPrefix(trimmed, "│") && strings.HasSuffix(trimmed, "│") {
+			// Skip the input row itself (contains "Path:")
+			if !strings.Contains(trimmed, "Path:") {
+				foundSuggestion = true
+			}
+		}
+	}
+	if !foundSuggestion {
+		t.Error("autocomplete suggestions should render inside the box borders")
+	}
+
+	// All box lines should have consistent width (including suggestion rows)
+	assertBoxLinesConsistentWidth(t, view)
+}
+
 func TestMainMenu_View_DeleteMode(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.Ascii)
 	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
