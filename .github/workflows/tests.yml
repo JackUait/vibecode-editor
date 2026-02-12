@@ -7,12 +7,195 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  go-tests:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
 
-      - name: Run tests
-        run: ./run-tests.sh
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run Go tests
+        run: go test -json ./... 2>&1 | tee go-test-output.json
+        continue-on-error: true
+        id: go-test
+
+      - name: Generate Go test summary
+        if: always()
+        run: |
+          awk '
+          BEGIN {
+            pass=0; fail=0; total=0
+            failures=""
+          }
+          {
+            if ($0 ~ /"Action":"pass"/ && $0 ~ /"Test":"/) {
+              pass++; total++
+            }
+            if ($0 ~ /"Action":"fail"/ && $0 ~ /"Test":"/) {
+              fail++; total++
+              # Extract package name using sub
+              pkg = $0
+              sub(/.*"Package":"/, "", pkg)
+              sub(/".*/, "", pkg)
+              # Strip module prefix from package
+              sub(/.*\//, "", pkg)
+              # Extract test name using sub
+              tst = $0
+              sub(/.*"Test":"/, "", tst)
+              sub(/".*/, "", tst)
+              if (pkg != "" && tst != "") {
+                failures = failures "| " pkg " | " tst " |\n"
+              }
+            }
+          }
+          END {
+            print "## Go Test Results" > ENVIRON["GITHUB_STEP_SUMMARY"]
+            if (fail == 0) {
+              printf "All %d tests passed\n", total >> ENVIRON["GITHUB_STEP_SUMMARY"]
+            } else {
+              printf "%d failed, %d passed (%d total)\n\n", fail, pass, total >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              print "### Failures\n| Package | Test |" >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              print "|---------|------|" >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              printf "%s", failures >> ENVIRON["GITHUB_STEP_SUMMARY"]
+            }
+          }' go-test-output.json
+
+      - name: Check Go test result
+        if: always()
+        run: |
+          if grep -q '"Action":"fail"' go-test-output.json 2>/dev/null; then
+            echo "Go tests failed"
+            exit 1
+          fi
+
+  bash-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install CI dependencies
+        run: brew install coreutils
+
+      - name: Run BATS tests
+        run: ./run-tests.sh 2>&1 | tee bats-output.tap
+        continue-on-error: true
+        id: bats-test
+
+      - name: Generate BATS test summary
+        if: always()
+        run: |
+          awk '
+          BEGIN {
+            pass=0; fail=0; skip=0; total=0
+            in_failure=0
+            failures=""
+            current_name=""
+            current_file=""
+            current_detail=""
+          }
+          /^ok [0-9]+ / {
+            total++
+            if ($0 ~ /# skip/) {
+              skip++
+            } else {
+              pass++
+            }
+            next
+          }
+          /^not ok [0-9]+ / {
+            total++; fail++
+            in_failure=1
+            # Extract test number and name
+            current_num=$3
+            # Get everything after "not ok N "
+            name=$0
+            sub(/^not ok [0-9]+ /, "", name)
+            current_name=name
+            current_file=""
+            current_detail=""
+            next
+          }
+          in_failure && /^#.*in test file / {
+            # Extract file:line using sub
+            f=$0
+            sub(/.*in test file /, "", f)
+            # f is now "path/to/file, line N)"  or similar
+            split(f, parts, ", line ")
+            if (parts[1] != "" && parts[2] != "") {
+              fname = parts[1]
+              sub(/.*\/test\//, "", fname)
+              lnum = parts[2]
+              sub(/[^0-9].*/, "", lnum)
+              current_file = fname ":" lnum
+            }
+            next
+          }
+          in_failure && /^#.*failed/ {
+            d=$0
+            sub(/^# */, "", d)
+            # Trim backticks for clean display
+            gsub(/`/, "", d)
+            current_detail=d
+            next
+          }
+          in_failure && /^# -- / {
+            # Capture "-- command failed --" style detail
+            d=$0
+            sub(/^# -- /, "", d)
+            sub(/ --$/, "", d)
+            if (current_detail == "") current_detail=d
+            next
+          }
+          in_failure && /^# status : / {
+            s=$0
+            sub(/^# status : /, "", s)
+            if (current_detail != "") current_detail = current_detail " (status: " s ")"
+            else current_detail = "exit status " s
+            next
+          }
+          in_failure && (/^ok / || /^not ok / || /^[0-9]+\.\.[0-9]+/) {
+            # End of failure block - save it
+            failures = failures "| " current_num " | " current_name " | " current_file " | " current_detail " |\n"
+            in_failure=0
+            # Re-process this line
+            if ($0 ~ /^ok /) { total++; pass++ }
+            if ($0 ~ /^not ok /) { total++; fail++; in_failure=1 }
+            next
+          }
+          END {
+            # Flush last failure if pending
+            if (in_failure && current_name != "") {
+              failures = failures "| " current_num " | " current_name " | " current_file " | " current_detail " |\n"
+            }
+            print "## BATS Test Results" > ENVIRON["GITHUB_STEP_SUMMARY"]
+            if (fail == 0) {
+              printf "All %d tests passed", total >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              if (skip > 0) printf " (%d skipped)", skip >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              printf "\n" >> ENVIRON["GITHUB_STEP_SUMMARY"]
+            } else {
+              printf "%d failed, %d passed", fail, pass >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              if (skip > 0) printf ", %d skipped", skip >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              printf " (%d total)\n\n", total >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              print "### Failures\n| # | Test | File | Details |" >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              print "|---|------|------|---------|" >> ENVIRON["GITHUB_STEP_SUMMARY"]
+              printf "%s", failures >> ENVIRON["GITHUB_STEP_SUMMARY"]
+            }
+          }' bats-output.tap
+
+      - name: Check BATS test result
+        if: always()
+        run: |
+          if grep -q '^not ok' bats-output.tap 2>/dev/null; then
+            echo "BATS tests failed"
+            exit 1
+          fi
