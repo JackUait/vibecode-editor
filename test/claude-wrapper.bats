@@ -249,3 +249,46 @@ EOF
   # Should complete in under 2 seconds (very generous)
   [ "$elapsed" -lt 2 ]
 }
+
+@test "plain-terminal action execs shell instead of exiting" {
+  # Regression test: plain-terminal used to 'exit 0' which killed the
+  # Ghostty window. It should 'exec \$SHELL' to keep the window alive.
+
+  # Create a mini wrapper that simulates the plain-terminal action handling
+  cat > "$TEST_TMP/plain-terminal-test.sh" <<'SCRIPT'
+#!/bin/bash
+# Simulate the action handling from claude-wrapper.sh
+_selected_project_action="plain-terminal"
+
+case "$_selected_project_action" in
+  plain-terminal)
+    # This is what claude-wrapper.sh does — extract and test it
+SCRIPT
+
+  # Extract the actual plain-terminal case body from the real wrapper
+  local wrapper_line
+  wrapper_line="$(sed -n '/plain-terminal)/,/;;/p' "$PROJECT_ROOT/ghostty/claude-wrapper.sh" | sed '1d;$d' | sed 's/^[[:space:]]*//')"
+  echo "    $wrapper_line" >> "$TEST_TMP/plain-terminal-test.sh"
+
+  cat >> "$TEST_TMP/plain-terminal-test.sh" <<'SCRIPT'
+    ;;
+esac
+echo "SHOULD_NOT_REACH"
+SCRIPT
+  chmod +x "$TEST_TMP/plain-terminal-test.sh"
+
+  # Override SHELL to a command that just prints a marker and exits
+  export SHELL="$TEST_TMP/marker-shell.sh"
+  cat > "$SHELL" <<'EOF'
+#!/bin/bash
+echo "SHELL_EXEC_OK"
+EOF
+  chmod +x "$SHELL"
+
+  run bash "$TEST_TMP/plain-terminal-test.sh"
+
+  # If exec $SHELL works, we should see the marker and NOT "SHOULD_NOT_REACH"
+  assert_success
+  assert_output --partial "SHELL_EXEC_OK"
+  refute_output --partial "SHOULD_NOT_REACH"
+}

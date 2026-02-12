@@ -157,7 +157,7 @@ elif [ -z "$1" ]; then
           continue
           ;;
         plain-terminal)
-          exit 0
+          exec "$SHELL"
           ;;
         *)
           # settings or unknown — loop back to menu
