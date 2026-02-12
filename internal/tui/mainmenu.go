@@ -994,9 +994,7 @@ func (m *MainMenuModel) View() string {
 			ghostStr = "\n" + ghostStr
 		}
 		spacer := strings.Repeat(" ", 3)
-		// Right-pad ghost to match menu width so the gap between them is screen-centered.
-		ghostPadded := lipgloss.NewStyle().Width(layout.MenuWidth).Render(ghostStr)
-		content = lipgloss.JoinHorizontal(lipgloss.Top, menuBox, spacer, ghostPadded)
+		content = lipgloss.JoinHorizontal(lipgloss.Center, menuBox, spacer, ghostStr)
 
 	case "above":
 		ghostLines := GhostForTool(m.CurrentAITool(), m.ghostSleeping)

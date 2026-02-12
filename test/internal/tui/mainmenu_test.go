@@ -1837,15 +1837,13 @@ func TestMainMenu_SettingsViewShowsTabTitle(t *testing.T) {
 	}
 }
 
-func TestMainMenu_SideLayoutGapCentered(t *testing.T) {
-	// When ghost is rendered to the side, it should be right-padded to match
-	// the menu box width (48 chars). This makes the composite symmetric so
-	// lipgloss.Place() centers the gap between menu and ghost on screen.
+func TestMainMenu_SideLayoutVisualCentering(t *testing.T) {
+	// The visible content (menu + spacer + ghost) should be centered on
+	// screen as a unit. The ghost should NOT be right-padded, so the left
+	// and right margins of the visible content are approximately equal.
 	//
-	// Without padding: content = 48 (menu) + 3 (spacer) + 28 (ghost) = 79
-	//   left margin = (120 - 79) / 2 = 20
-	// With padding:    content = 48 (menu) + 3 (spacer) + 48 (padded ghost) = 99
-	//   left margin = (120 - 99) / 2 = 10
+	// Visible content = 48 (menu) + 3 (spacer) + ~28 (ghost) = ~79
+	// For width=120: expected left margin ≈ (120 - 79) / 2 ≈ 20
 	projects := []models.Project{{Name: "test", Path: "/test"}}
 	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "static")
 	width := 120
@@ -1857,11 +1855,69 @@ func TestMainMenu_SideLayoutGapCentered(t *testing.T) {
 		if strings.Contains(line, "\u250c") { // ┌ (top border)
 			trimmedLeft := strings.TrimLeft(line, " ")
 			leftMargin := len(line) - len(trimmedLeft)
-			if leftMargin > 15 {
-				t.Errorf("ghost should be right-padded to center gap: left margin is %d (expected ~10), content not symmetric", leftMargin)
+			// Without ghost padding, content is ~79 chars wide
+			// Left margin should be roughly (120 - 79) / 2 ≈ 20
+			if leftMargin < 16 {
+				t.Errorf("visible content not horizontally centered: left margin %d too small (expected >= 16 for width %d)", leftMargin, width)
 			}
 			break
 		}
+	}
+}
+
+func TestMainMenu_SideLayoutGhostVerticallyCentered(t *testing.T) {
+	// With many projects, the menu box is taller than the ghost (15 lines).
+	// The ghost should be vertically centered relative to the menu, not
+	// top-aligned. We verify by checking that ghost art (▄ cap) does NOT
+	// start on the same line as the menu's top border.
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+		{Name: "p2", Path: "/p2"},
+		{Name: "p3", Path: "/p3"},
+		{Name: "p4", Path: "/p4"},
+		{Name: "p5", Path: "/p5"},
+		{Name: "p6", Path: "/p6"},
+	}
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "static")
+	m.SetSize(120, 50)
+	view := m.View()
+
+	lines := strings.Split(view, "\n")
+	menuTopLine := -1
+	ghostCapLine := -1
+	menuBottomLine := -1
+	for i, line := range lines {
+		if menuTopLine == -1 && strings.Contains(line, "\u250c") { // ┌
+			menuTopLine = i
+		}
+		if strings.Contains(line, "\u2518") { // ┘
+			menuBottomLine = i
+		}
+		if ghostCapLine == -1 && strings.Contains(line, "\u2584") { // ▄ (ghost cap)
+			ghostCapLine = i
+		}
+	}
+
+	if menuTopLine == -1 || ghostCapLine == -1 || menuBottomLine == -1 {
+		t.Fatalf("could not find menu borders or ghost cap: top=%d, bottom=%d, ghost=%d", menuTopLine, menuBottomLine, ghostCapLine)
+	}
+
+	// Ghost should start below the menu top (vertically centered, not top-aligned)
+	if ghostCapLine <= menuTopLine {
+		t.Errorf("ghost should be vertically centered, not top-aligned: ghost cap at line %d, menu top at line %d", ghostCapLine, menuTopLine)
+	}
+
+	// Ghost should start at least a few lines below menu top when menu is much taller
+	menuHeight := menuBottomLine - menuTopLine + 1
+	ghostOffset := ghostCapLine - menuTopLine
+	// Ghost is ~15 lines, so expected offset ≈ (menuHeight - 15) / 2
+	expectedOffset := (menuHeight - 15) / 2
+	diff := ghostOffset - expectedOffset
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 2 {
+		t.Errorf("ghost not vertically centered: offset %d from menu top, expected ~%d (menu height %d)", ghostOffset, expectedOffset, menuHeight)
 	}
 }
 
@@ -1944,5 +2000,72 @@ func TestMainMenu_ViewTruncatesLongName(t *testing.T) {
 	}
 	if !found {
 		t.Error("view should contain the project name (truncated)")
+	}
+}
+
+func TestMainMenu_ViewFillsFullTerminalHeight(t *testing.T) {
+	// The view output should fill the full terminal height so that
+	// lipgloss.Place produces proper centering. The number of lines
+	// in the view string must equal the terminal height.
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+		{Name: "p2", Path: "/p2"},
+		{Name: "p3", Path: "/p3"},
+	}
+	termHeight := 50
+	m := tui.NewMainMenu(projects, []string{"claude", "codex"}, "codex", "animated")
+	m.SetSize(120, termHeight)
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+
+	if len(lines) != termHeight {
+		t.Errorf("view should have exactly %d lines to fill terminal, got %d", termHeight, len(lines))
+	}
+}
+
+func TestMainMenu_ViewVerticalCenteringIsSymmetric(t *testing.T) {
+	// Top blank rows and bottom blank rows should differ by at most 1.
+	projects := []models.Project{
+		{Name: "p1", Path: "/p1"},
+		{Name: "p2", Path: "/p2"},
+		{Name: "p3", Path: "/p3"},
+		{Name: "p4", Path: "/p4"},
+		{Name: "p5", Path: "/p5"},
+		{Name: "p6", Path: "/p6"},
+	}
+	termHeight := 50
+	m := tui.NewMainMenu(projects, []string{"claude", "codex"}, "codex", "animated")
+	m.SetSize(120, termHeight)
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+
+	// Count top blank rows
+	topBlank := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			topBlank++
+		} else {
+			break
+		}
+	}
+
+	// Count bottom blank rows
+	bottomBlank := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			bottomBlank++
+		} else {
+			break
+		}
+	}
+
+	diff := topBlank - bottomBlank
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 1 {
+		t.Errorf("vertical centering is not symmetric: %d top blank rows, %d bottom blank rows (diff %d > 1)", topBlank, bottomBlank, diff)
 	}
 }
