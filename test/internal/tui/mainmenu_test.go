@@ -2428,3 +2428,259 @@ func TestMainMenu_FeedbackTimer_Dismisses(t *testing.T) {
 		t.Errorf("Feedback should be dismissed after %d ticks, got %q", tui.FeedbackDismissTicks, mm2.FeedbackMsg())
 	}
 }
+
+// Delete mode tests
+func TestMainMenu_DeleteProject_EntersDeleteMode(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	if !mm.InDeleteMode() {
+		t.Error("Expected delete mode after 'd' press")
+	}
+	if mm.Result() != nil {
+		t.Error("Should not produce result when entering delete mode")
+	}
+}
+
+func TestMainMenu_DeleteProject_NoProjectsShowsFeedback(t *testing.T) {
+	m := tui.NewMainMenu(nil, testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	if mm.InDeleteMode() {
+		t.Error("Should not enter delete mode with no projects")
+	}
+	if mm.FeedbackMsg() == "" {
+		t.Error("Should show feedback when no projects to delete")
+	}
+}
+
+func TestMainMenu_DeleteProject_QCancels(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	mm2 := newModel2.(*tui.MainMenuModel)
+
+	if mm2.InDeleteMode() {
+		t.Error("Delete mode should be cancelled after Q")
+	}
+}
+
+func TestMainMenu_DeleteProject_EscCancels(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm2 := newModel2.(*tui.MainMenuModel)
+
+	if mm2.InDeleteMode() {
+		t.Error("Delete mode should be cancelled after Esc")
+	}
+}
+
+func TestMainMenu_DeleteProject_NavigatesProjects(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	if mm.DeleteSelected() != 0 {
+		t.Error("Should start at first project")
+	}
+
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyDown})
+	mm2 := newModel2.(*tui.MainMenuModel)
+	if mm2.DeleteSelected() != 1 {
+		t.Errorf("After down: expected 1, got %d", mm2.DeleteSelected())
+	}
+
+	// Wrap around
+	newModel3, _ := mm2.Update(tea.KeyMsg{Type: tea.KeyDown})
+	mm3 := newModel3.(*tui.MainMenuModel)
+	newModel4, _ := mm3.Update(tea.KeyMsg{Type: tea.KeyDown})
+	mm4 := newModel4.(*tui.MainMenuModel)
+	if mm4.DeleteSelected() != 0 {
+		t.Errorf("After wrapping down: expected 0, got %d", mm4.DeleteSelected())
+	}
+
+	// Up wraps
+	newModel5, _ := mm4.Update(tea.KeyMsg{Type: tea.KeyUp})
+	mm5 := newModel5.(*tui.MainMenuModel)
+	if mm5.DeleteSelected() != 2 {
+		t.Errorf("After wrapping up from 0: expected 2, got %d", mm5.DeleteSelected())
+	}
+}
+
+func TestMainMenu_DeleteProject_NumberJumps(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	mm2 := newModel2.(*tui.MainMenuModel)
+	if mm2.DeleteSelected() != 2 {
+		t.Errorf("After '3' key: expected 2, got %d", mm2.DeleteSelected())
+	}
+
+	// Number beyond range does nothing
+	newModel3, _ := mm2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
+	mm3 := newModel3.(*tui.MainMenuModel)
+	if mm3.DeleteSelected() != 2 {
+		t.Errorf("After '9' key (beyond range): expected 2 (unchanged), got %d", mm3.DeleteSelected())
+	}
+}
+
+func TestMainMenu_DeleteProject_JKNavigation(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	// j moves down
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	mm2 := newModel2.(*tui.MainMenuModel)
+	if mm2.DeleteSelected() != 1 {
+		t.Errorf("After 'j': expected 1, got %d", mm2.DeleteSelected())
+	}
+
+	// k moves up
+	newModel3, _ := mm2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	mm3 := newModel3.(*tui.MainMenuModel)
+	if mm3.DeleteSelected() != 0 {
+		t.Errorf("After 'k': expected 0, got %d", mm3.DeleteSelected())
+	}
+}
+
+func TestMainMenu_DeleteProject_ConfirmDeletes(t *testing.T) {
+	dir := t.TempDir()
+	projFile := filepath.Join(dir, "projects")
+	os.WriteFile(projFile, []byte("ghost-tab:/Users/jack/ghost-tab\nmy-app:/Users/jack/my-app\nwebsite:/Users/jack/website\n"), 0644)
+
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	m.SetProjectsFile(projFile)
+
+	// Enter delete mode
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	// Move to second project (my-app)
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyDown})
+	mm2 := newModel2.(*tui.MainMenuModel)
+
+	// Press Enter to delete
+	newModel3, _ := mm2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm3 := newModel3.(*tui.MainMenuModel)
+
+	if mm3.InDeleteMode() {
+		t.Error("Should exit delete mode after deletion")
+	}
+	if mm3.FeedbackMsg() == "" {
+		t.Error("Expected feedback after deletion")
+	}
+	if !strings.Contains(mm3.FeedbackMsg(), "my-app") {
+		t.Errorf("Feedback should mention deleted project name, got %q", mm3.FeedbackMsg())
+	}
+
+	data, _ := os.ReadFile(projFile)
+	if strings.Contains(string(data), "my-app") {
+		t.Error("Deleted project should be removed from file")
+	}
+	if !strings.Contains(string(data), "ghost-tab") {
+		t.Error("Other projects should remain")
+	}
+	if !strings.Contains(string(data), "website") {
+		t.Error("Other projects should remain")
+	}
+}
+
+// Open-once tests
+func TestMainMenu_OpenOnce_EntersInputMode(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	if !mm.InInputMode() {
+		t.Error("Expected input mode after 'o' press")
+	}
+	if mm.InputMode() != "open-once" {
+		t.Errorf("Expected input mode 'open-once', got %q", mm.InputMode())
+	}
+	if mm.Result() != nil {
+		t.Error("Should not produce result when entering input mode")
+	}
+	if cmd == nil {
+		t.Error("Expected a cmd when entering input mode")
+	}
+}
+
+func TestMainMenu_OpenOnce_SubmitValid(t *testing.T) {
+	dir := t.TempDir()
+	targetDir := filepath.Join(dir, "temp-project")
+	os.MkdirAll(targetDir, 0755)
+
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	for _, r := range targetDir {
+		mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	// First Enter accepts autocomplete suggestion, second Enter submits
+	mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	newModel2, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm2 := newModel2.(*tui.MainMenuModel)
+
+	result := mm2.Result()
+	if result == nil {
+		t.Fatal("Expected result after valid open-once submit")
+	}
+	if result.Action != "open-once" {
+		t.Errorf("Expected action 'open-once', got %q", result.Action)
+	}
+	if result.Name != "temp-project" {
+		t.Errorf("Expected name 'temp-project', got %q", result.Name)
+	}
+	if result.Path != targetDir {
+		t.Errorf("Expected path %q, got %q", targetDir, result.Path)
+	}
+	if cmd == nil {
+		t.Error("Expected tea.Quit cmd")
+	}
+}
+
+func TestMainMenu_OpenOnce_InvalidPathShowsError(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	for _, r := range "/nonexistent/path/xyz" {
+		mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm2 := newModel2.(*tui.MainMenuModel)
+
+	if !mm2.InInputMode() {
+		t.Error("Should stay in input mode on invalid path")
+	}
+	if mm2.Result() != nil {
+		t.Error("Should not produce result on invalid path")
+	}
+}
+
+func TestMainMenu_OpenOnce_EscCancels(t *testing.T) {
+	m := tui.NewMainMenu(testProjects(), testAITools(), "claude", "animated")
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	mm := newModel.(*tui.MainMenuModel)
+
+	newModel2, _ := mm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm2 := newModel2.(*tui.MainMenuModel)
+
+	if mm2.InInputMode() {
+		t.Error("Input mode should be cancelled after Esc")
+	}
+}

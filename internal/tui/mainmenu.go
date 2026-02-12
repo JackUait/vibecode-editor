@@ -855,7 +855,7 @@ func (m *MainMenuModel) exitDeleteMode() {
 	m.deleteSelected = 0
 }
 
-// updateDeleteMode handles key events while in delete mode (stub - Task 4 will fill this in).
+// updateDeleteMode handles key events while in delete mode.
 func (m *MainMenuModel) updateDeleteMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
@@ -865,7 +865,83 @@ func (m *MainMenuModel) updateDeleteMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.exitDeleteMode()
 		m.setActionResult("quit")
 		return m, tea.Quit
+	case tea.KeyUp:
+		if m.deleteSelected > 0 {
+			m.deleteSelected--
+		} else {
+			m.deleteSelected = len(m.projects) - 1
+		}
+		return m, nil
+	case tea.KeyDown:
+		if m.deleteSelected < len(m.projects)-1 {
+			m.deleteSelected++
+		} else {
+			m.deleteSelected = 0
+		}
+		return m, nil
+	case tea.KeyEnter:
+		return m.confirmDelete()
+	case tea.KeyRunes:
+		if len(msg.Runes) == 1 {
+			r := msg.Runes[0]
+			switch {
+			case r == 'q' || r == 'Q':
+				m.exitDeleteMode()
+				return m, nil
+			case r == 'j':
+				if m.deleteSelected < len(m.projects)-1 {
+					m.deleteSelected++
+				} else {
+					m.deleteSelected = 0
+				}
+				return m, nil
+			case r == 'k':
+				if m.deleteSelected > 0 {
+					m.deleteSelected--
+				} else {
+					m.deleteSelected = len(m.projects) - 1
+				}
+				return m, nil
+			case r >= '1' && r <= '9':
+				n := int(r - '0')
+				if n >= 1 && n <= len(m.projects) {
+					m.deleteSelected = n - 1
+				}
+				return m, nil
+			}
+		}
 	}
+	return m, nil
+}
+
+// confirmDelete removes the selected project from the projects file and updates the list.
+func (m *MainMenuModel) confirmDelete() (tea.Model, tea.Cmd) {
+	if m.deleteSelected >= len(m.projects) {
+		m.exitDeleteMode()
+		return m, nil
+	}
+
+	proj := m.projects[m.deleteSelected]
+	line := proj.Name + ":" + proj.Path
+
+	if err := RemoveProject(line, m.projectsFile); err != nil {
+		m.setFeedback("Failed to delete", "error")
+		m.exitDeleteMode()
+		return m, nil
+	}
+
+	projects, _ := models.LoadProjects(m.projectsFile)
+	m.projects = projects
+
+	if m.selectedItem >= len(m.projects)+len(actionNames) {
+		m.selectedItem = len(m.projects) + len(actionNames) - 1
+		if m.selectedItem < 0 {
+			m.selectedItem = 0
+		}
+	}
+
+	m.exitDeleteMode()
+	m.setFeedback("Deleted "+proj.Name, "success")
 	return m, nil
 }
 
