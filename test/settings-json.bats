@@ -29,22 +29,23 @@ teardown() {
 
 # --- add_sound_notification_hook ---
 
-@test "add_sound_notification_hook: adds hook to empty settings" {
+@test "add_sound_notification_hook: adds Stop hook to empty settings" {
   echo '{}' > "$TEST_TMP/settings.json"
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
   assert_output --partial "Bottle.aiff"
+  refute_output --partial "idle_prompt"
+  refute_output --partial "Notification"
 }
 
-@test "add_sound_notification_hook: skips when already exists" {
+@test "add_sound_notification_hook: skips when Stop hook already exists" {
   cat > "$TEST_TMP/settings.json" << 'EOF'
 {
   "hooks": {
-    "Notification": [
+    "Stop": [
       {
-        "matcher": "idle_prompt",
         "hooks": [{"type": "command", "command": "afplay /System/Library/Sounds/Bottle.aiff &"}]
       }
     ]
@@ -79,7 +80,7 @@ EOF
   assert_output "added"
   # Python's json module should treat this as invalid and start fresh
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
 }
 
 @test "add_sound_notification_hook: handles malformed JSON - trailing comma" {
@@ -87,7 +88,7 @@ EOF
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
 }
 
 @test "add_sound_notification_hook: handles malformed JSON - missing commas" {
@@ -95,7 +96,7 @@ EOF
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
 }
 
 @test "add_sound_notification_hook: handles completely corrupted JSON" {
@@ -103,7 +104,7 @@ EOF
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
 }
 
 @test "add_sound_notification_hook: handles binary file" {
@@ -112,7 +113,7 @@ EOF
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
 }
 
 # --- Edge Cases: Windows Line Endings ---
@@ -122,7 +123,7 @@ EOF
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
 }
 
 @test "merge_claude_settings: handles Windows line endings in existing file" {
@@ -140,7 +141,7 @@ EOF
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
 }
 
 @test "add_sound_notification_hook: handles file with only whitespace" {
@@ -148,7 +149,7 @@ EOF
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
 }
 
 @test "merge_claude_settings: handles empty file" {
@@ -217,7 +218,7 @@ EOF
   run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output "added"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
   assert_output --partial "key1000"
 }
 
@@ -251,4 +252,51 @@ EOF
   # At least one should succeed, file should remain valid JSON
   run python3 -c "import json; json.load(open('$TEST_TMP/settings.json'))"
   assert_success
+}
+
+# --- Migration: Notification.idle_prompt to Stop ---
+
+@test "add_sound_notification_hook: migrates old Notification.idle_prompt to Stop" {
+  cat > "$TEST_TMP/settings.json" << 'EOF'
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "idle_prompt",
+        "hooks": [{"type": "command", "command": "afplay /System/Library/Sounds/Bottle.aiff &"}]
+      }
+    ]
+  }
+}
+EOF
+  run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
+  assert_output "added"
+  run cat "$TEST_TMP/settings.json"
+  assert_output --partial '"Stop"'
+  refute_output --partial "idle_prompt"
+}
+
+@test "add_sound_notification_hook: migration preserves other Notification hooks" {
+  cat > "$TEST_TMP/settings.json" << 'EOF'
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "idle_prompt",
+        "hooks": [{"type": "command", "command": "afplay /System/Library/Sounds/Bottle.aiff &"}]
+      },
+      {
+        "matcher": "permission_prompt",
+        "hooks": [{"type": "command", "command": "echo permission"}]
+      }
+    ]
+  }
+}
+EOF
+  run add_sound_notification_hook "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
+  assert_output "added"
+  run cat "$TEST_TMP/settings.json"
+  assert_output --partial '"Stop"'
+  assert_output --partial "permission_prompt"
+  refute_output --partial "idle_prompt"
 }

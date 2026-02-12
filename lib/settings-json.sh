@@ -25,7 +25,8 @@ CSEOF
   fi
 }
 
-# Add a sound notification hook (idle_prompt) to settings.json.
+# Add a sound notification hook (Stop event) to settings.json.
+# Migrates old Notification.idle_prompt hooks to Stop.
 add_sound_notification_hook() {
   local path="$1" command="$2"
   mkdir -p "$(dirname "$path")"
@@ -45,9 +46,19 @@ if os.path.exists(settings_path):
 else:
     settings = {}
 
-# Build the hook entry we want
+hooks = settings.setdefault("hooks", {})
+
+# Migrate: remove old Notification.idle_prompt entries
+if "Notification" in hooks:
+    hooks["Notification"] = [
+        entry for entry in hooks["Notification"]
+        if entry.get("matcher") != "idle_prompt"
+    ]
+    if not hooks["Notification"]:
+        del hooks["Notification"]
+
+# Build the Stop hook entry
 new_hook_entry = {
-    "matcher": "idle_prompt",
     "hooks": [
         {
             "type": "command",
@@ -56,18 +67,18 @@ new_hook_entry = {
     ]
 }
 
-# Ensure hooks.Notification exists
-hooks = settings.setdefault("hooks", {})
-notification_list = hooks.setdefault("Notification", [])
+# Ensure hooks.Stop exists
+stop_list = hooks.setdefault("Stop", [])
 
-# Check if idle_prompt hook already exists
+# Check if a sound hook already exists in Stop
 already_exists = any(
-    entry.get("matcher") == "idle_prompt"
-    for entry in notification_list
+    hook_cmd in h.get("command", "")
+    for entry in stop_list
+    for h in entry.get("hooks", [])
 )
 
 if not already_exists:
-    notification_list.append(new_hook_entry)
+    stop_list.append(new_hook_entry)
     with open(settings_path, "w") as f:
         json.dump(settings, f, indent=2)
         f.write("\n")

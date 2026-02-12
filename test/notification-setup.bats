@@ -16,21 +16,21 @@ teardown() {
 
 # --- setup_sound_notification ---
 
-@test "setup_sound_notification: adds hook to empty settings" {
+@test "setup_sound_notification: adds Stop hook to empty settings" {
   echo '{}' > "$TEST_TMP/settings.json"
   run setup_sound_notification "$TEST_TMP/settings.json" "afplay /System/Library/Sounds/Bottle.aiff &"
   assert_output --partial "configured"
   run cat "$TEST_TMP/settings.json"
-  assert_output --partial "idle_prompt"
+  assert_output --partial '"Stop"'
+  refute_output --partial "idle_prompt"
 }
 
 @test "setup_sound_notification: reports already exists" {
   cat > "$TEST_TMP/settings.json" << 'EOF'
 {
   "hooks": {
-    "Notification": [
+    "Stop": [
       {
-        "matcher": "idle_prompt",
         "hooks": [{"type": "command", "command": "afplay sound &"}]
       }
     ]
@@ -46,5 +46,3 @@ EOF
   assert_output --partial "configured"
   [ -f "$TEST_TMP/new-settings.json" ]
 }
-
-

@@ -379,8 +379,8 @@ success "Projects file:   $PROJECTS_FILE"
 if [ -f ~/.claude/statusline-wrapper.sh ]; then
   success "Status line:     ~/.claude/statusline-wrapper.sh"
 fi
-if grep -q '"idle_prompt"' ~/.claude/settings.json 2>/dev/null; then
-  success "Sound:           Notification on idle"
+if grep -q '"Stop"' ~/.claude/settings.json 2>/dev/null; then
+  success "Sound:           Notification on stop"
 fi
 if [ -f ~/.codex/config.toml ]; then
   success "Codex config:    ~/.codex/config.toml"
