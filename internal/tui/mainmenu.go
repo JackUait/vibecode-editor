@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -17,15 +18,16 @@ type bobTickMsg struct{}
 // sleepTickMsg is sent on each sleep timer tick.
 type sleepTickMsg struct{}
 
-// bobOffsets is the 14-step sine-wave offset pattern for ghost bobbing.
-var bobOffsets = []int{0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0}
-
-// BobOffsets returns a copy of the bob animation offset pattern.
-func BobOffsets() []int {
-	out := make([]int, len(bobOffsets))
-	copy(out, bobOffsets)
-	return out
-}
+const (
+	// bobTickInterval is the animation tick rate (~60fps).
+	bobTickInterval = 16 * time.Millisecond
+	// bobCyclePeriod is the duration of one full bob cycle in milliseconds.
+	bobCyclePeriod = 2500.0
+	// bobPhaseStep is the phase increment per tick (2*pi / ticks-per-cycle).
+	bobPhaseStep = 2 * math.Pi / (bobCyclePeriod / 16.0)
+	// ZzzTickEvery controls how many bob ticks between Zzz frame advances (~192ms).
+	ZzzTickEvery = 12
+)
 
 // MainMenuResult represents the JSON output when the main menu exits.
 type MainMenuResult struct {
@@ -84,7 +86,8 @@ type MainMenuModel struct {
 	selectedItem        int
 	ghostDisplay        string
 	ghostSleeping       bool
-	bobStep             int
+	bobPhase            float64
+	zzzCounter          int
 	sleepTimer          int
 	width               int
 	height              int
@@ -265,8 +268,16 @@ func (m *MainMenuModel) Wake() {
 // CenterOffsetY returns the vertical centering offset calculated in View().
 func (m *MainMenuModel) CenterOffsetY() int { return m.centerOffsetY }
 
-// BobStep returns the current bob animation step index.
-func (m *MainMenuModel) BobStep() int { return m.bobStep }
+// BobPhase returns the current bob animation phase (0 to 2*pi).
+func (m *MainMenuModel) BobPhase() float64 { return m.bobPhase }
+
+// BobOffset returns the current vertical offset (0 or 1) computed from the sine wave phase.
+func (m *MainMenuModel) BobOffset() int {
+	if math.Sin(m.bobPhase) < 0 {
+		return 1
+	}
+	return 0
+}
 
 // ZzzFrame returns the current Zzz animation frame index.
 func (m *MainMenuModel) ZzzFrame() int {
@@ -414,9 +425,9 @@ func (m *MainMenuModel) setActionResult(action string) {
 	m.quitting = true
 }
 
-// bobTickCmd returns a command that sends a bobTickMsg after 180ms.
+// bobTickCmd returns a command that sends a bobTickMsg at ~60fps.
 func (m *MainMenuModel) bobTickCmd() tea.Cmd {
-	return tea.Tick(180*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Tick(bobTickInterval, func(t time.Time) tea.Msg {
 		return bobTickMsg{}
 	})
 }
@@ -443,9 +454,16 @@ func (m *MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case bobTickMsg:
 		if m.ghostDisplay == "animated" {
-			m.bobStep = (m.bobStep + 1) % len(BobOffsets())
+			m.bobPhase += bobPhaseStep
+			if m.bobPhase >= 2*math.Pi {
+				m.bobPhase -= 2 * math.Pi
+			}
 			if m.ghostSleeping && m.zzz != nil {
-				m.zzz.Tick()
+				m.zzzCounter++
+				if m.zzzCounter >= ZzzTickEvery {
+					m.zzzCounter = 0
+					m.zzz.Tick()
+				}
 			}
 			return m, m.bobTickCmd()
 		}
@@ -990,7 +1008,7 @@ func (m *MainMenuModel) View() string {
 			}
 			ghostStr = strings.Join(paddedZzz, "\n") + "\n" + ghostStr
 		}
-		if m.ghostDisplay == "animated" && bobOffsets[m.bobStep] == 1 {
+		if m.ghostDisplay == "animated" && m.BobOffset() == 1 {
 			ghostStr = "\n" + ghostStr
 		}
 		spacer := strings.Repeat(" ", 3)
@@ -1020,7 +1038,7 @@ func (m *MainMenuModel) View() string {
 			}
 			ghostStr = strings.Join(paddedZzz, "\n") + "\n" + ghostStr
 		}
-		if m.ghostDisplay == "animated" && bobOffsets[m.bobStep] == 1 {
+		if m.ghostDisplay == "animated" && m.BobOffset() == 1 {
 			ghostStr = "\n" + ghostStr
 		}
 		content = lipgloss.JoinVertical(lipgloss.Center, ghostStr, "", menuBox)

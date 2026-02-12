@@ -841,16 +841,62 @@ func TestMainMenu_ViewGhostAbove(t *testing.T) {
 	}
 }
 
-func TestMainMenu_BobOffsets(t *testing.T) {
-	offsets := tui.BobOffsets()
-	if len(offsets) != 14 {
-		t.Errorf("expected 14 bob offsets, got %d", len(offsets))
+func TestMainMenu_BobOffset_InitiallyZero(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	if m.BobOffset() != 0 {
+		t.Errorf("initial bob offset should be 0, got %d", m.BobOffset())
 	}
-	expected := []int{0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0}
-	for i, v := range offsets {
-		if v != expected[i] {
-			t.Errorf("bob offset[%d]: expected %d, got %d", i, expected[i], v)
+}
+
+func TestMainMenu_BobPhase_AdvancesOnTick(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	initial := m.BobPhase()
+	m.Update(tui.NewBobTickMsg())
+	if m.BobPhase() <= initial {
+		t.Errorf("bob phase should advance on tick, was %f now %f", initial, m.BobPhase())
+	}
+}
+
+func TestMainMenu_BobOffset_OnlyZeroOrOne(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	// Run through many ticks covering a full cycle
+	for i := 0; i < 200; i++ {
+		m.Update(tui.NewBobTickMsg())
+		offset := m.BobOffset()
+		if offset != 0 && offset != 1 {
+			t.Fatalf("bob offset must be 0 or 1, got %d at tick %d", offset, i)
 		}
+	}
+}
+
+func TestMainMenu_BobOffset_TransitionsDuringCycle(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	saw0, saw1 := false, false
+	// Run through enough ticks for a full cycle (~156 ticks at 16ms for 2.5s)
+	for i := 0; i < 200; i++ {
+		m.Update(tui.NewBobTickMsg())
+		switch m.BobOffset() {
+		case 0:
+			saw0 = true
+		case 1:
+			saw1 = true
+		}
+	}
+	if !saw0 || !saw1 {
+		t.Errorf("bob should transition between 0 and 1 during a full cycle, saw0=%v saw1=%v", saw0, saw1)
+	}
+}
+
+func TestMainMenu_BobPhase_Wraps(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	// Run through enough ticks for multiple full cycles
+	for i := 0; i < 500; i++ {
+		m.Update(tui.NewBobTickMsg())
+	}
+	phase := m.BobPhase()
+	// Phase should have wrapped (stayed below 2*pi)
+	if phase > 6.3 { // slightly above 2*pi
+		t.Errorf("bob phase should wrap around 2*pi, got %f", phase)
 	}
 }
 
@@ -1430,11 +1476,13 @@ func TestMainMenu_BobTickAdvancesZzzWhenSleeping(t *testing.T) {
 	if !m.IsSleeping() {
 		t.Fatal("ghost should be sleeping")
 	}
-	// Advance bob tick -- should also advance Zzz
+	// Advance bob ticks -- Zzz advances every ZzzTickEvery bob ticks
 	initialFrame := m.ZzzFrame()
-	m.Update(tui.NewBobTickMsg())
+	for i := 0; i < tui.ZzzTickEvery; i++ {
+		m.Update(tui.NewBobTickMsg())
+	}
 	if m.ZzzFrame() != initialFrame+1 {
-		t.Errorf("Zzz frame should advance on bob tick when sleeping, expected %d got %d", initialFrame+1, m.ZzzFrame())
+		t.Errorf("Zzz frame should advance after %d bob ticks when sleeping, expected %d got %d", tui.ZzzTickEvery, initialFrame+1, m.ZzzFrame())
 	}
 }
 
