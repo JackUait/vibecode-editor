@@ -3,6 +3,9 @@ package util
 import (
 	"os"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func TestOpenTTY(t *testing.T) {
@@ -35,5 +38,34 @@ func TestTUITeaOptions_returnsTwoOptions(t *testing.T) {
 	// Should return exactly 2 options (WithInput and WithOutput)
 	if len(opts) != 2 {
 		t.Errorf("Expected 2 tea options, got %d", len(opts))
+	}
+}
+
+func TestTUITeaOptions_setsLipglossColorProfile(t *testing.T) {
+	// Simulate the production scenario: stdout is a pipe (not a TTY).
+	// Before calling TUITeaOptions, lipgloss would detect Ascii profile
+	// from the piped stdout. After calling TUITeaOptions, the default
+	// renderer should be pointed at /dev/tty and detect a real color profile.
+
+	// Force Ascii profile to simulate piped stdout
+	prev := lipgloss.DefaultRenderer()
+	lipgloss.SetColorProfile(termenv.Ascii)
+	defer lipgloss.SetDefaultRenderer(prev)
+
+	if lipgloss.ColorProfile() != termenv.Ascii {
+		t.Fatal("setup failed: color profile should be Ascii")
+	}
+
+	opts, cleanup, err := TUITeaOptions()
+	if err != nil {
+		t.Skipf("Cannot open /dev/tty (expected in CI): %v", err)
+	}
+	defer cleanup()
+	_ = opts
+
+	// After TUITeaOptions, lipgloss should have a color profile better than Ascii
+	profile := lipgloss.ColorProfile()
+	if profile == termenv.Ascii {
+		t.Error("after TUITeaOptions, lipgloss color profile should not be Ascii — it should detect color from /dev/tty")
 	}
 }

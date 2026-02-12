@@ -5,6 +5,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // OpenTTY opens /dev/tty for direct terminal I/O.
@@ -25,6 +26,12 @@ func TUITeaOptions() ([]tea.ProgramOption, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// Point lipgloss at the real TTY so it detects color capabilities
+	// correctly. Without this, lipgloss detects from os.Stdout which is
+	// a pipe when bash invokes us via command substitution, resulting in
+	// Ascii profile (no colors).
+	lipgloss.SetDefaultRenderer(lipgloss.NewRenderer(tty))
 
 	opts := []tea.ProgramOption{
 		tea.WithInput(tty),
