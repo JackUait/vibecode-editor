@@ -148,6 +148,12 @@ export PROJECT_DIR
 export PROJECT_NAME="${PROJECT_NAME:-$(basename "$PROJECT_DIR")}"
 SESSION_NAME="dev-${PROJECT_NAME}-$$"
 
+# Capture session baseline for line diff tracking
+GHOST_TAB_BASELINE_FILE="/tmp/ghost-tab-baseline-${SESSION_NAME}"
+if git rev-parse --git-dir > /dev/null 2>&1; then
+  git rev-parse HEAD > "$GHOST_TAB_BASELINE_FILE" 2>/dev/null
+fi
+
 # Set terminal/tab title based on tab_title setting
 _tab_title_setting="full"
 _settings_file="${XDG_CONFIG_HOME:-$HOME/.config}/ghost-tab/settings"
@@ -179,6 +185,7 @@ WATCHER_PID=$!
 
 cleanup() {
   cleanup_tmux_session "$SESSION_NAME" "$WATCHER_PID" "$TMUX_CMD"
+  rm -f "$GHOST_TAB_BASELINE_FILE"
 }
 trap cleanup EXIT HUP TERM INT
 
@@ -192,7 +199,7 @@ case "$SELECTED_AI_TOOL" in
     ;;
 esac
 
-"$TMUX_CMD" new-session -s "$SESSION_NAME" -e "PATH=$PATH" -c "$PROJECT_DIR" \
+"$TMUX_CMD" new-session -s "$SESSION_NAME" -e "PATH=$PATH" -e "GHOST_TAB_BASELINE_FILE=$GHOST_TAB_BASELINE_FILE" -c "$PROJECT_DIR" \
   "$LAZYGIT_CMD; exec bash" \; \
   set-option status-left " ⬡ ${PROJECT_NAME} " \; \
   set-option status-left-style "fg=white,bg=colour236,bold" \; \
