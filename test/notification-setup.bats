@@ -46,3 +46,32 @@ EOF
   assert_output --partial "configured"
   [ -f "$TEST_TMP/new-settings.json" ]
 }
+
+# --- is_sound_enabled ---
+
+@test "is_sound_enabled: returns false when features file missing" {
+  run is_sound_enabled "claude" "$TEST_TMP/nonexistent"
+  assert_success
+  assert_output "false"
+}
+
+@test "is_sound_enabled: returns false when sound key missing" {
+  echo '{}' > "$TEST_TMP/claude-features.json"
+  run is_sound_enabled "claude" "$TEST_TMP"
+  assert_success
+  assert_output "false"
+}
+
+@test "is_sound_enabled: returns true when sound is true" {
+  echo '{"sound": true}' > "$TEST_TMP/claude-features.json"
+  run is_sound_enabled "claude" "$TEST_TMP"
+  assert_success
+  assert_output "true"
+}
+
+@test "is_sound_enabled: returns false when sound is false" {
+  echo '{"sound": false}' > "$TEST_TMP/claude-features.json"
+  run is_sound_enabled "claude" "$TEST_TMP"
+  assert_success
+  assert_output "false"
+}
