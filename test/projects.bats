@@ -9,30 +9,6 @@ teardown() {
   rm -rf "$TEST_DIR"
 }
 
-# --- parse_project_name ---
-
-@test "parse_project_name: extracts name before colon" {
-  run parse_project_name "myapp:/Users/me/myapp"
-  assert_output "myapp"
-}
-
-@test "parse_project_name: handles name with spaces" {
-  run parse_project_name "my app:/Users/me/my app"
-  assert_output "my app"
-}
-
-# --- parse_project_path ---
-
-@test "parse_project_path: extracts path after first colon" {
-  run parse_project_path "myapp:/Users/me/myapp"
-  assert_output "/Users/me/myapp"
-}
-
-@test "parse_project_path: handles paths with colons" {
-  run parse_project_path "myapp:/Users/me/path:with:colons"
-  assert_output "/Users/me/path:with:colons"
-}
-
 # --- load_projects ---
 
 @test "load_projects: reads name:path lines" {
@@ -86,35 +62,6 @@ EOF
 @test "path_expand: leaves relative paths unchanged" {
   run path_expand "relative/path"
   assert_output "relative/path"
-}
-
-# --- path_truncate ---
-
-@test "path_truncate: returns short paths unchanged" {
-  run path_truncate "~/short" 38
-  assert_output "~/short"
-}
-
-@test "path_truncate: truncates long paths with ellipsis" {
-  long_path="~/very/long/deeply/nested/project/directory/name"
-  result="$(path_truncate "$long_path" 30)"
-  [[ "$result" == *"..."* ]]
-  [ "${#result}" -le 30 ]
-}
-
-@test "path_truncate: preserves start and end of path" {
-  long_path="~/very/long/deeply/nested/project/directory/name"
-  result="$(path_truncate "$long_path" 30)"
-  [[ "$result" == "~/"* ]]
-  [[ "$result" == *"name" ]]
-}
-
-@test "path_truncate: respects max width parameter" {
-  long_path="~/this/is/a/really/long/path/that/goes/on/forever"
-  result20="$(path_truncate "$long_path" 20)"
-  result40="$(path_truncate "$long_path" 40)"
-  [ "${#result20}" -le 20 ]
-  [ "${#result40}" -le 40 ]
 }
 
 # --- path_expand edge cases ---
@@ -185,61 +132,6 @@ EOF
   ln -s "$TEST_DIR/nonexistent" "$TEST_DIR/broken-link"
   run path_expand "$TEST_DIR/broken-link/foo"
   assert_output "$TEST_DIR/broken-link/foo"
-}
-
-# --- path_truncate edge cases ---
-
-@test "path_truncate: handles empty path" {
-  run path_truncate "" 30
-  assert_output ""
-}
-
-@test "path_truncate: handles path with spaces" {
-  long_path="~/very/long path/with/lots of spaces/deeply nested/directory"
-  result="$(path_truncate "$long_path" 30)"
-  [ "${#result}" -le 30 ]
-  [[ "$result" == "~/"* ]]
-}
-
-@test "path_truncate: handles path with unicode" {
-  long_path="~/very/long/émoji/👻/deeply/nested/directory/name"
-  result="$(path_truncate "$long_path" 30)"
-  # Unicode characters may count differently, but length should be reasonable
-  [[ "$result" == *"..."* ]]
-  [[ "$result" == "~/"* ]]
-}
-
-@test "path_truncate: handles very long path" {
-  # Create path longer than typical PATH_MAX (4096)
-  long_component="$(printf 'a%.0s' {1..200})"
-  long_path="~/${long_component}/${long_component}/${long_component}"
-  result="$(path_truncate "$long_path" 50)"
-  [ "${#result}" -le 50 ]
-  [[ "$result" == *"..."* ]]
-}
-
-@test "path_truncate: handles path with trailing slash" {
-  long_path="~/very/long/deeply/nested/project/directory/name/"
-  result="$(path_truncate "$long_path" 30)"
-  [ "${#result}" -le 30 ]
-}
-
-@test "path_truncate: handles single character path" {
-  run path_truncate "a" 30
-  assert_output "a"
-}
-
-@test "path_truncate: handles path exactly at max width" {
-  path="12345678901234567890"
-  run path_truncate "$path" 20
-  assert_output "$path"
-}
-
-@test "path_truncate: handles path one char over max width" {
-  path="123456789012345678901"
-  result="$(path_truncate "$path" 20)"
-  [ "${#result}" -le 20 ]
-  [[ "$result" == *"..."* ]]
 }
 
 # --- load_projects edge cases ---
@@ -319,41 +211,6 @@ EOF
   assert_line --index 0 "app1:/path/app1"
   assert_line --index 1 "app2:/path/app2"
   [ "$(echo "$output" | wc -l | tr -d ' ')" -eq 2 ]
-}
-
-# --- parse_project_name edge cases ---
-
-@test "parse_project_name: handles name with special characters" {
-  run parse_project_name "my-app_v2.0:/path"
-  assert_output "my-app_v2.0"
-}
-
-@test "parse_project_name: handles empty name" {
-  run parse_project_name ":/path/to/app"
-  assert_output ""
-}
-
-@test "parse_project_name: handles unicode in name" {
-  run parse_project_name "émoji👻:/path"
-  assert_output "émoji👻"
-}
-
-# --- parse_project_path edge cases ---
-
-@test "parse_project_path: handles empty path" {
-  run parse_project_path "app:"
-  assert_output ""
-}
-
-@test "parse_project_path: handles path with multiple colons at start" {
-  run parse_project_path "app::/path"
-  assert_output ":/path"
-}
-
-@test "parse_project_path: handles very long path" {
-  long_path="$(printf '/very/long/path%.0s' {1..100})"
-  run parse_project_path "app:${long_path}"
-  assert_output "$long_path"
 }
 
 # --- Edge Cases: Corrupted/Malformed Files ---
@@ -488,86 +345,4 @@ EOF
   run cat "$TEST_DIR/out1"
   assert_output --partial "app1:/path/to/app1"
   assert_output --partial "app2:/path/to/app2"
-}
-
-# --- Edge Cases: Special Shell Characters ---
-
-@test "parse_project_path: handles path with dollar signs" {
-  run parse_project_path 'app:/path/with/$VAR/here'
-  assert_output '/path/with/$VAR/here'
-}
-
-@test "parse_project_path: handles path with backticks" {
-  run parse_project_path 'app:/path/with/`command`/here'
-  assert_output '/path/with/`command`/here'
-}
-
-@test "parse_project_path: handles path with parentheses" {
-  run parse_project_path 'app:/path/with/(parens)/here'
-  assert_output '/path/with/(parens)/here'
-}
-
-@test "parse_project_path: handles path with semicolons" {
-  run parse_project_path 'app:/path/with;semicolons;here'
-  assert_output '/path/with;semicolons;here'
-}
-
-@test "parse_project_path: handles path with ampersands" {
-  run parse_project_path 'app:/path/with&ampersands&here'
-  assert_output '/path/with&ampersands&here'
-}
-
-@test "parse_project_path: handles path with pipes" {
-  run parse_project_path 'app:/path/with|pipes|here'
-  assert_output '/path/with|pipes|here'
-}
-
-@test "parse_project_path: handles path with asterisks" {
-  run parse_project_path 'app:/path/with/*/glob'
-  assert_output '/path/with/*/glob'
-}
-
-@test "parse_project_path: handles path with question marks" {
-  run parse_project_path 'app:/path/with/?/glob'
-  assert_output '/path/with/?/glob'
-}
-
-@test "parse_project_path: handles path with square brackets" {
-  run parse_project_path 'app:/path/with/[brackets]/here'
-  assert_output '/path/with/[brackets]/here'
-}
-
-# --- Edge Cases: path_truncate with edge values ---
-
-@test "path_truncate: handles max_width of 3 (just ellipsis)" {
-  run path_truncate "/very/long/path" 3
-  # Should handle gracefully, might produce "..." or similar
-  assert_success
-  [ -n "$output" ]
-}
-
-@test "path_truncate: handles max_width of 0" {
-  run path_truncate "/path" 0
-  # Edge case: zero width causes substring expression < 0 error
-  assert_failure
-}
-
-@test "path_truncate: handles negative max_width" {
-  run path_truncate "/path" -10
-  # Bash arithmetic with negative numbers causes substring expression < 0 error
-  assert_failure
-}
-
-@test "path_truncate: handles path with all dots" {
-  run path_truncate "../../../../../../.." 20
-  # Should handle dots without confusion with ellipsis
-  assert_success
-  [ -n "$output" ]
-}
-@test "path_truncate: handles symlink paths" {
-  mkdir -p "$TEST_DIR/target"
-  ln -s "$TEST_DIR/target" "$TEST_DIR/very_long_symlink_name"
-  result="$(path_truncate "$TEST_DIR/very_long_symlink_name/some/path" 20)"
-  [ "${#result}" -le 20 ]
-  [[ "$result" == *"..."* ]]
 }
