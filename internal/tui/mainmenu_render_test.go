@@ -171,6 +171,67 @@ func TestShortenHomePath(t *testing.T) {
 	}
 }
 
+func TestSettingsBox_SoundDisabled(t *testing.T) {
+	m := newTestMenu()
+	m.SetSoundEnabled(false)
+	m.EnterSettings()
+	box := m.renderSettingsBox()
+	if !strings.Contains(box, "Sound") {
+		t.Error("settings box missing 'Sound' label")
+	}
+	if !strings.Contains(box, "Off") {
+		t.Error("settings box should show 'Off' when sound disabled")
+	}
+}
+
+func TestSettingsBox_SoundEnabled(t *testing.T) {
+	m := newTestMenu()
+	m.SetSoundEnabled(true)
+	m.EnterSettings()
+	box := m.renderSettingsBox()
+	if !strings.Contains(box, "Sound") {
+		t.Error("settings box missing 'Sound' label")
+	}
+	if !strings.Contains(box, "On") {
+		t.Error("settings box should show 'On' when sound enabled")
+	}
+}
+
+func TestCycleSoundEnabled(t *testing.T) {
+	m := newTestMenu()
+	m.SetSoundEnabled(false)
+	m.CycleSoundEnabled()
+	if !m.soundEnabled {
+		t.Error("expected sound to be enabled after cycling from false")
+	}
+	m.CycleSoundEnabled()
+	if m.soundEnabled {
+		t.Error("expected sound to be disabled after cycling from true")
+	}
+}
+
+func TestSoundEnabledForResult_UnchangedReturnsNil(t *testing.T) {
+	m := newTestMenu()
+	m.SetSoundEnabled(false)
+	result := m.soundEnabledForResult()
+	if result != nil {
+		t.Error("expected nil when sound not changed")
+	}
+}
+
+func TestSoundEnabledForResult_ChangedReturnsValue(t *testing.T) {
+	m := newTestMenu()
+	m.SetSoundEnabled(false)
+	m.CycleSoundEnabled()
+	result := m.soundEnabledForResult()
+	if result == nil {
+		t.Fatal("expected non-nil when sound changed")
+	}
+	if *result != true {
+		t.Error("expected true after cycling from false")
+	}
+}
+
 // stripAnsi removes ANSI escape sequences from a string.
 func stripAnsi(s string) string {
 	var result strings.Builder

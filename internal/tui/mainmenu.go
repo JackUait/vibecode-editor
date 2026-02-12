@@ -42,6 +42,7 @@ type MainMenuResult struct {
 	AITool       string `json:"ai_tool"`
 	GhostDisplay string `json:"ghost_display,omitempty"`
 	TabTitle     string `json:"tab_title,omitempty"`
+	SoundEnabled *bool  `json:"sound_enabled,omitempty"`
 }
 
 // MenuLayout describes how the ghost and menu are arranged at a given terminal size.
@@ -107,6 +108,9 @@ type MainMenuModel struct {
 	tabTitle            string
 	initialTabTitle     string
 	tabTitleChanged     bool
+	soundEnabled        bool
+	initialSoundEnabled bool
+	soundChanged        bool
 	zzz                 *ZzzAnimation
 	centerOffsetY       int
 
@@ -239,6 +243,27 @@ func (m *MainMenuModel) CycleTabTitle() {
 		m.tabTitle = "full"
 	}
 	m.tabTitleChanged = m.tabTitle != m.initialTabTitle
+}
+
+// SetSoundEnabled sets the sound enabled state and records the initial value.
+func (m *MainMenuModel) SetSoundEnabled(enabled bool) {
+	m.soundEnabled = enabled
+	m.initialSoundEnabled = enabled
+}
+
+// CycleSoundEnabled toggles sound between enabled and disabled.
+func (m *MainMenuModel) CycleSoundEnabled() {
+	m.soundEnabled = !m.soundEnabled
+	m.soundChanged = m.soundEnabled != m.initialSoundEnabled
+}
+
+// soundEnabledForResult returns a pointer to the sound enabled value if changed,
+// or nil if unchanged.
+func (m *MainMenuModel) soundEnabledForResult() *bool {
+	if m.soundChanged {
+		return &m.soundEnabled
+	}
+	return nil
 }
 
 // InSettingsMode returns true if the menu is currently showing the settings panel.
@@ -446,6 +471,7 @@ func (m *MainMenuModel) selectCurrent() {
 			AITool:       m.CurrentAITool(),
 			GhostDisplay: m.ghostDisplayForResult(),
 			TabTitle:     m.tabTitleForResult(),
+			SoundEnabled: m.soundEnabledForResult(),
 		}
 	} else {
 		actionIdx := idx - numProjects
@@ -455,6 +481,7 @@ func (m *MainMenuModel) selectCurrent() {
 				AITool:       m.CurrentAITool(),
 				GhostDisplay: m.ghostDisplayForResult(),
 				TabTitle:     m.tabTitleForResult(),
+				SoundEnabled: m.soundEnabledForResult(),
 			}
 		}
 	}
@@ -468,6 +495,7 @@ func (m *MainMenuModel) setActionResult(action string) {
 		AITool:       m.CurrentAITool(),
 		GhostDisplay: m.ghostDisplayForResult(),
 		TabTitle:     m.tabTitleForResult(),
+		SoundEnabled: m.soundEnabledForResult(),
 	}
 	m.quitting = true
 }
@@ -668,6 +696,8 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.CycleGhostDisplay()
 		case 1:
 			m.CycleTabTitle()
+		case 2:
+			m.CycleSoundEnabled()
 		}
 		return m, nil
 	case tea.KeyUp:
@@ -676,7 +706,7 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyDown:
-		if m.settingsSelected < 1 {
+		if m.settingsSelected < 2 {
 			m.settingsSelected++
 		}
 		return m, nil
@@ -692,10 +722,12 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.CycleGhostDisplay()
 				case 1:
 					m.CycleTabTitle()
+				case 2:
+					m.CycleSoundEnabled()
 				}
 				return m, nil
 			case 'j':
-				if m.settingsSelected < 1 {
+				if m.settingsSelected < 2 {
 					m.settingsSelected++
 				}
 				return m, nil
@@ -837,6 +869,7 @@ func (m *MainMenuModel) submitInputMode() (tea.Model, tea.Cmd) {
 		AITool:       m.CurrentAITool(),
 		GhostDisplay: m.ghostDisplayForResult(),
 		TabTitle:     m.tabTitleForResult(),
+		SoundEnabled: m.soundEnabledForResult(),
 	}
 	m.quitting = true
 	return m, tea.Quit
@@ -1057,6 +1090,21 @@ func (m *MainMenuModel) renderSettingsBox() string {
 	tabLabel := "Tab Title"
 	tabState := "[" + tabTitleLabel(m.tabTitle) + "]"
 	lines = append(lines, m.renderSettingsItem(1, tabLabel, tabState, tabTitleStyle, primaryBoldStyle, leftBorder, rightBorder))
+
+	// Sound Notifications item
+	var soundColor lipgloss.Color
+	if m.soundEnabled {
+		soundColor = lipgloss.Color("114") // green
+	} else {
+		soundColor = lipgloss.Color("241") // gray
+	}
+	soundStyle := lipgloss.NewStyle().Foreground(soundColor)
+	soundLabel := "Sound"
+	soundState := "[Off]"
+	if m.soundEnabled {
+		soundState = "[On]"
+	}
+	lines = append(lines, m.renderSettingsItem(2, soundLabel, soundState, soundStyle, primaryBoldStyle, leftBorder, rightBorder))
 
 	// Empty row
 	lines = append(lines, emptyRow)

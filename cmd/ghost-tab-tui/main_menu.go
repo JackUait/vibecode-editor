@@ -25,6 +25,7 @@ var (
 	mainMenuGhostDisplay string
 	mainMenuTabTitle     string
 	mainMenuUpdateVer    string
+	mainMenuSoundEnabled bool
 )
 
 func init() {
@@ -35,6 +36,7 @@ func init() {
 	mainMenuCmd.Flags().StringVar(&mainMenuGhostDisplay, "ghost-display", "animated", "Ghost display mode (animated, static, none)")
 	mainMenuCmd.Flags().StringVar(&mainMenuTabTitle, "tab-title", "full", "Tab title mode (full, project)")
 	mainMenuCmd.Flags().StringVar(&mainMenuUpdateVer, "update-version", "", "Optional update notification version")
+	mainMenuCmd.Flags().BoolVar(&mainMenuSoundEnabled, "sound-enabled", false, "Whether sound notifications are enabled")
 	rootCmd.AddCommand(mainMenuCmd)
 }
 
@@ -51,6 +53,7 @@ func runMainMenu(cmd *cobra.Command, args []string) error {
 
 	model := tui.NewMainMenu(projects, aiTools, mainMenuAITool, mainMenuGhostDisplay)
 	model.SetTabTitle(mainMenuTabTitle)
+	model.SetSoundEnabled(mainMenuSoundEnabled)
 	model.SetProjectsFile(mainMenuProjectsFile)
 
 	ttyOpts, cleanup, err := util.TUITeaOptions()
