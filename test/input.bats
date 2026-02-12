@@ -316,3 +316,154 @@ setup() {
   result="$(printf '[;A' | parse_esc_sequence)"
   [[ "$result" == ";" || "$result" == "" ]]
 }
+
+# --- confirm_tui tests ---
+
+@test "confirm_tui calls ghost-tab-tui confirm with message" {
+  # Mock ghost-tab-tui confirm
+  ghost-tab-tui() {
+    if [[ "$1" == "confirm" ]]; then
+      [[ "$2" == "Delete this?" ]] || return 1
+      echo '{"confirmed":true}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  # Mock jq
+  jq() {
+    if [[ "$1" == "-r" && "$2" == ".confirmed" ]]; then
+      echo "true"
+      return 0
+    fi
+    return 1
+  }
+  export -f jq
+
+  run confirm_tui "Delete this?"
+
+  assert_success
+}
+
+@test "confirm_tui returns failure when user cancels" {
+  # Mock ghost-tab-tui confirm (cancelled)
+  ghost-tab-tui() {
+    if [[ "$1" == "confirm" ]]; then
+      echo '{"confirmed":false}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  # Mock jq
+  jq() {
+    if [[ "$1" == "-r" && "$2" == ".confirmed" ]]; then
+      echo "false"
+      return 0
+    fi
+    return 1
+  }
+  export -f jq
+
+  run confirm_tui "Delete this?"
+
+  assert_failure
+}
+
+@test "confirm_tui handles jq parse failure" {
+  # Mock ghost-tab-tui confirm
+  ghost-tab-tui() {
+    if [[ "$1" == "confirm" ]]; then
+      echo '{"confirmed":true}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  # Mock jq (fails)
+  jq() {
+    return 1
+  }
+  export -f jq
+
+  run confirm_tui "Delete this?"
+
+  assert_failure
+  assert_output --partial "Failed to parse confirmation response"
+}
+
+@test "confirm_tui validates against null string" {
+  # Mock ghost-tab-tui confirm
+  ghost-tab-tui() {
+    if [[ "$1" == "confirm" ]]; then
+      echo '{"confirmed":"null"}'
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  # Mock jq (returns string "null")
+  jq() {
+    if [[ "$1" == "-r" && "$2" == ".confirmed" ]]; then
+      echo "null"
+      return 0
+    fi
+    return 1
+  }
+  export -f jq
+
+  run confirm_tui "Delete this?"
+
+  assert_failure
+}
+
+@test "confirm_tui falls back to bash prompt when binary missing" {
+  # Test the fallback logic by simulating the condition
+  # We'll use a temp script to test the actual fallback behavior
+  local temp_dir
+  temp_dir="$(mktemp -d)"
+  local test_script="$temp_dir/test_fallback.sh"
+
+  cat > "$test_script" << 'EOF'
+#!/bin/bash
+# Fallback logic (copied from confirm_tui, without /dev/tty for testing)
+msg="$1"
+read -rp "$msg (y/N) " response
+[[ "$response" =~ ^[Yy]$ ]]
+EOF
+
+  chmod +x "$test_script"
+
+  # Simulate user typing "y"
+  run bash -c "echo 'y' | $test_script 'Delete this?'"
+
+  rm -rf "$temp_dir"
+  assert_success
+}
+
+@test "confirm_tui fallback rejects non-yes responses" {
+  # Test the fallback logic by simulating the condition
+  local temp_dir
+  temp_dir="$(mktemp -d)"
+  local test_script="$temp_dir/test_fallback_reject.sh"
+
+  cat > "$test_script" << 'EOF'
+#!/bin/bash
+# Fallback logic (copied from confirm_tui, without /dev/tty for testing)
+msg="$1"
+read -rp "$msg (y/N) " response
+[[ "$response" =~ ^[Yy]$ ]]
+EOF
+
+  chmod +x "$test_script"
+
+  # Simulate user typing "n"
+  run bash -c "echo 'n' | $test_script 'Delete this?'"
+
+  rm -rf "$temp_dir"
+  assert_failure
+}

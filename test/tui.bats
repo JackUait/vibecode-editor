@@ -73,3 +73,40 @@ setup() {
   tui_init_interactive
   [ -n "$_HIDE_CURSOR" ]
 }
+
+# --- set_tab_title ---
+
+@test "set_tab_title: includes project name and ai tool separated by middot" {
+  result="$(set_tab_title "ghost-tab" "claude")"
+  [[ "$result" == *"ghost-tab · claude"* ]]
+}
+
+@test "set_tab_title: outputs OSC escape sequence" {
+  result="$(set_tab_title "myproject" "codex")"
+  # OSC 0 sets window title: \033]0;TITLE\007
+  [[ "$result" == $'\033]0;myproject · codex\007' ]]
+}
+
+@test "set_tab_title: omits tool name when empty" {
+  result="$(set_tab_title "myproject" "")"
+  [[ "$result" == $'\033]0;myproject\007' ]]
+}
+
+# --- draw_logo ---
+
+@test "draw_logo calls ghost-tab-tui show-logo" {
+  # Mock ghost-tab-tui
+  ghost-tab-tui() {
+    if [[ "$1" == "show-logo" ]]; then
+      echo "MOCK_LOGO_OUTPUT"
+      return 0
+    fi
+    return 1
+  }
+  export -f ghost-tab-tui
+
+  run draw_logo "claude"
+
+  assert_success
+  assert_output "MOCK_LOGO_OUTPUT"
+}

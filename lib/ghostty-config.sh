@@ -17,7 +17,8 @@ merge_ghostty_config() {
 # Backup an existing config and replace it with the source config.
 backup_replace_ghostty_config() {
   local config_path="$1" source_config="$2"
-  local backup="${config_path}.backup.$(date +%s)"
+  local backup
+  backup="${config_path}.backup.$(date +%s)"
   cp "$config_path" "$backup"
   success "Backed up existing config to $backup"
   cp "$source_config" "$config_path"

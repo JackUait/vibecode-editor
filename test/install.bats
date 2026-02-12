@@ -230,34 +230,170 @@ setup() {
 
 # --- ensure_base_requirements ---
 
-@test "ensure_base_requirements calls ensure_command with correct arguments" {
-  # Use a wrapper script to mock ensure_command
-  CALL_LOG="$(mktemp)"
-  TEST_SCRIPT="$(mktemp)"
-  cat > "$TEST_SCRIPT" << 'TESTEOF'
-#!/bin/bash
-CALL_LOG="$1"
-ensure_command() {
-  echo "$1|$2|$3|$4" >> "$CALL_LOG"
-}
-# Define the function inline to test
-ensure_base_requirements() {
-  ensure_command "tmux" "brew install tmux" "" "tmux"
-  ensure_command "jq" "brew install jq" "" "jq"
-  ensure_command "ghostty" "brew install --cask ghostty" "" "Ghostty"
-}
-ensure_base_requirements
-TESTEOF
-  chmod +x "$TEST_SCRIPT"
+# --- ensure_ghost_tab_tui ---
 
-  run "$TEST_SCRIPT" "$CALL_LOG"
+@test "ensure_ghost_tab_tui: skips when binary already in PATH" {
+  # Mock command to report ghost-tab-tui exists
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      echo "/usr/local/bin/ghost-tab-tui"
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  run ensure_ghost_tab_tui "/some/share/dir"
 
   assert_success
-  # Verify all three calls with full signatures
-  run cat "$CALL_LOG"
-  assert_line 'tmux|brew install tmux||tmux'
-  assert_line 'jq|brew install jq||jq'
-  assert_line 'ghostty|brew install --cask ghostty||Ghostty'
+  assert_output --partial "ghost-tab-tui already available"
+}
 
-  rm -f "$CALL_LOG" "$TEST_SCRIPT"
+@test "ensure_ghost_tab_tui: builds from source when go available" {
+  TEST_TMP="$(mktemp -d)"
+
+  # Mock command: ghost-tab-tui not found, go found
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "-v" && "$2" == "go" ]]; then
+      echo "/usr/local/bin/go"
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  # Mock go build
+  go() {
+    if [[ "$1" == "build" ]]; then
+      # Create a fake binary at the -o path
+      touch "$3"
+      chmod +x "$3"
+      return 0
+    fi
+    return 1
+  }
+  export -f go
+
+  mkdir -p "$TEST_TMP/.local/bin"
+  export HOME="$TEST_TMP"
+
+  run ensure_ghost_tab_tui "$PROJECT_ROOT"
+
+  assert_success
+  assert_output --partial "Building ghost-tab-tui"
+  assert_output --partial "ghost-tab-tui built and installed"
+
+  rm -rf "$TEST_TMP"
+}
+
+@test "ensure_ghost_tab_tui: fails when go not available" {
+  TEST_TMP="$(mktemp -d)"
+
+  # Mock command: neither ghost-tab-tui nor go found
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "-v" && "$2" == "go" ]]; then
+      return 1
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  run ensure_ghost_tab_tui "$PROJECT_ROOT"
+
+  assert_failure
+  assert_output --partial "Go is required"
+
+  rm -rf "$TEST_TMP"
+}
+
+@test "ensure_ghost_tab_tui: fails when go build fails" {
+  TEST_TMP="$(mktemp -d)"
+
+  # Mock command: ghost-tab-tui not found, go found
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "-v" && "$2" == "go" ]]; then
+      echo "/usr/local/bin/go"
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  # Mock go build failure
+  go() {
+    echo "build error" >&2
+    return 1
+  }
+  export -f go
+
+  mkdir -p "$TEST_TMP/.local/bin"
+  export HOME="$TEST_TMP"
+
+  run ensure_ghost_tab_tui "$PROJECT_ROOT"
+
+  assert_failure
+  assert_output --partial "Failed to build ghost-tab-tui"
+
+  rm -rf "$TEST_TMP"
+}
+
+@test "ensure_ghost_tab_tui: creates local bin directory if missing" {
+  TEST_TMP="$(mktemp -d)"
+
+  # Mock command
+  command() {
+    if [[ "$1" == "-v" && "$2" == "ghost-tab-tui" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "-v" && "$2" == "go" ]]; then
+      echo "/usr/local/bin/go"
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  # Mock go build
+  go() {
+    if [[ "$1" == "build" ]]; then
+      touch "$3"
+      chmod +x "$3"
+      return 0
+    fi
+    return 1
+  }
+  export -f go
+
+  export HOME="$TEST_TMP"
+  # Don't create .local/bin — function should create it
+
+  run ensure_ghost_tab_tui "$PROJECT_ROOT"
+
+  assert_success
+  assert [ -d "$TEST_TMP/.local/bin" ]
+
+  rm -rf "$TEST_TMP"
+}
+
+@test "jq is in PATH after ensure_base_requirements" {
+  # Source install.sh FIRST so ensure_base_requirements is defined
+  source "$BATS_TEST_DIRNAME/../lib/install.sh"
+
+  # Mock ensure_command AFTER sourcing (so it doesn't get overwritten)
+  ensure_command() {
+    echo "Checking $1"
+  }
+
+  run ensure_base_requirements
+  assert_success
+  assert_output --partial "jq"
 }

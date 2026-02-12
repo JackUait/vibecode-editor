@@ -20,6 +20,17 @@ error()   { echo -e "${_RED}✗${_NC} $1"; }
 info()    { echo -e "${_BLUE}→${_NC} $1"; }
 header()  { echo -e "\n${_BOLD}$1${_NC}"; }
 
+# Set terminal/tab title. With tool: "project · tool", without: "project"
+set_tab_title() {
+  local project="$1"
+  local tool="${2:-}"
+  if [ -n "$tool" ]; then
+    printf '\033]0;%s · %s\007' "$project" "$tool"
+  else
+    printf '\033]0;%s\007' "$project"
+  fi
+}
+
 # Extended TUI variables for interactive full-screen UIs.
 # Call this before using any of the extended variables.
 tui_init_interactive() {

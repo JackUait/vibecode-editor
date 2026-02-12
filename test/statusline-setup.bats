@@ -9,9 +9,11 @@ setup() {
   # Create a fake share dir with template files
   SHARE_DIR="$TEST_TMP/share"
   mkdir -p "$SHARE_DIR/templates"
+  mkdir -p "$SHARE_DIR/lib"
   echo "mock-settings" > "$SHARE_DIR/templates/ccstatusline-settings.json"
   echo "mock-command" > "$SHARE_DIR/templates/statusline-command.sh"
   echo "mock-wrapper" > "$SHARE_DIR/templates/statusline-wrapper.sh"
+  echo "mock-helpers" > "$SHARE_DIR/lib/statusline.sh"
 
   # Create fake home dirs
   FAKE_HOME="$TEST_TMP/home"
@@ -36,6 +38,7 @@ teardown() {
   [ -f "$FAKE_HOME/.config/ccstatusline/settings.json" ]
   [ -f "$FAKE_HOME/.claude/statusline-command.sh" ]
   [ -f "$FAKE_HOME/.claude/statusline-wrapper.sh" ]
+  [ -f "$FAKE_HOME/.claude/statusline-helpers.sh" ]
   [ -x "$FAKE_HOME/.claude/statusline-command.sh" ]
   [ -x "$FAKE_HOME/.claude/statusline-wrapper.sh" ]
 }

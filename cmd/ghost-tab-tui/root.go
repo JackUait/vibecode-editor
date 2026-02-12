@@ -1,8 +1,8 @@
 package main
 
-import (
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
+
+var aiToolFlag string
 
 var rootCmd = &cobra.Command{
 	Use:   "ghost-tab-tui",
@@ -11,5 +11,5 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	// Subcommands will be added here
+	rootCmd.PersistentFlags().StringVar(&aiToolFlag, "ai-tool", "claude", "AI tool for theming")
 }

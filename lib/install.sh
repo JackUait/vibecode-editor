@@ -1,6 +1,32 @@
 #!/bin/bash
 # Package installation helpers for the installer.
 
+# Build and install ghost-tab-tui Go binary if not already available.
+# Usage: ensure_ghost_tab_tui "/path/to/share/dir"
+ensure_ghost_tab_tui() {
+  local share_dir="$1"
+
+  if command -v ghost-tab-tui &>/dev/null; then
+    success "ghost-tab-tui already available"
+    return 0
+  fi
+
+  if ! command -v go &>/dev/null; then
+    error "Go is required to build ghost-tab-tui. Install it with: brew install go"
+    return 1
+  fi
+
+  info "Building ghost-tab-tui..."
+  mkdir -p "$HOME/.local/bin"
+  # Build from module root with relative path to cmd
+  if (cd "$share_dir" && go build -o "$HOME/.local/bin/ghost-tab-tui" ./cmd/ghost-tab-tui); then
+    success "ghost-tab-tui built and installed"
+  else
+    error "Failed to build ghost-tab-tui"
+    return 1
+  fi
+}
+
 # Install base requirements (tmux, jq, ghostty).
 ensure_base_requirements() {
   ensure_command "tmux" "brew install tmux" "" "tmux"

@@ -49,6 +49,7 @@ setup_statusline() {
     mkdir -p "$home_dir/.claude"
     cp "$share_dir/templates/statusline-command.sh" "$home_dir/.claude/statusline-command.sh"
     cp "$share_dir/templates/statusline-wrapper.sh" "$home_dir/.claude/statusline-wrapper.sh"
+    cp "$share_dir/lib/statusline.sh" "$home_dir/.claude/statusline-helpers.sh"
     chmod +x "$home_dir/.claude/statusline-command.sh"
     chmod +x "$home_dir/.claude/statusline-wrapper.sh"
     success "Created statusline scripts"

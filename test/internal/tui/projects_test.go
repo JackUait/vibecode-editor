@@ -7,6 +7,19 @@ import (
 	"github.com/jackuait/ghost-tab/internal/tui"
 )
 
+func TestFilterProjects_AfterThemeApply(t *testing.T) {
+	// Apply a non-default theme, then verify FilterProjects still works correctly
+	tui.ApplyTheme(tui.ThemeForTool("copilot"))
+
+	projects := []models.Project{
+		{Name: "web-app", Path: "/home/user/web-app"},
+	}
+	filtered := tui.FilterProjects(projects, "web")
+	if len(filtered) != 1 {
+		t.Errorf("expected 1 result, got %d", len(filtered))
+	}
+}
+
 func TestFilterProjects(t *testing.T) {
 	projects := []models.Project{
 		{Name: "web-app", Path: "/home/user/web-app"},

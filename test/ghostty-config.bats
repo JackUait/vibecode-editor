@@ -343,6 +343,20 @@ EOF
   assert_output --partial "command = "
 }
 
+@test "backup_replace_ghostty_config: backup filename contains numeric timestamp" {
+  echo 'old content' > "$TEST_TMP/config"
+  echo 'new content' > "$TEST_TMP/source"
+  run backup_replace_ghostty_config "$TEST_TMP/config" "$TEST_TMP/source"
+  assert_success
+
+  # Verify backup filename ends with a numeric timestamp (digits only)
+  local backup_file
+  backup_file=$(find "$TEST_TMP" -maxdepth 1 -name 'config.backup.*' | head -1)
+  [[ -n "$backup_file" ]]
+  local timestamp="${backup_file##*.backup.}"
+  [[ "$timestamp" =~ ^[0-9]+$ ]]
+}
+
 @test "backup_replace_ghostty_config: handles file modified during backup" {
   echo 'original' > "$TEST_TMP/config"
   echo 'new content' > "$TEST_TMP/source"

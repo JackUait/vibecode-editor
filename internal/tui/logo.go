@@ -1,40 +1,22 @@
 package tui
 
 import (
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
-
-var logoFrames = []string{
-	`
-   ____  _               _     _____     _
-  / ___|| |__   ___  ___| |_  |_   _|_ _| |__
- | |  _ | '_ \ / _ \/ __| __|   | |/ _  | '_ \
- | |_| || | | | (_) \__ \ |_    | | (_| | |_) |
-  \____||_| |_|\___/|___/\__|   |_|\__,_|_.__/
-`,
-	`
-   ____  _               _     _____     _
-  / ___|| |__   ___  ___| |_  |_   _|_ _| |__
- | |  _ | '_ \ / _ \/ __| __|   | |/ _  | '_ \
- | |_| || | | | (_) \__ \ |_    | | (_| | |_) |
-  \____||_| |_|\___/|___/\__|   |_|\__,_|_.__/
-
-`,
-}
 
 type logoTickMsg time.Time
 
 type LogoModel struct {
+	tool     string
 	frame    int
 	quitting bool
 }
 
-func NewLogo() LogoModel {
-	return LogoModel{}
+// NewLogo creates a LogoModel that displays the ghost art for the given AI tool.
+func NewLogo(tool string) LogoModel {
+	return LogoModel{tool: tool}
 }
 
 func (m LogoModel) Init() tea.Cmd {
@@ -57,7 +39,7 @@ type quitMsg struct{}
 func (m LogoModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case logoTickMsg:
-		m.frame = (m.frame + 1) % len(logoFrames)
+		m.frame = (m.frame + 1) % 2
 		if !m.quitting {
 			return m, tickCmd()
 		}
@@ -80,10 +62,6 @@ func (m LogoModel) View() string {
 		return ""
 	}
 
-	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("170")).
-		Bold(true)
-
-	logo := logoFrames[m.frame]
-	return style.Render(strings.TrimSpace(logo))
+	lines := GhostForTool(m.tool, false)
+	return RenderGhost(lines)
 }
