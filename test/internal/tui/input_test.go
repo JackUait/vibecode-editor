@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jackuait/ghost-tab/internal/tui"
 )
 
@@ -83,5 +84,61 @@ func TestPathSuggestions_TrailingSlash(t *testing.T) {
 		if !strings.HasSuffix(s, "/") {
 			t.Errorf("suggestion %q should end with /", s)
 		}
+	}
+}
+
+func TestConfirmDialog_YConfirms(t *testing.T) {
+	m := tui.NewConfirmDialog("Delete?")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	result := updated.(tui.ConfirmDialogModel)
+	if !result.Confirmed {
+		t.Error("'y' should confirm")
+	}
+}
+
+func TestConfirmDialog_UpperYConfirms(t *testing.T) {
+	m := tui.NewConfirmDialog("Delete?")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
+	result := updated.(tui.ConfirmDialogModel)
+	if !result.Confirmed {
+		t.Error("'Y' should confirm")
+	}
+}
+
+func TestConfirmDialog_NDenies(t *testing.T) {
+	m := tui.NewConfirmDialog("Delete?")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result := updated.(tui.ConfirmDialogModel)
+	if result.Confirmed {
+		t.Error("'n' should deny")
+	}
+}
+
+func TestConfirmDialog_EscDenies(t *testing.T) {
+	m := tui.NewConfirmDialog("Delete?")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result := updated.(tui.ConfirmDialogModel)
+	if result.Confirmed {
+		t.Error("Esc should deny")
+	}
+}
+
+func TestConfirmDialog_CtrlCDenies(t *testing.T) {
+	m := tui.NewConfirmDialog("Delete?")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	result := updated.(tui.ConfirmDialogModel)
+	if result.Confirmed {
+		t.Error("Ctrl+C should deny")
+	}
+}
+
+func TestConfirmDialog_ViewShowsMessage(t *testing.T) {
+	m := tui.NewConfirmDialog("Are you sure?")
+	view := m.View()
+	if !strings.Contains(view, "Are you sure?") {
+		t.Error("view should contain the message")
+	}
+	if !strings.Contains(view, "y/n") {
+		t.Error("view should contain y/n hint")
 	}
 }
