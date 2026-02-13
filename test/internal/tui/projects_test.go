@@ -136,3 +136,57 @@ func TestProjectSelector_ViewEmptyAfterQuit(t *testing.T) {
 		t.Error("View should be empty after quitting")
 	}
 }
+
+func TestProjectSelector_NumberKeySelectsProject(t *testing.T) {
+	projects := []models.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+		{Name: "beta", Path: "/tmp/beta"},
+		{Name: "gamma", Path: "/tmp/gamma"},
+	}
+	m := tui.NewProjectSelector(projects)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	if cmd == nil {
+		t.Fatal("Number key should return quit command")
+	}
+	result := updated.(tui.ProjectSelectorModel)
+	if result.Selected() == nil {
+		t.Fatal("Number key should select a project")
+	}
+	if result.Selected().Name != "alpha" {
+		t.Errorf("Expected 'alpha', got %q", result.Selected().Name)
+	}
+	if result.Selected().Path != "/tmp/alpha" {
+		t.Errorf("Expected '/tmp/alpha', got %q", result.Selected().Path)
+	}
+}
+
+func TestProjectSelector_NumberKeyOutOfRange(t *testing.T) {
+	projects := []models.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+		{Name: "beta", Path: "/tmp/beta"},
+	}
+	m := tui.NewProjectSelector(projects)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
+	if cmd != nil {
+		t.Error("Out-of-range number key should not return quit command")
+	}
+	result := updated.(tui.ProjectSelectorModel)
+	if result.Selected() != nil {
+		t.Error("Out-of-range number key should not select anything")
+	}
+}
+
+func TestProjectSelector_NumberKeyZeroIgnored(t *testing.T) {
+	projects := []models.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+	}
+	m := tui.NewProjectSelector(projects)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+	if cmd != nil {
+		t.Error("Zero key should not return quit command")
+	}
+	result := updated.(tui.ProjectSelectorModel)
+	if result.Selected() != nil {
+		t.Error("Zero key should not select anything")
+	}
+}
