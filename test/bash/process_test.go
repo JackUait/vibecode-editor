@@ -176,17 +176,20 @@ func TestKillTree_handles_process_that_forks_during_kill_with_timeout(t *testing
 		t.Fatalf("failed to start trap process: %v", err)
 	}
 	pid := cmd.Process.Pid
-	defer forceKill(pid)
+	defer func() {
+		for _, c := range getChildren(pid) {
+			forceKill(c)
+		}
+		forceKill(pid)
+	}()
 	time.Sleep(300 * time.Millisecond)
 
 	root := projectRoot(t)
 	snippet := fmt.Sprintf(`
-timeout 3 bash -c "
-  source '%s/lib/process.sh'
-  kill_tree %d TERM 2>/dev/null || true
-  sleep 0.5
-  kill_tree %d KILL 2>/dev/null || true
-" || true
+source '%s/lib/process.sh'
+kill_tree %d TERM 2>/dev/null || true
+sleep 0.5
+kill_tree %d KILL 2>/dev/null || true
 `, root, pid, pid)
 	_, _ = runBashSnippet(t, snippet, nil)
 	time.Sleep(300 * time.Millisecond)
