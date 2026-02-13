@@ -40,6 +40,50 @@ except Exception:
   fi
 }
 
+# Get the sound name for the given AI tool.
+# Returns the sound name (e.g. "Bottle") or empty string if sound is disabled.
+# Usage: get_sound_name <tool> <config_dir>
+get_sound_name() {
+  local tool="$1" config_dir="$2"
+  local features_file="$config_dir/${tool}-features.json"
+  if [ -f "$features_file" ]; then
+    python3 -c "
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    if d.get('sound') is False:
+        print('')
+    else:
+        print(d.get('sound_name', 'Bottle'))
+except Exception:
+    print('Bottle')
+" "$features_file" 2>/dev/null
+  else
+    echo "Bottle"
+  fi
+}
+
+# Set the sound name for the given AI tool.
+# Usage: set_sound_name <tool> <config_dir> <name>
+set_sound_name() {
+  local tool="$1" config_dir="$2" name="$3"
+  local features_file="$config_dir/${tool}-features.json"
+  mkdir -p "$config_dir"
+  python3 -c "
+import json, sys
+path = sys.argv[1]
+name = sys.argv[2]
+try:
+    d = json.load(open(path))
+except Exception:
+    d = {}
+d['sound_name'] = name
+with open(path, 'w') as f:
+    json.dump(d, f)
+    f.write('\n')
+" "$features_file" "$name"
+}
+
 # Set sound feature flag for the given AI tool.
 # Usage: set_sound_feature_flag <tool> <config_dir> <true|false>
 set_sound_feature_flag() {

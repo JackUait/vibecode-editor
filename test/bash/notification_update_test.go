@@ -287,6 +287,125 @@ func TestNotification_set_sound_feature_flag_preserves_other_keys(t *testing.T) 
 	}
 }
 
+// --- get_sound_name ---
+
+func TestNotification_get_sound_name_returns_Bottle_when_features_file_missing(t *testing.T) {
+	tmpDir := t.TempDir()
+	nonexistentDir := filepath.Join(tmpDir, "nonexistent")
+
+	snippet := notificationSnippet(t,
+		fmt.Sprintf(`get_sound_name "claude" %q`, nonexistentDir))
+
+	out, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+	if strings.TrimSpace(out) != "Bottle" {
+		t.Errorf("expected 'Bottle', got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestNotification_get_sound_name_returns_Bottle_when_sound_name_key_missing(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeTempFile(t, tmpDir, "claude-features.json", `{"sound": true}`)
+
+	snippet := notificationSnippet(t,
+		fmt.Sprintf(`get_sound_name "claude" %q`, tmpDir))
+
+	out, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+	if strings.TrimSpace(out) != "Bottle" {
+		t.Errorf("expected 'Bottle', got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestNotification_get_sound_name_returns_stored_name(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeTempFile(t, tmpDir, "claude-features.json", `{"sound": true, "sound_name": "Glass"}`)
+
+	snippet := notificationSnippet(t,
+		fmt.Sprintf(`get_sound_name "claude" %q`, tmpDir))
+
+	out, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+	if strings.TrimSpace(out) != "Glass" {
+		t.Errorf("expected 'Glass', got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestNotification_get_sound_name_returns_empty_when_sound_disabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeTempFile(t, tmpDir, "claude-features.json", `{"sound": false}`)
+
+	snippet := notificationSnippet(t,
+		fmt.Sprintf(`get_sound_name "claude" %q`, tmpDir))
+
+	out, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("expected empty string, got %q", strings.TrimSpace(out))
+	}
+}
+
+// --- set_sound_name ---
+
+func TestNotification_set_sound_name_writes_name_to_features_file(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeTempFile(t, tmpDir, "claude-features.json", `{"sound": true}`)
+
+	snippet := notificationSnippet(t,
+		fmt.Sprintf(`set_sound_name "claude" %q "Glass"`, tmpDir))
+
+	_, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+
+	featuresFile := filepath.Join(tmpDir, "claude-features.json")
+	verifySnippet := fmt.Sprintf(
+		`python3 -c "import json; print(json.load(open('%s'))['sound_name'])"`, featuresFile)
+	out, code := runBashSnippet(t, verifySnippet, nil)
+	assertExitCode(t, code, 0)
+	if strings.TrimSpace(out) != "Glass" {
+		t.Errorf("expected 'Glass', got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestNotification_set_sound_name_creates_file_when_missing(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	snippet := notificationSnippet(t,
+		fmt.Sprintf(`set_sound_name "claude" %q "Ping"`, tmpDir))
+
+	_, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+
+	featuresFile := filepath.Join(tmpDir, "claude-features.json")
+	verifySnippet := fmt.Sprintf(
+		`python3 -c "import json; d=json.load(open('%s')); print(d['sound_name'])"`, featuresFile)
+	out, code := runBashSnippet(t, verifySnippet, nil)
+	assertExitCode(t, code, 0)
+	if strings.TrimSpace(out) != "Ping" {
+		t.Errorf("expected 'Ping', got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestNotification_set_sound_name_preserves_other_keys(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeTempFile(t, tmpDir, "claude-features.json", `{"sound": true, "other": 42}`)
+
+	snippet := notificationSnippet(t,
+		fmt.Sprintf(`set_sound_name "claude" %q "Hero"`, tmpDir))
+
+	_, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+
+	featuresFile := filepath.Join(tmpDir, "claude-features.json")
+	verifySnippet := fmt.Sprintf(
+		`python3 -c "import json; d=json.load(open('%s')); print(d['sound_name'], d['other'])"`, featuresFile)
+	out, code := runBashSnippet(t, verifySnippet, nil)
+	assertExitCode(t, code, 0)
+	if strings.TrimSpace(out) != "Hero 42" {
+		t.Errorf("expected 'Hero 42', got %q", strings.TrimSpace(out))
+	}
+}
+
 // --- toggle_sound_notification ---
 
 func TestNotification_toggle_sound_notification_enables_for_claude(t *testing.T) {
