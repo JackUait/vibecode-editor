@@ -2,6 +2,7 @@ package bash_test
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -154,4 +155,56 @@ func TestCheckTagNotExists_fails_when_tag_exists(t *testing.T) {
 	out, code := runBashSnippet(t, snippet, nil)
 	assertExitCode(t, code, 1)
 	assertContains(t, out, "v1.0.0")
+}
+
+// ============================================================
+// check_gh_auth tests
+// ============================================================
+
+func TestCheckGhAuth_passes_when_authenticated(t *testing.T) {
+	dir := t.TempDir()
+	binDir := mockCommand(t, dir, "gh", `
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then exit 0; fi
+exit 0
+`)
+	snippet := releaseSnippet(t, `check_gh_auth`)
+	env := buildEnv(t, []string{binDir})
+	_, code := runBashSnippet(t, snippet, env)
+	assertExitCode(t, code, 0)
+}
+
+func TestCheckGhAuth_fails_when_not_installed(t *testing.T) {
+	dir := t.TempDir()
+	// Create an empty bin dir with no gh command
+	binDir := filepath.Join(dir, "bin")
+	os.MkdirAll(binDir, 0o755)
+	snippet := releaseSnippet(t, `check_gh_auth`)
+	env := buildEnv(t, []string{binDir}, "PATH="+binDir)
+	out, code := runBashSnippet(t, snippet, env)
+	assertExitCode(t, code, 1)
+	assertContains(t, out, "gh")
+}
+
+// ============================================================
+// check_formula_exists tests
+// ============================================================
+
+func TestCheckFormulaExists_passes_when_file_exists(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "ghost-tab.rb", "class GhostTab < Formula\nend\n")
+	formulaPath := filepath.Join(dir, "ghost-tab.rb")
+
+	snippet := releaseSnippet(t, `check_formula_exists "`+formulaPath+`"`)
+	_, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+}
+
+func TestCheckFormulaExists_fails_when_file_missing(t *testing.T) {
+	dir := t.TempDir()
+	formulaPath := filepath.Join(dir, "ghost-tab.rb")
+
+	snippet := releaseSnippet(t, `check_formula_exists "`+formulaPath+`"`)
+	out, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 1)
+	assertContains(t, out, "formula")
 }
