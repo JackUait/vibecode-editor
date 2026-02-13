@@ -3053,6 +3053,28 @@ func TestMainMenu_NoSoundNameInResultWhenUnchanged(t *testing.T) {
 	}
 }
 
+func TestMainMenu_SoundNameInResultOnQuit(t *testing.T) {
+	projects := testProjects()
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	m.SetSoundName("Bottle")
+	m.EnterSettings()
+	m.CycleSoundName()
+	m.ExitSettings()
+	// Quit via Esc instead of selecting a project
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result := m.Result()
+	if result == nil {
+		t.Fatal("expected a result on quit")
+	}
+	if result.Action != "quit" {
+		t.Fatalf("expected action=quit, got %q", result.Action)
+	}
+	if result.SoundName == nil {
+		t.Fatal("expected sound_name to be set when changed and quit via Esc")
+	}
+}
+
 func TestMainMenu_SettingsViewShowsSoundName(t *testing.T) {
 	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
 	m.SetSize(80, 30)

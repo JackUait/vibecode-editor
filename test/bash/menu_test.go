@@ -1125,6 +1125,49 @@ select_project_interactive %q
 	assertContains(t, logged, "CALLED:claude")
 }
 
+func TestMenu_calls_apply_sound_notification_on_quit(t *testing.T) {
+	dir := t.TempDir()
+	applyLog := filepath.Join(dir, "apply_log")
+	// User changed sound and quit — sound_name should still be persisted
+	binDir := mockCommand(t, dir, "ghost-tab-tui",
+		`echo '{"action":"quit","ai_tool":"claude","sound_name":"Glass"}'`)
+	projectsFile := writeTempFile(t, dir, "projects", "proj1:/tmp/p1\n")
+	root := projectRoot(t)
+	env := buildEnv(t, []string{binDir},
+		"XDG_CONFIG_HOME="+filepath.Join(dir, "config"),
+		"HOME="+dir,
+	)
+
+	script := fmt.Sprintf(`
+source %q 2>/dev/null || true
+source %q
+error() { echo "ERROR: $*" >&2; }
+AI_TOOLS_AVAILABLE=("claude")
+SELECTED_AI_TOOL="claude"
+_update_version=""
+# Mock apply_sound_notification to log the call
+apply_sound_notification() { echo "$1|$2|$3|$4" > %q; }
+select_project_interactive %q
+`, filepath.Join(root, "lib/tui.sh"),
+		filepath.Join(root, "lib/menu-tui.sh"),
+		applyLog,
+		projectsFile)
+
+	_, code := runBashSnippet(t, script, env)
+	// quit returns non-zero exit code
+	if code == 0 {
+		t.Error("expected non-zero exit code for quit")
+	}
+
+	data, err := os.ReadFile(applyLog)
+	if err != nil {
+		t.Fatalf("apply_log not created — apply_sound_notification was not called on quit: %v", err)
+	}
+	logged := strings.TrimSpace(string(data))
+	assertContains(t, logged, "claude")
+	assertContains(t, logged, "Glass")
+}
+
 func TestMenu_does_not_call_apply_when_sound_name_absent(t *testing.T) {
 	dir := t.TempDir()
 	applyLog := filepath.Join(dir, "apply_log")
