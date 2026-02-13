@@ -274,6 +274,63 @@ func TestGenerateReleaseNotes_filters_merge_commits(t *testing.T) {
 	assertNotContains(t, out, "Merge pull request")
 }
 
+func TestGenerateReleaseNotes_filters_revert_commits(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	addTag(t, dir, "v1.0.0")
+
+	addCommit(t, dir, "feat: add widget")
+	addCommit(t, dir, `Revert "feat: add widget"`)
+	addTag(t, dir, "v1.1.0")
+
+	snippet := releaseNotesSnippet(t, `cd "`+dir+`" && generate_release_notes v1.0.0 v1.1.0`)
+	out, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+	assertNotContains(t, out, "Revert")
+}
+
+func TestGenerateReleaseNotes_filters_design_and_plan_docs(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	addTag(t, dir, "v1.0.0")
+
+	addCommit(t, dir, "feat: add real feature")
+	addCommit(t, dir, "Add widget design doc")
+	addCommit(t, dir, "Add widget implementation plan")
+	addCommit(t, dir, "docs: add design for widget")
+	addTag(t, dir, "v1.1.0")
+
+	snippet := releaseNotesSnippet(t, `cd "`+dir+`" && generate_release_notes v1.0.0 v1.1.0`)
+	out, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+	assertContains(t, out, "Add real feature")
+	assertNotContains(t, out, "design doc")
+	assertNotContains(t, out, "implementation plan")
+	assertNotContains(t, out, "design for")
+}
+
+func TestGenerateReleaseNotes_filters_scaffolding_commits(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	addTag(t, dir, "v1.0.0")
+
+	addCommit(t, dir, "feat: add real feature")
+	addCommit(t, dir, "feat: initialize Go module with dependencies")
+	addCommit(t, dir, "feat: create Go directory structure")
+	addCommit(t, dir, "fix: add .gitkeep to track empty directories")
+	addCommit(t, dir, "fix: add missing Go dependencies")
+	addTag(t, dir, "v1.1.0")
+
+	snippet := releaseNotesSnippet(t, `cd "`+dir+`" && generate_release_notes v1.0.0 v1.1.0`)
+	out, code := runBashSnippet(t, snippet, nil)
+	assertExitCode(t, code, 0)
+	assertContains(t, out, "Add real feature")
+	assertNotContains(t, out, "initialize Go module")
+	assertNotContains(t, out, "directory structure")
+	assertNotContains(t, out, ".gitkeep")
+	assertNotContains(t, out, "missing Go dependencies")
+}
+
 func TestReleaseScript_uses_generate_release_notes(t *testing.T) {
 	root := projectRoot(t)
 	releaseScript, err := os.ReadFile(filepath.Join(root, "scripts", "release.sh"))

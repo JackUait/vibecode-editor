@@ -35,12 +35,27 @@ generate_release_notes() {
       continue
     fi
 
+    # Filter out revert commits
+    if [[ "$msg" =~ ^Revert\  ]]; then
+      continue
+    fi
+
+    # Filter out design docs and implementation plans (unprefixed)
+    if [[ "$msg" =~ (design\ doc|implementation\ plan|design\ for) ]]; then
+      continue
+    fi
+
     # Parse conventional commit prefix: type(scope): message  OR  type: message
     # Store regex in variable to avoid bash parsing issues with brackets/parens
     local pattern='^(feat|fix|refactor|test|docs|chore|style|ci|build|cleanup)(\([^)]*\))?: (.+)$'
     if [[ "$msg" =~ $pattern ]]; then
       local type="${BASH_REMATCH[1]}"
       local description="${BASH_REMATCH[3]}"
+
+      # Filter scaffolding commits (module init, directory structure, .gitkeep, missing deps)
+      if [[ "$description" =~ (initialize .* module|directory structure|\.gitkeep|missing .* dependencies) ]]; then
+        continue
+      fi
 
       # Capitalize first letter
       description="$(echo "${description:0:1}" | tr '[:lower:]' '[:upper:]')${description:1}"
