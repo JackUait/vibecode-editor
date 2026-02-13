@@ -173,7 +173,7 @@ func TestShortenHomePath(t *testing.T) {
 
 func TestSettingsBox_SoundDisabled(t *testing.T) {
 	m := newTestMenu()
-	m.SetSoundEnabled(false)
+	m.SetSoundName("")
 	m.EnterSettings()
 	box := m.renderSettingsBox()
 	if !strings.Contains(box, "Sound") {
@@ -184,51 +184,56 @@ func TestSettingsBox_SoundDisabled(t *testing.T) {
 	}
 }
 
-func TestSettingsBox_SoundEnabled(t *testing.T) {
+func TestSettingsBox_SoundName(t *testing.T) {
 	m := newTestMenu()
-	m.SetSoundEnabled(true)
+	m.SetSoundName("Glass")
 	m.EnterSettings()
 	box := m.renderSettingsBox()
 	if !strings.Contains(box, "Sound") {
 		t.Error("settings box missing 'Sound' label")
 	}
-	if !strings.Contains(box, "On") {
-		t.Error("settings box should show 'On' when sound enabled")
+	if !strings.Contains(box, "Glass") {
+		t.Error("settings box should show 'Glass' when sound set to Glass")
 	}
 }
 
-func TestCycleSoundEnabled(t *testing.T) {
+func TestCycleSoundName(t *testing.T) {
 	m := newTestMenu()
-	m.SetSoundEnabled(false)
-	m.CycleSoundEnabled()
-	if !m.soundEnabled {
-		t.Error("expected sound to be enabled after cycling from false")
-	}
-	m.CycleSoundEnabled()
-	if m.soundEnabled {
-		t.Error("expected sound to be disabled after cycling from true")
+	m.SetSoundName("")
+	m.CycleSoundName()
+	if m.SoundName() != "Basso" {
+		t.Errorf("expected 'Basso' after cycling from Off, got %q", m.SoundName())
 	}
 }
 
-func TestSoundEnabledForResult_UnchangedReturnsNil(t *testing.T) {
+func TestCycleSoundNameReverse(t *testing.T) {
 	m := newTestMenu()
-	m.SetSoundEnabled(false)
-	result := m.soundEnabledForResult()
+	m.SetSoundName("")
+	m.CycleSoundNameReverse()
+	if m.SoundName() != "Tink" {
+		t.Errorf("expected 'Tink' after reverse cycling from Off, got %q", m.SoundName())
+	}
+}
+
+func TestSoundNameForResult_UnchangedReturnsNil(t *testing.T) {
+	m := newTestMenu()
+	m.SetSoundName("Bottle")
+	result := m.soundNameForResult()
 	if result != nil {
 		t.Error("expected nil when sound not changed")
 	}
 }
 
-func TestSoundEnabledForResult_ChangedReturnsValue(t *testing.T) {
+func TestSoundNameForResult_ChangedReturnsValue(t *testing.T) {
 	m := newTestMenu()
-	m.SetSoundEnabled(false)
-	m.CycleSoundEnabled()
-	result := m.soundEnabledForResult()
+	m.SetSoundName("Bottle")
+	m.CycleSoundName()
+	result := m.soundNameForResult()
 	if result == nil {
 		t.Fatal("expected non-nil when sound changed")
 	}
-	if *result != true {
-		t.Error("expected true after cycling from false")
+	if *result != "Frog" {
+		t.Errorf("expected 'Frog' after cycling from Bottle, got %q", *result)
 	}
 }
 

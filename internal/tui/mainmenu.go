@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ type MainMenuResult struct {
 	AITool       string `json:"ai_tool"`
 	GhostDisplay string `json:"ghost_display,omitempty"`
 	TabTitle     string `json:"tab_title,omitempty"`
-	SoundEnabled *bool  `json:"sound_enabled,omitempty"`
+	SoundName *string `json:"sound_name,omitempty"`
 }
 
 // MenuLayout describes how the ghost and menu are arranged at a given terminal size.
@@ -73,6 +74,12 @@ var aiToolDisplayNames = map[string]string{
 	"codex":    "Codex CLI",
 	"copilot":  "Copilot CLI",
 	"opencode": "OpenCode",
+}
+
+// SystemSounds is the ordered list of macOS system sounds available for notification.
+var SystemSounds = []string{
+	"Basso", "Blow", "Bottle", "Frog", "Funk", "Glass", "Hero",
+	"Morse", "Ping", "Pop", "Purr", "Sosumi", "Submarine", "Tink",
 }
 
 // AIToolDisplayName returns the display name for the given AI tool.
@@ -108,9 +115,9 @@ type MainMenuModel struct {
 	tabTitle            string
 	initialTabTitle     string
 	tabTitleChanged     bool
-	soundEnabled        bool
-	initialSoundEnabled bool
-	soundChanged        bool
+	soundName        string // "" means Off
+	initialSoundName string
+	soundNameChanged bool
 	zzz                 *ZzzAnimation
 	centerOffsetY       int
 
@@ -259,23 +266,78 @@ func (m *MainMenuModel) CycleTabTitle() {
 	m.tabTitleChanged = m.tabTitle != m.initialTabTitle
 }
 
-// SetSoundEnabled sets the sound enabled state and records the initial value.
-func (m *MainMenuModel) SetSoundEnabled(enabled bool) {
-	m.soundEnabled = enabled
-	m.initialSoundEnabled = enabled
+// SetSoundName sets the sound name and records the initial value.
+// Empty string means sound is off.
+func (m *MainMenuModel) SetSoundName(name string) {
+	m.soundName = name
+	m.initialSoundName = name
 }
 
-// CycleSoundEnabled toggles sound between enabled and disabled.
-func (m *MainMenuModel) CycleSoundEnabled() {
-	m.soundEnabled = !m.soundEnabled
-	m.soundChanged = m.soundEnabled != m.initialSoundEnabled
+// SoundName returns the current sound name ("" means off).
+func (m *MainMenuModel) SoundName() string {
+	return m.soundName
 }
 
-// soundEnabledForResult returns a pointer to the sound enabled value if changed,
-// or nil if unchanged.
-func (m *MainMenuModel) soundEnabledForResult() *bool {
-	if m.soundChanged {
-		return &m.soundEnabled
+// CycleSoundName cycles forward through system sounds + Off.
+func (m *MainMenuModel) CycleSoundName() {
+	if m.soundName == "" {
+		m.soundName = SystemSounds[0]
+	} else {
+		idx := -1
+		for i, s := range SystemSounds {
+			if s == m.soundName {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 && idx < len(SystemSounds)-1 {
+			m.soundName = SystemSounds[idx+1]
+		} else {
+			m.soundName = ""
+		}
+	}
+	m.soundNameChanged = m.soundName != m.initialSoundName
+	m.previewSound()
+}
+
+// CycleSoundNameReverse cycles backward through Off + system sounds.
+func (m *MainMenuModel) CycleSoundNameReverse() {
+	if m.soundName == "" {
+		m.soundName = SystemSounds[len(SystemSounds)-1]
+	} else {
+		idx := -1
+		for i, s := range SystemSounds {
+			if s == m.soundName {
+				idx = i
+				break
+			}
+		}
+		if idx > 0 {
+			m.soundName = SystemSounds[idx-1]
+		} else {
+			m.soundName = ""
+		}
+	}
+	m.soundNameChanged = m.soundName != m.initialSoundName
+	m.previewSound()
+}
+
+// previewSound plays the current sound in the background using afplay.
+func (m *MainMenuModel) previewSound() {
+	if m.soundName == "" {
+		return
+	}
+	path := "/System/Library/Sounds/" + m.soundName + ".aiff"
+	go func() {
+		cmd := exec.Command("afplay", path)
+		_ = cmd.Start()
+	}()
+}
+
+// soundNameForResult returns a pointer to the sound name if changed, nil if unchanged.
+func (m *MainMenuModel) soundNameForResult() *string {
+	if m.soundNameChanged {
+		return &m.soundName
 	}
 	return nil
 }
@@ -505,7 +567,7 @@ func (m *MainMenuModel) selectCurrent() {
 			AITool:       m.CurrentAITool(),
 			GhostDisplay: m.ghostDisplayForResult(),
 			TabTitle:     m.tabTitleForResult(),
-			SoundEnabled: m.soundEnabledForResult(),
+			SoundName: m.soundNameForResult(),
 		}
 	} else {
 		actionIdx := idx - numProjects
@@ -515,7 +577,7 @@ func (m *MainMenuModel) selectCurrent() {
 				AITool:       m.CurrentAITool(),
 				GhostDisplay: m.ghostDisplayForResult(),
 				TabTitle:     m.tabTitleForResult(),
-				SoundEnabled: m.soundEnabledForResult(),
+				SoundName: m.soundNameForResult(),
 			}
 		}
 	}
@@ -529,7 +591,7 @@ func (m *MainMenuModel) setActionResult(action string) {
 		AITool:       m.CurrentAITool(),
 		GhostDisplay: m.ghostDisplayForResult(),
 		TabTitle:     m.tabTitleForResult(),
-		SoundEnabled: m.soundEnabledForResult(),
+		SoundName: m.soundNameForResult(),
 	}
 	m.quitting = true
 }
@@ -736,7 +798,7 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 1:
 			m.CycleTabTitle()
 		case 2:
-			m.CycleSoundEnabled()
+			m.CycleSoundName()
 		}
 		return m, nil
 	case tea.KeyUp:
@@ -756,7 +818,7 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 1:
 			m.CycleTabTitle()
 		case 2:
-			m.CycleSoundEnabled()
+			m.CycleSoundName()
 		}
 		return m, nil
 	case tea.KeyLeft:
@@ -766,7 +828,7 @@ func (m *MainMenuModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 1:
 			m.CycleTabTitle()
 		case 2:
-			m.CycleSoundEnabled()
+			m.CycleSoundNameReverse()
 		}
 		return m, nil
 	case tea.KeyRunes:
@@ -916,7 +978,7 @@ func (m *MainMenuModel) submitInputMode() (tea.Model, tea.Cmd) {
 		AITool:       m.CurrentAITool(),
 		GhostDisplay: m.ghostDisplayForResult(),
 		TabTitle:     m.tabTitleForResult(),
-		SoundEnabled: m.soundEnabledForResult(),
+		SoundName: m.soundNameForResult(),
 	}
 	m.quitting = true
 	return m, tea.Quit
@@ -1140,7 +1202,7 @@ func (m *MainMenuModel) renderSettingsBox() string {
 
 	// Sound Notifications item
 	var soundColor lipgloss.Color
-	if m.soundEnabled {
+	if m.soundName != "" {
 		soundColor = lipgloss.Color("114") // green
 	} else {
 		soundColor = lipgloss.Color("241") // gray
@@ -1148,8 +1210,8 @@ func (m *MainMenuModel) renderSettingsBox() string {
 	soundStyle := lipgloss.NewStyle().Foreground(soundColor)
 	soundLabel := "Sound"
 	soundState := "[Off]"
-	if m.soundEnabled {
-		soundState = "[On]"
+	if m.soundName != "" {
+		soundState = "[" + m.soundName + "]"
 	}
 	lines = append(lines, m.renderSettingsItem(2, soundLabel, soundState, soundStyle, primaryBoldStyle, leftBorder, rightBorder))
 

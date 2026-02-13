@@ -2954,3 +2954,126 @@ func TestMainMenu_NumberKeyOutOfRange(t *testing.T) {
 		t.Error("Out-of-range number key should not produce a result")
 	}
 }
+
+func TestMainMenu_SetSoundName(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSoundName("Bottle")
+	if m.SoundName() != "Bottle" {
+		t.Errorf("expected 'Bottle', got %q", m.SoundName())
+	}
+}
+
+func TestMainMenu_SetSoundName_empty_means_off(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSoundName("")
+	if m.SoundName() != "" {
+		t.Errorf("expected empty string, got %q", m.SoundName())
+	}
+}
+
+func TestMainMenu_CycleSoundName_forward(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSoundName("Bottle")
+	m.CycleSoundName()
+	name := m.SoundName()
+	if name == "Bottle" {
+		t.Error("expected sound to change after cycling forward")
+	}
+	if name == "" {
+		t.Error("first forward cycle from Bottle should not jump to Off")
+	}
+}
+
+func TestMainMenu_CycleSoundNameReverse(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSoundName("Bottle")
+	m.CycleSoundNameReverse()
+	name := m.SoundName()
+	if name == "Bottle" {
+		t.Error("expected sound to change after cycling backward")
+	}
+}
+
+func TestMainMenu_CycleSoundName_wraps_through_off(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSoundName("Tink")
+	m.CycleSoundName()
+	if m.SoundName() != "" {
+		t.Errorf("expected Off (empty) after last sound, got %q", m.SoundName())
+	}
+	m.CycleSoundName()
+	if m.SoundName() == "" {
+		t.Error("expected to wrap to first sound after Off")
+	}
+}
+
+func TestMainMenu_CycleSoundNameReverse_wraps_through_off(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSoundName("Basso")
+	m.CycleSoundNameReverse()
+	if m.SoundName() != "" {
+		t.Errorf("expected Off (empty) after first sound reversed, got %q", m.SoundName())
+	}
+	m.CycleSoundNameReverse()
+	if m.SoundName() != "Tink" {
+		t.Errorf("expected 'Tink' after Off reversed, got %q", m.SoundName())
+	}
+}
+
+func TestMainMenu_SoundNameInResult(t *testing.T) {
+	projects := testProjects()
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	m.SetSoundName("Bottle")
+	m.EnterSettings()
+	m.CycleSoundName()
+	m.ExitSettings()
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result := m.Result()
+	if result == nil {
+		t.Fatal("expected a result")
+	}
+	if result.SoundName == nil {
+		t.Fatal("expected sound_name to be set when changed")
+	}
+}
+
+func TestMainMenu_NoSoundNameInResultWhenUnchanged(t *testing.T) {
+	projects := testProjects()
+	m := tui.NewMainMenu(projects, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	m.SetSoundName("Bottle")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result := m.Result()
+	if result == nil {
+		t.Fatal("expected a result")
+	}
+	if result.SoundName != nil {
+		t.Errorf("expected nil sound_name when unchanged, got %q", *result.SoundName)
+	}
+}
+
+func TestMainMenu_SettingsViewShowsSoundName(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	m.SetSoundName("Glass")
+	m.EnterSettings()
+	view := m.View()
+	if !strings.Contains(view, "Glass") {
+		t.Error("settings view should show sound name 'Glass'")
+	}
+	if !strings.Contains(view, "Sound") {
+		t.Error("settings view should show 'Sound' label")
+	}
+}
+
+func TestMainMenu_SettingsViewShowsOff(t *testing.T) {
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSize(80, 30)
+	m.SetSoundName("")
+	m.EnterSettings()
+	view := m.View()
+	if !strings.Contains(view, "[Off]") {
+		t.Error("settings view should show '[Off]' when sound is disabled")
+	}
+}
