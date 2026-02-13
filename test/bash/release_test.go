@@ -282,3 +282,70 @@ end
 	assertContains(t, content, "v3.0.0.tar.gz")
 	assertContains(t, content, `sha256 "newsha"`)
 }
+
+// ============================================================
+// main / integration tests
+// ============================================================
+
+func TestRelease_main_fails_on_dirty_tree(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	writeTempFile(t, dir, "VERSION", "1.0.0\n")
+	writeTempFile(t, dir, "untracked.txt", "dirty")
+
+	root := projectRoot(t)
+	scriptPath := filepath.Join(root, "scripts", "release.sh")
+	cmd := exec.Command("bash", scriptPath, "--yes")
+	cmd.Dir = dir
+	cmd.Env = buildEnv(t, nil,
+		"RELEASE_VERSION_FILE="+filepath.Join(dir, "VERSION"),
+	)
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		}
+	}
+	if code == 0 {
+		t.Error("expected non-zero exit code for dirty tree")
+	}
+	assertContains(t, string(out), "clean")
+}
+
+func TestRelease_main_shows_confirmation_and_aborts_on_no(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	writeTempFile(t, dir, "VERSION", "1.0.0\n")
+	// Stage and commit VERSION so tree is clean
+	cmd := exec.Command("git", "add", "VERSION")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+	cmd = exec.Command("git", "commit", "-m", "add version")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+
+	root := projectRoot(t)
+	scriptPath := filepath.Join(root, "scripts", "release.sh")
+	cmd = exec.Command("bash", scriptPath)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader("n\n")
+
+	// Mock gh as authenticated, and provide a formula path that exists
+	mockDir := t.TempDir()
+	binDir := mockCommand(t, mockDir, "gh", `
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then exit 0; fi
+exit 0
+`)
+	formulaDir := t.TempDir()
+	writeTempFile(t, formulaDir, "Formula/ghost-tab.rb", "class GhostTab\nend\n")
+
+	cmd.Env = buildEnv(t, []string{binDir},
+		"RELEASE_VERSION_FILE="+filepath.Join(dir, "VERSION"),
+		"RELEASE_FORMULA_PATH="+filepath.Join(formulaDir, "Formula", "ghost-tab.rb"),
+	)
+
+	out, _ := cmd.CombinedOutput()
+	assertContains(t, string(out), "Release v1.0.0")
+	assertContains(t, string(out), "Aborted")
+}
