@@ -3205,6 +3205,25 @@ func TestMainMenu_CycleGhostDisplay_DoesNotPersistWithoutFile(t *testing.T) {
 	}
 }
 
+func TestMainMenu_CycleTabTitle_PersistsToFile(t *testing.T) {
+	dir := t.TempDir()
+	settingsFile := filepath.Join(dir, "settings")
+	os.WriteFile(settingsFile, []byte("tab_title=full\n"), 0644)
+
+	m := tui.NewMainMenu(nil, []string{"claude"}, "claude", "animated")
+	m.SetSettingsFile(settingsFile)
+	m.SetTabTitle("full")
+	m.CycleTabTitle() // full -> project
+
+	data, err := os.ReadFile(settingsFile)
+	if err != nil {
+		t.Fatalf("failed to read settings file: %v", err)
+	}
+	if !strings.Contains(string(data), "tab_title=project") {
+		t.Errorf("expected tab_title=project in file, got %q", string(data))
+	}
+}
+
 func TestMainMenu_CycleGhostDisplay_CreatesParentDirs(t *testing.T) {
 	dir := t.TempDir()
 	settingsFile := filepath.Join(dir, "config", "ghost-tab", "settings")

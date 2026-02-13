@@ -270,6 +270,7 @@ func (m *MainMenuModel) CycleTabTitle() {
 		m.tabTitle = "full"
 	}
 	m.tabTitleChanged = m.tabTitle != m.initialTabTitle
+	m.persistSetting("tab_title", m.tabTitle)
 }
 
 // SetSoundName sets the sound name and records the initial value.
