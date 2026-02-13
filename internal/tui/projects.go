@@ -40,6 +40,7 @@ func NewProjectSelector(projects []models.Project) ProjectSelectorModel {
 	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "Select Project"
 	l.Styles.Title = titleStyle
+	l.SetFilteringEnabled(false)
 
 	return ProjectSelectorModel{
 		list:     l,
@@ -59,6 +60,19 @@ func (m ProjectSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			r := TranslateRune(msg.Runes[0])
+			if r >= '1' && r <= '9' {
+				n := int(r - '0')
+				if n <= len(m.projects) {
+					m.selected = &m.projects[n-1]
+					m.quitting = true
+					return m, tea.Quit
+				}
+				return m, nil
+			}
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			m.quitting = true
