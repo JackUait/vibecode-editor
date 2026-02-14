@@ -9,8 +9,9 @@ import (
 
 // Project represents a project entry
 type Project struct {
-	Name string
-	Path string
+	Name      string
+	Path      string
+	Worktrees []Worktree
 }
 
 // ParseProjectName extracts the project name from a "name:path" line.

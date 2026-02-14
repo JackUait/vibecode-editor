@@ -72,6 +72,21 @@ func TestLoadProjectsEmpty(t *testing.T) {
 	}
 }
 
+func TestProjectHasWorktrees(t *testing.T) {
+	p := models.Project{
+		Name: "test",
+		Path: "/tmp/test",
+		Worktrees: []models.Worktree{
+			{Path: "/tmp/wt1", Branch: "feature/auth"},
+			{Path: "/tmp/wt2", Branch: "fix/bug"},
+		},
+	}
+
+	if len(p.Worktrees) != 2 {
+		t.Errorf("expected 2 worktrees, got %d", len(p.Worktrees))
+	}
+}
+
 func TestParseProjectName(t *testing.T) {
 	tests := []struct {
 		name  string
