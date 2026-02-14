@@ -148,6 +148,9 @@ type MainMenuModel struct {
 
 	// File path for sound features persistence ({tool}-features.json)
 	soundFile string
+
+	// Worktree expand/collapse state (project index -> expanded)
+	expandedWorktrees map[int]bool
 }
 
 // NewMainMenu creates a new main menu model.
@@ -169,6 +172,7 @@ func NewMainMenu(projects []models.Project, aiTools []string, currentAI string, 
 		initialGhostDisplay: ghostDisplay,
 		theme:               ThemeForTool(currentAI),
 		zzz:                 NewZzzAnimation(),
+		expandedWorktrees:   make(map[int]bool),
 	}
 }
 
@@ -182,9 +186,88 @@ func (m *MainMenuModel) SelectedItem() int {
 	return m.selectedItem
 }
 
-// TotalItems returns the total number of selectable items (projects + 4 actions).
+// TotalItems returns the total number of selectable items (projects + expanded worktrees + 4 actions).
 func (m *MainMenuModel) TotalItems() int {
-	return len(m.projects) + len(actionNames)
+	return len(m.projects) + m.expandedWorktreeCount() + len(actionNames)
+}
+
+// ToggleWorktrees toggles expand/collapse for the given project index.
+// No-op if the project has no worktrees.
+func (m *MainMenuModel) ToggleWorktrees(projectIdx int) {
+	if projectIdx < 0 || projectIdx >= len(m.projects) {
+		return
+	}
+	if len(m.projects[projectIdx].Worktrees) == 0 {
+		return
+	}
+
+	if m.expandedWorktrees[projectIdx] {
+		// Collapsing: if selection is on one of this project's worktrees, snap to project
+		flatIdx := m.projectToFlatIndex(projectIdx)
+		wtCount := len(m.projects[projectIdx].Worktrees)
+		if m.selectedItem > flatIdx && m.selectedItem <= flatIdx+wtCount {
+			m.selectedItem = flatIdx
+		} else if m.selectedItem > flatIdx+wtCount {
+			// Adjust selection for removed items
+			m.selectedItem -= wtCount
+		}
+		delete(m.expandedWorktrees, projectIdx)
+	} else {
+		m.expandedWorktrees[projectIdx] = true
+	}
+}
+
+// expandedWorktreeCount returns the total number of visible worktree entries.
+func (m *MainMenuModel) expandedWorktreeCount() int {
+	count := 0
+	for idx := range m.expandedWorktrees {
+		if idx < len(m.projects) {
+			count += len(m.projects[idx].Worktrees)
+		}
+	}
+	return count
+}
+
+// projectToFlatIndex converts a project index to its flat item index,
+// accounting for expanded worktrees above it.
+func (m *MainMenuModel) projectToFlatIndex(projectIdx int) int {
+	flat := 0
+	for i := 0; i < projectIdx; i++ {
+		flat++ // the project itself
+		if m.expandedWorktrees[i] {
+			flat += len(m.projects[i].Worktrees)
+		}
+	}
+	return flat
+}
+
+// ResolveItem maps a flat selectedItem index to what it represents.
+// Returns: itemType ("project", "worktree", or "action"), projectIdx, worktreeIdx.
+// For "action", projectIdx is the action offset (0=add, 1=delete, etc).
+func (m *MainMenuModel) ResolveItem(flatIdx int) (itemType string, projectIdx int, worktreeIdx int) {
+	pos := 0
+	for i, proj := range m.projects {
+		if flatIdx == pos {
+			return "project", i, -1
+		}
+		pos++
+		if m.expandedWorktrees[i] {
+			for j := range proj.Worktrees {
+				if flatIdx == pos {
+					return "worktree", i, j
+				}
+				pos++
+			}
+		}
+	}
+	// Must be an action
+	actionIdx := flatIdx - pos
+	return "action", actionIdx, -1
+}
+
+// IsExpanded returns whether the given project index is expanded.
+func (m *MainMenuModel) IsExpanded(projectIdx int) bool {
+	return m.expandedWorktrees[projectIdx]
 }
 
 // CurrentAITool returns the name of the currently selected AI tool.
@@ -238,7 +321,7 @@ func (m *MainMenuModel) JumpTo(n int) {
 	if n < 1 || n > len(m.projects) {
 		return
 	}
-	m.selectedItem = n - 1
+	m.selectedItem = m.projectToFlatIndex(n - 1)
 }
 
 // SetSize updates the stored terminal dimensions.

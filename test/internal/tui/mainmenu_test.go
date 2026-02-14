@@ -3375,3 +3375,114 @@ func TestMainMenu_CycleSoundName_creates_parent_dirs(t *testing.T) {
 		t.Errorf("expected Basso in file, got %q", string(data))
 	}
 }
+
+func testProjectsWithWorktrees() []models.Project {
+	return []models.Project{
+		{
+			Name: "ghost-tab",
+			Path: "/Users/jack/ghost-tab",
+			Worktrees: []models.Worktree{
+				{Path: "/Users/jack/wt/feature-auth", Branch: "feature/auth"},
+				{Path: "/Users/jack/wt/fix-cleanup", Branch: "fix/cleanup"},
+			},
+		},
+		{Name: "my-app", Path: "/Users/jack/my-app"},
+		{
+			Name: "website",
+			Path: "/Users/jack/website",
+			Worktrees: []models.Worktree{
+				{Path: "/Users/jack/wt/redesign", Branch: "redesign"},
+			},
+		},
+	}
+}
+
+func TestMainMenu_TotalItemsWithExpanded(t *testing.T) {
+	projects := testProjectsWithWorktrees()
+	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
+
+	// No expansions: 3 projects + 4 actions = 7
+	if m.TotalItems() != 7 {
+		t.Errorf("unexpanded: expected 7, got %d", m.TotalItems())
+	}
+
+	// Expand first project (2 worktrees): 3 + 2 + 4 = 9
+	m.ToggleWorktrees(0)
+	if m.TotalItems() != 9 {
+		t.Errorf("expanded first: expected 9, got %d", m.TotalItems())
+	}
+
+	// Expand third project too (1 worktree): 3 + 2 + 1 + 4 = 10
+	m.ToggleWorktrees(2)
+	if m.TotalItems() != 10 {
+		t.Errorf("expanded first+third: expected 10, got %d", m.TotalItems())
+	}
+
+	// Collapse first project: 3 + 1 + 4 = 8
+	m.ToggleWorktrees(0)
+	if m.TotalItems() != 8 {
+		t.Errorf("collapsed first, third expanded: expected 8, got %d", m.TotalItems())
+	}
+}
+
+func TestMainMenu_NavigationWithWorktrees(t *testing.T) {
+	projects := testProjectsWithWorktrees()
+	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
+
+	// Expand first project
+	m.ToggleWorktrees(0)
+	// Items: [proj0, wt0, wt1, proj1, proj2, add, delete, open, plain]
+
+	// Start at 0 (project 0)
+	if m.SelectedItem() != 0 {
+		t.Errorf("start: expected 0, got %d", m.SelectedItem())
+	}
+
+	// Move down into worktree entries
+	m.MoveDown()
+	if m.SelectedItem() != 1 {
+		t.Errorf("after 1 down: expected 1 (wt0), got %d", m.SelectedItem())
+	}
+
+	m.MoveDown()
+	if m.SelectedItem() != 2 {
+		t.Errorf("after 2 down: expected 2 (wt1), got %d", m.SelectedItem())
+	}
+
+	// Next is project 1 (index 3)
+	m.MoveDown()
+	if m.SelectedItem() != 3 {
+		t.Errorf("after 3 down: expected 3 (proj1), got %d", m.SelectedItem())
+	}
+}
+
+func TestMainMenu_CollapseMovesSelectionToProject(t *testing.T) {
+	projects := testProjectsWithWorktrees()
+	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
+
+	// Expand first project, select worktree entry
+	m.ToggleWorktrees(0)
+	m.MoveDown() // wt0 (item 1)
+	if m.SelectedItem() != 1 {
+		t.Fatalf("expected on wt0 (item 1), got %d", m.SelectedItem())
+	}
+
+	// Collapse — selection should snap back to project 0
+	m.ToggleWorktrees(0)
+	if m.SelectedItem() != 0 {
+		t.Errorf("after collapse: expected 0 (proj0), got %d", m.SelectedItem())
+	}
+}
+
+func TestMainMenu_ToggleNoWorktrees(t *testing.T) {
+	projects := testProjectsWithWorktrees()
+	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
+
+	// Project 1 has no worktrees — toggle should be a no-op
+	before := m.TotalItems()
+	m.ToggleWorktrees(1)
+	after := m.TotalItems()
+	if before != after {
+		t.Errorf("toggle on no-worktree project changed total: %d -> %d", before, after)
+	}
+}
