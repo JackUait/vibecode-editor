@@ -1,6 +1,14 @@
 #!/bin/bash
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
+# Show animated loading screen immediately in interactive mode (no args)
+_wrapper_dir_early="$(cd "$(dirname "$0")" && pwd)"
+if [ -z "$1" ] && [ -f "$_wrapper_dir_early/lib/loading.sh" ]; then
+  # shellcheck disable=SC1091  # Dynamic path
+  source "$_wrapper_dir_early/lib/loading.sh"
+  show_loading_screen
+fi
+
 # Self-healing: Check if ghost-tab-tui exists, rebuild if missing
 if ! command -v ghost-tab-tui &>/dev/null; then
   # Simple inline rebuild without TUI functions (not loaded yet)
@@ -113,6 +121,9 @@ if [ -n "$1" ] && [ -d "$1" ]; then
 elif [ -z "$1" ]; then
   # Use TUI for project selection
   printf '\033]0;👻 Ghost Tab\007'
+
+  # Stop loading animation before TUI takes over
+  type stop_loading_screen &>/dev/null && stop_loading_screen
 
   while true; do
     if select_project_interactive "$PROJECTS_FILE"; then
