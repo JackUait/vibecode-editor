@@ -721,31 +721,41 @@ func (m *MainMenuModel) tabTitleForResult() string {
 
 // selectCurrent produces a result for the currently selected item.
 func (m *MainMenuModel) selectCurrent() {
-	idx := m.selectedItem
-	numProjects := len(m.projects)
+	itemType, projectIdx, worktreeIdx := m.ResolveItem(m.selectedItem)
 
-	if idx < numProjects {
+	switch itemType {
+	case "project":
 		m.result = &MainMenuResult{
 			Action:       "select-project",
-			Name:         m.projects[idx].Name,
-			Path:         m.projects[idx].Path,
+			Name:         m.projects[projectIdx].Name,
+			Path:         m.projects[projectIdx].Path,
 			AITool:       m.CurrentAITool(),
 			GhostDisplay: m.ghostDisplayForResult(),
 			TabTitle:     m.tabTitleForResult(),
-			SoundName: m.soundNameForResult(),
+			SoundName:    m.soundNameForResult(),
 		}
-	} else {
-		actionIdx := idx - numProjects
-		if actionIdx < len(actionNames) {
+	case "worktree":
+		m.result = &MainMenuResult{
+			Action:       "select-project",
+			Name:         m.projects[projectIdx].Name,
+			Path:         m.projects[projectIdx].Worktrees[worktreeIdx].Path,
+			AITool:       m.CurrentAITool(),
+			GhostDisplay: m.ghostDisplayForResult(),
+			TabTitle:     m.tabTitleForResult(),
+			SoundName:    m.soundNameForResult(),
+		}
+	case "action":
+		if projectIdx < len(actionNames) {
 			m.result = &MainMenuResult{
-				Action:       actionNames[actionIdx],
+				Action:       actionNames[projectIdx],
 				AITool:       m.CurrentAITool(),
 				GhostDisplay: m.ghostDisplayForResult(),
 				TabTitle:     m.tabTitleForResult(),
-				SoundName: m.soundNameForResult(),
+				SoundName:    m.soundNameForResult(),
 			}
 		}
 	}
+
 	m.quitting = true
 }
 
@@ -876,13 +886,10 @@ func (m *MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.CycleAITool("next")
 			return m, nil
 		case tea.KeyEnter:
-			// Check for inline action modes before selecting
-			idx := m.selectedItem
-			numProjects := len(m.projects)
-			if idx >= numProjects {
-				actionIdx := idx - numProjects
-				if actionIdx < len(actionNames) {
-					switch actionNames[actionIdx] {
+			itemType, projectIdx, _ := m.ResolveItem(m.selectedItem)
+			if itemType == "action" {
+				if projectIdx < len(actionNames) {
+					switch actionNames[projectIdx] {
 					case "add-project":
 						return m.enterInputMode("add-project")
 					case "delete-project":
@@ -929,6 +936,15 @@ func (m *MainMenuModel) handleRune(r rune) (tea.Model, tea.Cmd) {
 	case 'p', 'P':
 		m.setActionResult("plain-terminal")
 		return m, tea.Quit
+	case 'w', 'W':
+		itemType, projectIdx, _ := m.ResolveItem(m.selectedItem)
+		if itemType == "project" {
+			m.ToggleWorktrees(projectIdx)
+		} else if itemType == "worktree" {
+			// If on a worktree, toggle its parent project
+			m.ToggleWorktrees(projectIdx)
+		}
+		return m, nil
 	case 's', 'S':
 		m.settingsMode = true
 		m.settingsSelected = 0

@@ -3486,3 +3486,62 @@ func TestMainMenu_ToggleNoWorktrees(t *testing.T) {
 		t.Errorf("toggle on no-worktree project changed total: %d -> %d", before, after)
 	}
 }
+
+func TestMainMenu_WKeyTogglesWorktrees(t *testing.T) {
+	projects := testProjectsWithWorktrees()
+	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
+	m.SetSize(100, 40)
+
+	// Select first project (has worktrees)
+	if m.SelectedItem() != 0 {
+		t.Fatalf("expected item 0, got %d", m.SelectedItem())
+	}
+
+	// Press 'w' to expand
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}
+	m.Update(msg)
+
+	if !m.IsExpanded(0) {
+		t.Error("expected project 0 to be expanded after 'w'")
+	}
+
+	// Press 'w' again to collapse
+	m.Update(msg)
+	if m.IsExpanded(0) {
+		t.Error("expected project 0 to be collapsed after second 'w'")
+	}
+}
+
+func TestMainMenu_SelectWorktree(t *testing.T) {
+	projects := testProjectsWithWorktrees()
+	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
+	m.SetSize(100, 40)
+
+	// Expand first project and move to first worktree
+	m.ToggleWorktrees(0)
+	m.MoveDown() // now on worktree item
+
+	// Select current (simulates Enter)
+	result := m.Result()
+	if result != nil {
+		t.Fatal("result should be nil before selection")
+	}
+
+	// Trigger selectCurrent by sending Enter
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	m.Update(enterMsg)
+
+	result = m.Result()
+	if result == nil {
+		t.Fatal("result should not be nil after Enter on worktree")
+	}
+	if result.Action != "select-project" {
+		t.Errorf("action: got %q, want %q", result.Action, "select-project")
+	}
+	if result.Path != "/Users/jack/wt/feature-auth" {
+		t.Errorf("path: got %q, want %q", result.Path, "/Users/jack/wt/feature-auth")
+	}
+	if result.Name != "ghost-tab" {
+		t.Errorf("name: got %q, want %q", result.Name, "ghost-tab")
+	}
+}
