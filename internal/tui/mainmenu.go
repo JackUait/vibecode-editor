@@ -638,8 +638,11 @@ func (m *MainMenuModel) CalculateLayout(width, height int) MenuLayout {
 	if numProjects > 0 {
 		numSeparators = 1
 	}
-	totalItems := m.TotalItems()
-	menuHeight := 7 + (totalItems * 2) + numSeparators
+	// Projects = 2 rows each, worktrees = 1 row each, actions = 1 row each
+	projectRows := numProjects * 2
+	worktreeRows := m.expandedWorktreeCount()
+	actionRows := len(actionNames)
+	menuHeight := 7 + projectRows + worktreeRows + actionRows + numSeparators
 	menuWidth := 48
 
 	ghostPosition := "hidden"
@@ -675,27 +678,41 @@ func (m *MainMenuModel) MapRowToItem(clickY int) int {
 		startRow++ // update notification takes a row
 	}
 
-	numProjects := len(m.projects)
+	currentRow := startRow
+	flatIdx := 0
 
-	// Check project items (2 rows each: name line + path line)
-	for i := 0; i < numProjects; i++ {
-		projectRow := startRow + (i * 2)
-		if clickY == projectRow || clickY == projectRow+1 {
-			return i
+	for i, proj := range m.projects {
+		// Project takes 2 rows (name + path)
+		if clickY == currentRow || clickY == currentRow+1 {
+			return flatIdx
+		}
+		currentRow += 2
+		flatIdx++
+
+		// Expanded worktrees (1 row each)
+		if m.expandedWorktrees[i] {
+			for range proj.Worktrees {
+				if clickY == currentRow {
+					return flatIdx
+				}
+				currentRow++
+				flatIdx++
+			}
 		}
 	}
 
-	// After projects: separator row (if projects exist)
-	actionStart := startRow + (numProjects * 2)
-	if numProjects > 0 {
-		actionStart++ // separator between projects and actions
+	// Separator
+	if len(m.projects) > 0 {
+		currentRow++
 	}
 
 	// Action items (1 row each)
-	for i := 0; i < len(actionNames); i++ {
-		if clickY == actionStart+i {
-			return numProjects + i
+	for range actionNames {
+		if clickY == currentRow {
+			return flatIdx
 		}
+		currentRow++
+		flatIdx++
 	}
 
 	return -1

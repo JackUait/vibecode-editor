@@ -232,8 +232,8 @@ func TestMainMenu_LayoutCalculation(t *testing.T) {
 	}
 
 	// Above layout: width < 82 but height sufficient
-	// MenuHeight = 7 + (7 * 2) + 1 = 22 (7 items, 1 separator)
-	// Need height >= 22 + 15 + 2 = 39
+	// MenuHeight = 7 + (3*2) + 4 + 1 = 18 (3 projects, 4 actions, 1 separator)
+	// Need height >= 18 + 15 + 2 = 35
 	layout = m.CalculateLayout(60, 45)
 	if layout.GhostPosition != "above" {
 		t.Errorf("Above layout at 60x45: expected 'above', got %q", layout.GhostPosition)
@@ -259,21 +259,22 @@ func TestMainMenu_LayoutCalculation(t *testing.T) {
 }
 
 func TestMainMenu_LayoutCalculation_MenuHeight(t *testing.T) {
-	// 3 projects + 4 actions = 7 items, 1 separator
+	// 3 projects (2 rows each) + 4 actions (1 row each) + 1 separator
 	projects := testProjects()
 	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
 	layout := m.CalculateLayout(100, 40)
 
-	// MenuHeight = 7 + (7 * 2) + 1 = 22
-	expectedHeight := 7 + (7 * 2) + 1
+	// MenuHeight = 7 (chrome) + 3*2 (projects) + 4 (actions) + 1 (separator) = 18
+	expectedHeight := 7 + (3 * 2) + 4 + 1
 	if layout.MenuHeight != expectedHeight {
 		t.Errorf("MenuHeight with 3 projects: expected %d, got %d", expectedHeight, layout.MenuHeight)
 	}
 
-	// 0 projects + 4 actions = 4 items, 0 separators (no projects means no separator)
+	// 0 projects + 4 actions (1 row each), 0 separators (no projects means no separator)
 	m2 := tui.NewMainMenu(nil, testAITools(), "claude", "animated")
 	layout2 := m2.CalculateLayout(100, 40)
-	expectedHeight2 := 7 + (4 * 2) + 0
+	// MenuHeight = 7 (chrome) + 0 (projects) + 4 (actions) + 0 (separator) = 11
+	expectedHeight2 := 7 + 0 + 4 + 0
 	if layout2.MenuHeight != expectedHeight2 {
 		t.Errorf("MenuHeight with 0 projects: expected %d, got %d", expectedHeight2, layout2.MenuHeight)
 	}
@@ -3543,5 +3544,78 @@ func TestMainMenu_SelectWorktree(t *testing.T) {
 	}
 	if result.Name != "ghost-tab" {
 		t.Errorf("name: got %q, want %q", result.Name, "ghost-tab")
+	}
+}
+
+func TestMainMenu_MapRowToItemWithWorktrees(t *testing.T) {
+	projects := testProjectsWithWorktrees()
+	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
+	m.SetSize(100, 40)
+
+	// Expand first project (2 worktrees)
+	m.ToggleWorktrees(0)
+
+	// Row layout (0-indexed within menu box):
+	// 0: top border
+	// 1: title
+	// 2: separator
+	// 3: empty
+	// 4-5: project 0 (name + path) -> item 0
+	// 6: worktree 0 -> item 1
+	// 7: worktree 1 -> item 2
+	// 8-9: project 1 (name + path) -> item 3
+	// 10-11: project 2 (name + path) -> item 4
+
+	// Project 0
+	if m.MapRowToItem(4) != 0 {
+		t.Errorf("row 4: expected item 0, got %d", m.MapRowToItem(4))
+	}
+	if m.MapRowToItem(5) != 0 {
+		t.Errorf("row 5: expected item 0, got %d", m.MapRowToItem(5))
+	}
+
+	// Worktree entries (1 row each)
+	if m.MapRowToItem(6) != 1 {
+		t.Errorf("row 6: expected item 1 (wt0), got %d", m.MapRowToItem(6))
+	}
+	if m.MapRowToItem(7) != 2 {
+		t.Errorf("row 7: expected item 2 (wt1), got %d", m.MapRowToItem(7))
+	}
+
+	// Project 1
+	if m.MapRowToItem(8) != 3 {
+		t.Errorf("row 8: expected item 3 (proj1), got %d", m.MapRowToItem(8))
+	}
+}
+
+func TestMainMenu_CalculateLayoutWithWorktrees(t *testing.T) {
+	projects := testProjectsWithWorktrees()
+	m := tui.NewMainMenu(projects, testAITools(), "claude", "animated")
+	m.SetSize(100, 40)
+
+	layout1 := m.CalculateLayout(100, 40)
+
+	// Collapsed: 3 projects * 2 rows + 4 actions * 1 row + 7 (chrome) + 1 (separator) = 18
+	// 7 = top border + title + separator + empty + separator-before-help + help + bottom border
+	// Total = 7 + 6 + 4 + 1 = 18
+	expectedCollapsed := 7 + (3 * 2) + 4 + 1
+	if layout1.MenuHeight != expectedCollapsed {
+		t.Errorf("collapsed height: got %d, want %d", layout1.MenuHeight, expectedCollapsed)
+	}
+
+	// Expand first project (2 worktrees)
+	m.ToggleWorktrees(0)
+	layout2 := m.CalculateLayout(100, 40)
+
+	// Expanded: 3 projects * 2 rows + 2 worktrees * 1 row + 4 actions * 1 row + 7 + 1 = 20
+	expectedExpanded := 7 + (3 * 2) + 2 + 4 + 1
+	if layout2.MenuHeight != expectedExpanded {
+		t.Errorf("expanded height: got %d, want %d", layout2.MenuHeight, expectedExpanded)
+	}
+
+	// Menu should be taller with expanded worktrees
+	if layout2.MenuHeight <= layout1.MenuHeight {
+		t.Errorf("expanded layout should be taller: collapsed=%d, expanded=%d",
+			layout1.MenuHeight, layout2.MenuHeight)
 	}
 }
