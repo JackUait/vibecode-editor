@@ -9,7 +9,6 @@ import (
 type Worktree struct {
 	Path   string
 	Branch string
-	IsMain bool
 }
 
 // ParseWorktreeListPorcelain parses the output of `git worktree list --porcelain`
@@ -45,7 +44,7 @@ func ParseWorktreeListPorcelain(output string) []Worktree {
 		return nil
 	}
 
-	// Mark first as main, return the rest
+	// First is main worktree, return the rest
 	return all[1:]
 }
 

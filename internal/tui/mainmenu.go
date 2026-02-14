@@ -1160,7 +1160,9 @@ func (m *MainMenuModel) submitInputMode() (tea.Model, tea.Cmd) {
 		}
 
 		projects, _ := models.LoadProjects(m.projectsFile)
+		models.PopulateWorktrees(projects)
 		m.projects = projects
+		m.expandedWorktrees = make(map[int]bool)
 
 		m.exitInputMode()
 		m.setFeedback("Added "+name, "success")
@@ -1274,10 +1276,12 @@ func (m *MainMenuModel) confirmDelete() (tea.Model, tea.Cmd) {
 	}
 
 	projects, _ := models.LoadProjects(m.projectsFile)
+	models.PopulateWorktrees(projects)
 	m.projects = projects
+	m.expandedWorktrees = make(map[int]bool)
 
-	if m.selectedItem >= len(m.projects)+len(actionNames) {
-		m.selectedItem = len(m.projects) + len(actionNames) - 1
+	if m.selectedItem >= m.TotalItems() {
+		m.selectedItem = m.TotalItems() - 1
 		if m.selectedItem < 0 {
 			m.selectedItem = 0
 		}
