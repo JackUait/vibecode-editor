@@ -196,3 +196,44 @@ func TestRoster_marks_a_self_hosted_model_with_1M_window(t *testing.T) {
 		t.Fatalf("no 1m wide-host row in %v", got)
 	}
 }
+
+// configRows iterates the very list EnsureProfile registers the All-In profile
+// in, so an unguarded roster offers rows pointing at the router that is asking
+// for them: a turn on one would loop back into this same proxy.
+func TestRoster_omits_the_profile_it_generates(t *testing.T) {
+	env := rosterEnv(t)
+	file, err := EnsureProfile(env, env.ConfigsList, env.ConfigsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := "cfg." + strings.TrimSuffix(file, ".json") + "/"
+	for _, id := range models(Roster(env)) {
+		if strings.Contains(id, own) {
+			t.Fatalf("All-In offers a row pointing at itself: %s", id)
+		}
+	}
+}
+
+// existingProfile adopts ANY profile named "All-In", whatever it was before, and
+// Roster runs against the file as it is on disk — before EnsureProfile stamps
+// the router env over it. So an adopted profile is still a routable API-key
+// provider at the moment its own rows are computed, and only skipping it by
+// name keeps All-In from offering a row that loops back into its own router.
+func TestRoster_omits_an_adopted_profile_that_still_looks_routable(t *testing.T) {
+	env := rosterEnv(t)
+	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "all-in.json"),
+		[]byte(`{"env":{"WISP_DECK_SUBSCRIPTION_PROVIDER":"zhipu",`+
+			`"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic",`+
+			`"ANTHROPIC_AUTH_TOKEN":"k"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.ConfigsList,
+		[]byte("Zhipu GLM:zhipu-glm.json\n"+ProfileName+":all-in.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range models(Roster(env)) {
+		if strings.Contains(id, "cfg.all-in/") {
+			t.Fatalf("All-In offers a row pointing at itself: %s", id)
+		}
+	}
+}

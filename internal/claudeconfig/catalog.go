@@ -10,6 +10,11 @@ type AuthKind string
 const (
 	AuthAPIKey       AuthKind = "api-key"
 	AuthCodexChatGPT AuthKind = "codex-chatgpt"
+	// AuthWispRouter marks a profile whose credential is chosen per request by
+	// wisp-deck's own loopback router: each picker row names a login or another
+	// profile, and the router swaps in that source's credential. Nothing local
+	// authenticates it, exactly like AuthCodexChatGPT.
+	AuthWispRouter AuthKind = "wisp-router"
 )
 
 // Model is one provider model with the metadata reused across the app: its id,
@@ -206,6 +211,32 @@ var Providers = []Provider{
 	},
 }
 
+// AllInProvider is the identity of the generated All-In routing profile, and it
+// is deliberately NOT a member of Providers. That slice is the list of
+// subscriptions a user can ADD, and every consumer of it — the modal's provider
+// picker (which indexes it positionally), ProviderModels, CatalogModels, the
+// context-budget sweep's endpoint scan — would be iterating a provider with no
+// models, no endpoint of its own to configure, and nothing for the user to
+// enter. Two positional guards over that slice (custom stays last, moonshot
+// stays the last gateway) would also have to be rewritten to admit it.
+//
+// providerByKey matches it, which is the only lookup that must succeed:
+// ProviderForConfig reads the WISP_DECK_SUBSCRIPTION_PROVIDER marker through
+// it, so an All-In profile stops resolving to the Providers[0] fallback.
+// It claims no alias — the marker is always written, and an alias like "all-in"
+// would let the longest-match rule steal any profile whose NAME happened to
+// contain it.
+//
+// BaseURL is the real Anthropic endpoint. claude-allin rewrites the session's
+// settings overlay to the loopback router at launch (never this stored file),
+// and the router forwards an unrouted row here on the session's own credential.
+var AllInProvider = Provider{
+	Key:     "allin",
+	Name:    "All-In",
+	BaseURL: "https://api.anthropic.com",
+	Auth:    AuthWispRouter,
+}
+
 // providerFor returns the provider whose alias appears in the config name, or the
 // default (first) provider when none matches — so the model list, base URL, cost,
 // and limits always resolve to the same provider. Providers and their aliases are
@@ -243,6 +274,9 @@ func providerByKey(key string) (Provider, bool) {
 		if provider.Key == key {
 			return provider, true
 		}
+	}
+	if key == AllInProvider.Key {
+		return AllInProvider, true
 	}
 	return Provider{}, false
 }

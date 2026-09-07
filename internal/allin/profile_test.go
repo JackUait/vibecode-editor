@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jackuait/wisp-deck/internal/claudeconfig"
+	"github.com/jackuait/wisp-deck/internal/rolefix"
 )
 
 func readPicker(t *testing.T, path string) map[string]any {
@@ -161,5 +164,93 @@ func TestEnsureProfile_recomputes_the_roster_on_every_call(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no row for the newly registered account in %v", afterOptions)
+	}
+}
+
+func readEnv(t *testing.T, path string) map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Env map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	return settings.Env
+}
+
+func generatedProfile(t *testing.T) (Env, string, string) {
+	t.Helper()
+	env := rosterEnv(t)
+	listFile := filepath.Join(t.TempDir(), "claude-configs.list")
+	file, err := EnsureProfile(env, listFile, env.ConfigsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env, file, filepath.Join(env.ConfigsDir, file)
+}
+
+// Every place All-In can be chosen — the switcher's rows and the main page's
+// subscription ring — hides a config ConfigReady refuses, so a profile that
+// fails this is unreachable from the UI no matter how good its picker is.
+func TestEnsureProfile_the_generated_profile_is_selectable(t *testing.T) {
+	env, file, _ := generatedProfile(t)
+	if !claudeconfig.ConfigReady(env.ConfigsDir, claudeconfig.Config{Name: ProfileName, File: file}) {
+		t.Fatal("the generated profile is not ConfigReady, so nothing in the UI offers it")
+	}
+}
+
+// The launch wrapper reads the profile's own endpoint and rewrites it to the
+// loopback router. No endpoint means runLoopbackWrappedLaunch falls through and
+// every wisp/… row goes verbatim to the session's own upstream.
+func TestEnsureProfile_declares_the_endpoint_the_launch_wrapper_rewrites(t *testing.T) {
+	_, _, path := generatedProfile(t)
+	upstream, err := rolefix.UpstreamFromSettings(path)
+	if err != nil {
+		t.Fatalf("the router would never start: %v", err)
+	}
+	if upstream == "" {
+		t.Fatal("empty upstream")
+	}
+}
+
+// A profile whose name matches no provider alias resolves to Providers[0], so
+// without an explicit marker All-In labels and colours as Zhipu / GLM.
+func TestEnsureProfile_carries_its_own_provider_identity(t *testing.T) {
+	env, file, _ := generatedProfile(t)
+	provider := claudeconfig.ProviderForConfig(env.ConfigsDir,
+		claudeconfig.Config{Name: ProfileName, File: file})
+	if provider.Key != claudeconfig.AllInProvider.Key {
+		t.Fatalf("provider %q (%s), want the All-In identity", provider.Key, provider.Name)
+	}
+}
+
+// Every row is 200k (the roster no longer emits [1m]), but the session's
+// STARTING model is the user's global one — and Claude Code reads a "[1m]" off
+// that raw string alone. Nothing else narrows it here: stampContextBudget
+// returns early for a profile with no model mappings, so this profile would be
+// the one with no 1M guard at all.
+func TestEnsureProfile_disarms_an_inherited_1m_model_marker(t *testing.T) {
+	_, _, path := generatedProfile(t)
+	if got := readEnv(t, path)["CLAUDE_CODE_DISABLE_1M_CONTEXT"]; got != "1" {
+		t.Fatalf("CLAUDE_CODE_DISABLE_1M_CONTEXT = %q, want \"1\"", got)
+	}
+}
+
+// bin/wisp-deck runs ensure-budget over every profile on every install.
+func TestEnsureProfile_survives_the_context_budget_sweep(t *testing.T) {
+	env, file, path := generatedProfile(t)
+	changed, err := claudeconfig.EnsureContextBudget(env.ConfigsDir, file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("the context-budget sweep rewrote the All-In profile")
+	}
+	if got := readEnv(t, path)["CLAUDE_CODE_DISABLE_1M_CONTEXT"]; got != "1" {
+		t.Fatalf("the sweep dropped the 1M guard: %q", got)
 	}
 }

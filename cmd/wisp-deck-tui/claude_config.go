@@ -122,24 +122,30 @@ var claudeConfigEnsureWatchdogCmd = &cobra.Command{
 // the profile is never re-copied from defaults once it exists on disk.
 func newEnsureAllInCommand() *cobra.Command {
 	var env allin.Env
-	var listFile string
 	command := &cobra.Command{
 		Use:   "ensure-allin",
 		Short: "Create or refresh the All-In profile's model picker",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			env.ConfigsList = listFile
-			// A machine with no source to route between has nothing to offer,
-			// and an All-In row would only duplicate the built-in lineup.
-			if rows := allin.Roster(env); len(rows) == 0 {
+			// The gate decides whether to CREATE, never whether to refresh.
+			// accountRows seeds the Default login unconditionally, so a roster
+			// is never empty and a length check admits every machine; a single
+			// source has nothing to route between, and its rows would only
+			// duplicate the built-in lineup behind a proxy. An existing profile
+			// is rebuilt whatever the count — a login removed today otherwise
+			// leaves rows that answer 400 for the life of the profile.
+			if allin.SourceCount(env) < 2 && allin.ProfileFile(env.ConfigsList) == "" {
 				return nil
 			}
-			_, err := allin.EnsureProfile(env, listFile, env.ConfigsDir)
+			_, err := allin.EnsureProfile(env, env.ConfigsList, env.ConfigsDir)
 			return err
 		},
 	}
+	// The flag names match claude-allin's, which reads the same two files: this
+	// command already takes --accounts-list/--accounts-dir, so a bare
+	// --list/--dir beside them names the configs pair only by omission.
 	flags := command.Flags()
-	flags.StringVar(&env.ConfigsDir, "dir", "", "directory holding the profile settings files")
-	flags.StringVar(&listFile, "list", "", "name:file list of subscription profiles")
+	flags.StringVar(&env.ConfigsDir, "configs-dir", "", "directory holding the profile settings files")
+	flags.StringVar(&env.ConfigsList, "configs-list", "", "name:file list of subscription profiles")
 	flags.StringVar(&env.AccountsList, "accounts-list", "", "name:dir list of Claude logins")
 	flags.StringVar(&env.AccountsDir, "accounts-dir", "", "directory holding each login's config dir")
 	return command

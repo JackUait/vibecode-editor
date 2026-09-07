@@ -375,11 +375,19 @@ func ProviderForConfig(configsDir string, config Config) Provider {
 
 // ConfigReady reports whether a config has enough local authentication
 // metadata to be selectable. ChatGPT authentication is verified at launch by
-// Codex, while API providers require a stored key.
+// Codex, a wisp-router profile carries no credential of its own, and API
+// providers require a stored key.
 func ConfigReady(configsDir string, config Config) bool {
 	provider := ProviderForConfig(configsDir, config)
 	switch provider.Auth {
 	case AuthCodexChatGPT:
+		return true
+	case AuthWispRouter:
+		// Every credential this profile uses belongs to another source and is
+		// resolved per request by the loopback router — from the Keychain for a
+		// login, from another profile's settings file for a subscription. There
+		// is nothing local to verify, so demanding a key here would only make
+		// the profile permanently unselectable.
 		return true
 	case AuthAPIKey:
 		if strings.TrimSpace(ReadAPIKey(configsDir, config.File)) == "" {

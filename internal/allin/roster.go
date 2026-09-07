@@ -33,9 +33,9 @@ type Row struct {
 
 // claudeModel is one first-party model offered for every Claude login.
 type claudeModel struct {
-	id      string
-	label   string
-	wide    bool // also offer a [1m] row
+	id    string
+	label string
+	wide  bool // also offer a [1m] row
 }
 
 // claudeLineup is pinned rather than discovered: Claude Code ships no catalog a
@@ -45,6 +45,22 @@ var claudeLineup = []claudeModel{
 	{"claude-sonnet-5", "Sonnet 5", true},
 	{"claude-fable-5-1", "Fable 5.1", false},
 	{"claude-haiku-4-5-20251001", "Haiku 4.5", false},
+}
+
+// SourceCount reports how many distinct credentials the roster spans: each
+// Claude login and each routable provider profile counts once, however many
+// models it contributes. It is derived from Roster itself, so the two can never
+// disagree about what this build can actually offer.
+func SourceCount(env Env) int {
+	seen := map[string]bool{}
+	for _, row := range Roster(env) {
+		target := Route(row.Model)
+		if target.Kind == KindSession || target.Source == "" {
+			continue
+		}
+		seen[fmt.Sprintf("%d/%s", target.Kind, target.Source)] = true
+	}
+	return len(seen)
 }
 
 // Roster builds every picker row, accounts first, then configured providers.
@@ -86,6 +102,16 @@ func accountRows(env Env) []Row {
 func configRows(env Env) []Row {
 	var rows []Row
 	for _, config := range claudeconfig.Load(env.ConfigsList) {
+		// The generated profile is registered in the very list this iterates,
+		// and a row naming it would send a turn back into the router that asked
+		// for it. Its own AuthWispRouter identity is skipped by the Auth check
+		// below, but that identity is only on disk AFTER EnsureProfile writes —
+		// and EnsureProfile computes these rows first, from whatever profile it
+		// adopted under this name. So the name is the only guard that holds on
+		// the call that matters.
+		if strings.EqualFold(config.Name, ProfileName) {
+			continue
+		}
 		if !claudeconfig.ConfigReady(env.ConfigsDir, config) {
 			continue
 		}
