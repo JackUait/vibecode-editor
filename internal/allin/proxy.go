@@ -6,15 +6,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 )
 
-// maxRouteBytes caps the body read to re-address a request. A larger one is
-// forwarded unread on the session's own credential rather than truncated.
-const maxRouteBytes = 8 << 20
+// maxRouteBytes caps how large a request body this handler will re-address.
+// A body past the cap is rejected with 400, never silently truncated: reading
+// exactly maxRouteBytes via io.LimitReader can return a truncated body with a
+// nil error, so the read goes one byte past the cap to detect that case. 64MiB
+// clears a real conversation's measured 16,766,904 bytes of inline image
+// base64 — this is a loopback listener with one client, not a public server.
+const maxRouteBytes = 64 << 20
+
+// discardLog swallows httputil.ReverseProxy's own error logging. Its default
+// ErrorLog is nil, which falls back to package log — writing straight to
+// stderr, which is the terminal Claude Code paints on.
+var discardLog = log.New(io.Discard, "", 0)
 
 // NewHandler routes each request by the model its body names. A row this build
 // cannot place goes to sessionUpstream on the session's own credential, so an
@@ -22,12 +32,21 @@ const maxRouteBytes = 8 << 20
 func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		base, body := sessionUpstream, []byte(nil)
-		if r.Method == http.MethodPost && r.Body != nil && r.ContentLength <= maxRouteBytes {
-			raw, err := io.ReadAll(io.LimitReader(r.Body, maxRouteBytes))
+		if r.Method == http.MethodPost && r.Body != nil {
+			// Read one byte past the cap: ContentLength is unreliable (-1 for
+			// a chunked request), so the only way to know a body exceeded the
+			// cap is to see the extra byte arrive.
+			raw, err := io.ReadAll(io.LimitReader(r.Body, maxRouteBytes+1))
 			_ = r.Body.Close()
-			if err == nil {
-				body = raw
+			if err != nil {
+				writeRoutingError(w, Target{}, fmt.Errorf("wisp-deck: reading request body: %w", err))
+				return
 			}
+			if len(raw) > maxRouteBytes {
+				writeRoutingError(w, Target{}, fmt.Errorf("wisp-deck: request body exceeds the %d byte routing cap", maxRouteBytes))
+				return
+			}
+			body = raw
 		}
 
 		var payload map[string]any
@@ -50,13 +69,22 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 			if rewritten, err := json.Marshal(payload); err == nil {
 				body = rewritten
 			}
+			// Clear both credential headers unconditionally: Credential.Header
+			// names which one to set, but the session's own value on the OTHER
+			// header would otherwise survive and reach the swapped-to endpoint
+			// alongside the new credential.
+			r.Header.Del("Authorization")
+			r.Header.Del("X-Api-Key")
 			r.Header.Set(credential.Header, credential.Value)
-			if credential.Header == "Authorization" {
-				r.Header.Del("X-Api-Key")
-			}
 			if target.Want1M {
 				addBeta(r.Header, "context-1m-2025-08-07")
 			}
+		}
+
+		upstreamURL, err := validUpstream(base)
+		if err != nil {
+			writeRoutingError(w, target, err)
+			return
 		}
 
 		if body != nil {
@@ -64,15 +92,26 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 			r.ContentLength = int64(len(body))
 			r.Header.Set("Content-Length", fmt.Sprint(len(body)))
 		}
-		newReverseProxy(base).ServeHTTP(w, r)
+		newReverseProxy(upstreamURL).ServeHTTP(w, r)
 	})
 }
 
-func newReverseProxy(upstream string) *httputil.ReverseProxy {
-	target, err := url.Parse(upstream)
+// validUpstream rejects a base URL httputil.ReverseProxy could never have
+// reached anyway, before it tries: url.Parse's own error, or a URL with no
+// scheme or host, would otherwise become a transport failure that surfaces as
+// a retryable 502 — and this is deterministic, so it must be 400 instead.
+func validUpstream(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(raw)
 	if err != nil {
-		return &httputil.ReverseProxy{Director: func(*http.Request) {}}
+		return nil, fmt.Errorf("wisp-deck: invalid upstream address %q: %w", raw, err)
 	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return nil, fmt.Errorf("wisp-deck: invalid upstream address %q", raw)
+	}
+	return parsed, nil
+}
+
+func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme, req.URL.Host = target.Scheme, target.Host
@@ -85,6 +124,7 @@ func newReverseProxy(upstream string) *httputil.ReverseProxy {
 		// Each write forwarded as it arrives: buffering swallows the keep-alive
 		// bytes that keep Claude Code's stall watchdog from replaying a turn.
 		FlushInterval: -1,
+		ErrorLog:      discardLog,
 	}
 }
 
