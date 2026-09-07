@@ -108,3 +108,62 @@ func TestRoster_labels_a_row_with_its_source(t *testing.T) {
 		}
 	}
 }
+
+func TestRoster_omits_a_self_hosted_model_too_narrow_for_claude_code(t *testing.T) {
+	env := rosterEnv(t)
+	// Custom provider with narrow context window (below 200k minimum).
+	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "narrow-host.json"),
+		[]byte(`{
+"name":"Narrow Self-Hosted",
+"env":{
+"WISP_DECK_SUBSCRIPTION_PROVIDER":"custom",
+"ANTHROPIC_BASE_URL":"http://localhost:8000",
+"ANTHROPIC_AUTH_TOKEN":"sk-test",
+"ANTHROPIC_DEFAULT_OPUS_MODEL":"qwen-32k",
+"ANTHROPIC_DEFAULT_SONNET_MODEL":"qwen-32k",
+"ANTHROPIC_DEFAULT_FABLE_MODEL":"qwen-32k",
+"ANTHROPIC_DEFAULT_HAIKU_MODEL":"qwen-32k",
+"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"32768"
+}
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.ConfigsList,
+		[]byte("Zhipu GLM:zhipu-glm.json\nNarrow Self-Hosted:narrow-host.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range models(Roster(env)) {
+		if strings.Contains(id, "cfg.narrow-host/") {
+			t.Fatalf("32768-token custom provider was offered: %s", id)
+		}
+	}
+}
+
+func TestRoster_marks_a_self_hosted_model_with_1M_window(t *testing.T) {
+	env := rosterEnv(t)
+	// Custom provider with 1M+ context window.
+	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "wide-host.json"),
+		[]byte(`{
+"name":"Wide Self-Hosted",
+"env":{
+"WISP_DECK_SUBSCRIPTION_PROVIDER":"custom",
+"ANTHROPIC_BASE_URL":"http://localhost:8000",
+"ANTHROPIC_AUTH_TOKEN":"sk-test",
+"ANTHROPIC_DEFAULT_OPUS_MODEL":"qwen-1m",
+"ANTHROPIC_DEFAULT_SONNET_MODEL":"qwen-1m",
+"ANTHROPIC_DEFAULT_FABLE_MODEL":"qwen-1m",
+"ANTHROPIC_DEFAULT_HAIKU_MODEL":"qwen-1m",
+"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"1000000"
+}
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.ConfigsList,
+		[]byte("Zhipu GLM:zhipu-glm.json\nWide Self-Hosted:wide-host.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := models(Roster(env))
+	if !has(got, "wisp/cfg.wide-host/qwen-1m[1m]") {
+		t.Fatalf("no 1m wide-host row in %v", got)
+	}
+}

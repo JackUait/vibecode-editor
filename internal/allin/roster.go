@@ -3,6 +3,7 @@ package allin
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jackuait/wisp-deck/internal/claudeconfig"
@@ -115,16 +116,20 @@ func configRows(env Env) []Row {
 }
 
 // providerModels returns the catalog's models, or the single model the user
-// supplied for a provider that ships none.
+// supplied for a provider that ships none. If a user-supplied model's declared
+// window does not parse or is too small, the provider is skipped.
 func providerModels(env Env, config claudeconfig.Config, provider claudeconfig.Provider) []claudeconfig.Model {
 	if provider.SuppliesOwnModel() {
 		id := claudeconfig.ReadCustomModel(env.ConfigsDir, config.File)
 		if id == "" {
 			return nil
 		}
-		// Window unknown here; the profile already declares it, and a row with
-		// no declared context is offered at Claude Code's flat 200000.
-		return []claudeconfig.Model{{ID: id}}
+		windowStr := claudeconfig.ReadContextWindow(env.ConfigsDir, config.File)
+		window, err := strconv.Atoi(strings.TrimSpace(windowStr))
+		if err != nil || window <= 0 {
+			return nil
+		}
+		return []claudeconfig.Model{{ID: id, Context: window}}
 	}
 	return provider.Models
 }
