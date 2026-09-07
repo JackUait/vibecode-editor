@@ -54,18 +54,22 @@ opencode_adapter_prefix() {
 # gt_claude_launch_wrapper <settings_path> <provider_marker>
 #
 # Print the argv prefix that wraps one Claude launch, or nothing. Gated on the
-# settings file itself holding wisp/ picker rows, never on the profile's
-# display name: claudeconfig.Rename can retarget the name at any time, and a
-# profile still carrying those rows must still route or every turn goes to
-# the session's own upstream carrying an id nothing there can resolve.
+# settings file itself holding wisp/acct. or wisp/cfg. picker rows (the exact
+# shapes roster.go writes), never on the profile's display name:
+# claudeconfig.Rename can retarget the name at any time, and a profile still
+# carrying those rows must still route or every turn goes to the session's own
+# upstream carrying an id nothing there can resolve. The match must stay
+# anchored to those two prefixes — a bare "wisp/" also matches a statusline
+# path or a model id under an org named wisp, and a false positive here
+# silently strips whichever proxy the OTHER branch would have applied.
 # Featherless keeps the role-repair proxy otherwise. The two never stack: the
 # router already forwards to whatever endpoint a row names.
 gt_claude_launch_wrapper() {
   local settings_path="$1" provider_marker="$2"
-  local config_root="${WISP_DECK_CONFIG_DIR:-$HOME/.config/wisp-deck}"
+  local config_root="${XDG_CONFIG_HOME:-$HOME/.config}/wisp-deck"
   local settings_q accounts_list_q accounts_dir_q configs_list_q configs_dir_q
 
-  if [ -f "$settings_path" ] && grep -q 'wisp/' "$settings_path" 2>/dev/null; then
+  if [ -f "$settings_path" ] && grep -q 'wisp/acct\.\|wisp/cfg\.' "$settings_path" 2>/dev/null; then
     printf -v settings_q '%q' "$settings_path"
     printf -v accounts_list_q '%q' "$config_root/claude-accounts.list"
     printf -v accounts_dir_q '%q' "$config_root/claude-accounts"
