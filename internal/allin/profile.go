@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/jackuait/wisp-deck/internal/claudeconfig"
@@ -90,17 +91,30 @@ func EnsureProfile(env Env, listFile, configsDir string) (string, error) {
 //     wisp/… id is sent verbatim to the session's own upstream. The value is
 //     the real endpoint; the launch rewrites the session's OVERLAY, never this
 //     file, so the stored profile keeps naming the truth.
-//   - CLAUDE_CODE_DISABLE_1M_CONTEXT is the only 1M guard this profile can get.
-//     Every roster row is 200k, but the session's starting model comes from the
-//     user's global settings and Claude Code grants 1M off a "[1m]" in that raw
-//     string alone. The sweep that stamps this key on every other sub-1M
-//     profile (stampContextBudget) returns early here, because All-In declares
-//     no model mappings for it to size a window from.
+//   - The four window keys are the session's 1M guard, and they have to be
+//     declared here: this is the one sub-1M profile stampContextBudget cannot
+//     write for, because All-In has no model mappings for it to size a window
+//     from. Every roster row is 200k, but the session's STARTING model comes
+//     from the user's global settings, and a "[1m]" in that raw string grants
+//     the whole session 1M. One key does not cover it — CLAUDE_CODE_DISABLE_1M
+//     _CONTEXT is read only by the string-marker branch of the window choice,
+//     while the beta and native-1M branches reach 1e6 ungated, so
+//     CLAUDE_CODE_AUTO_COMPACT_WINDOW is the direct cap on current versions.
+//
+// The window set must equal what the ensure-budget sweep would compute for
+// rosterWindow, or every install rewrites this file;
+// TestEnsureProfile_survives_the_context_budget_sweep is what holds the two
+// together. The reserve is outputReserve(200000) — a quarter of the window,
+// capped at the 32000 Claude Code would have asked for unprompted.
 func routerEnv() map[string]any {
+	window := strconv.Itoa(rosterWindow)
 	return map[string]any{
 		"WISP_DECK_SUBSCRIPTION_PROVIDER": claudeconfig.AllInProvider.Key,
 		"ANTHROPIC_BASE_URL":              claudeconfig.AllInProvider.BaseURL,
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  window,
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": window,
 		"CLAUDE_CODE_DISABLE_1M_CONTEXT":  "1",
+		"CLAUDE_CODE_MAX_OUTPUT_TOKENS":   "32000",
 	}
 }
 

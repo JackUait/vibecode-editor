@@ -23,6 +23,12 @@ import (
 // proxy.go still sends the beta header, so 1M can return behind a size guard.
 const minRosterContext = 200000
 
+// rosterWindow is the window an All-In session actually runs at, declared by
+// routerEnv. It equals minRosterContext because that is the trade above: with
+// no row carrying "[1m]", the narrowest window worth offering is also the
+// widest any row gets.
+const rosterWindow = minRosterContext
+
 // Env names the four files the roster is built from. They are the same files
 // the account switcher and the subscription modal already own.
 type Env struct {

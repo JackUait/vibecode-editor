@@ -42,13 +42,29 @@ header. 1M returns by putting a size guard in front of that, never by
 re-emitting the suffix from the roster. Guarded by
 `TestRoster_never_offers_a_1m_row`.
 
-The generated profile also declares `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`
-(`routerEnv`, `profile.go`), because the rows are not the only model string in
-play: the session's *starting* model comes from the user's global settings, and
-a global `opus[1m]` would grant 1M before any row is picked. Every other sub-1M
-profile gets that key from `stampContextBudget`, which returns early here —
-All-In declares no model mappings for it to size a window from, so this is the
-one profile that must declare it itself.
+The generated profile therefore declares its own window, because the rows are
+not the only model string in play: the session's *starting* model comes from the
+user's global settings, and a global `opus[1m]` would grant 1M before any row is
+picked. Every other sub-1M profile gets that from `stampContextBudget`, which
+returns early here — All-In has no model mappings for it to size a window from —
+so this is the one profile that must declare the set itself.
+
+It is a set of **four** keys, not one. `CLAUDE_CODE_DISABLE_1M_CONTEXT` alone is
+not the guard: the decoded `sae()` is read by `Ov()` only, so it gates the
+string-marker branch of the window choice while
+`betas.includes(1m) && EW(model)` and `L2(model)` reach 1e6 ungated —
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW` is the direct cap on current versions and
+`DISABLE_1M_CONTEXT` covers older ones. `routerEnv` writes
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000`,
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000`, `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` and
+`CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000` — exactly what `contextWindowEnv` computes
+for a 200000 window, because `bin/wisp-deck` runs `ensure-budget` over this file
+on every install and a set that disagrees is rewritten every time.
+`TestEnsureProfile_survives_the_context_budget_sweep` is what holds the two
+together, and it pins the two window values in both directions; the reserve is
+pinned by `TestEnsureProfile_declares_every_key_a_200k_window_implies` instead,
+because the sweep deliberately keeps any declared reserve below the window as
+the user's own figure.
 
 ### `Row` declares no `behavesAs`, and re-adding one costs the pane its effort control
 

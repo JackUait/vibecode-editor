@@ -240,7 +240,32 @@ func TestEnsureProfile_disarms_an_inherited_1m_model_marker(t *testing.T) {
 	}
 }
 
-// bin/wisp-deck runs ensure-budget over every profile on every install.
+// A sub-1M profile carries FOUR keys, not one. CLAUDE_CODE_DISABLE_1M_CONTEXT
+// gates only the string-marker branch of Claude Code's window choice — the
+// decoded `sae()` is read by `Ov()` alone, while the beta path
+// (`betas.includes(1m) && EW(model)`) and the native path (`L2(model)`) reach
+// 1e6 ungated — and CLAUDE_CODE_AUTO_COMPACT_WINDOW is the direct cap on
+// current versions. This is the one sub-1M profile stampContextBudget cannot
+// write for (it has no model mappings to size a window from), so it declares
+// the set itself.
+func TestEnsureProfile_declares_every_key_a_200k_window_implies(t *testing.T) {
+	_, _, path := generatedProfile(t)
+	env := readEnv(t, path)
+	for key, want := range map[string]string{
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "200000",
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000",
+		"CLAUDE_CODE_DISABLE_1M_CONTEXT":  "1",
+		"CLAUDE_CODE_MAX_OUTPUT_TOKENS":   "32000",
+	} {
+		if env[key] != want {
+			t.Errorf("%s = %q, want %q", key, env[key], want)
+		}
+	}
+}
+
+// bin/wisp-deck runs ensure-budget over every profile on every install. Once a
+// window is declared this stops being vacuous: the sweep recomputes all four
+// keys from it, and reports no change only if the declared set matches exactly.
 func TestEnsureProfile_survives_the_context_budget_sweep(t *testing.T) {
 	env, file, path := generatedProfile(t)
 	changed, err := claudeconfig.EnsureContextBudget(env.ConfigsDir, file)
@@ -250,7 +275,13 @@ func TestEnsureProfile_survives_the_context_budget_sweep(t *testing.T) {
 	if changed {
 		t.Fatal("the context-budget sweep rewrote the All-In profile")
 	}
-	if got := readEnv(t, path)["CLAUDE_CODE_DISABLE_1M_CONTEXT"]; got != "1" {
-		t.Fatalf("the sweep dropped the 1M guard: %q", got)
+	env2 := readEnv(t, path)
+	for _, key := range []string{
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+		"CLAUDE_CODE_DISABLE_1M_CONTEXT", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+	} {
+		if env2[key] == "" {
+			t.Errorf("the sweep dropped %s", key)
+		}
 	}
 }
