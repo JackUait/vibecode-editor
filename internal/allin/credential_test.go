@@ -2,6 +2,7 @@ package allin
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 )
 
@@ -22,7 +23,11 @@ func TestKeychainService_derives_the_suffix_from_the_config_dir(t *testing.T) {
 func TestResolve_hands_an_account_row_its_own_oauth_token(t *testing.T) {
 	env := rosterEnv(t)
 	resolver := NewResolver(env)
-	resolver.Token = func(configDir string) (string, error) { return "oat-personal", nil }
+	var gotConfigDir string
+	resolver.Token = func(configDir string) (string, error) {
+		gotConfigDir = configDir
+		return "oat-personal", nil
+	}
 	got, err := resolver.Resolve(Target{Kind: KindAccount, Source: "personal", Model: "claude-opus-5"})
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +37,27 @@ func TestResolve_hands_an_account_row_its_own_oauth_token(t *testing.T) {
 	}
 	if got.BaseURL != anthropicUpstream {
 		t.Fatalf("base %q", got.BaseURL)
+	}
+	if want := filepath.Join(env.AccountsDir, "personal"); gotConfigDir != want {
+		t.Fatalf("configDir = %q, want %q", gotConfigDir, want)
+	}
+}
+
+func TestResolve_reads_the_default_login_with_no_config_dir(t *testing.T) {
+	env := rosterEnv(t)
+	resolver := NewResolver(env)
+	var gotConfigDir string
+	resolver.Token = func(configDir string) (string, error) {
+		gotConfigDir = configDir
+		return "oat-default", nil
+	}
+	if _, err := resolver.Resolve(Target{Kind: KindAccount, Source: "default", Model: "claude-opus-5"}); err != nil {
+		t.Fatal(err)
+	}
+	// The default login has no CLAUDE_CONFIG_DIR, so its Keychain entry is
+	// unsuffixed — Token must see an empty configDir, not a joined path.
+	if gotConfigDir != "" {
+		t.Fatalf("configDir = %q, want empty", gotConfigDir)
 	}
 }
 

@@ -1,6 +1,8 @@
 package allin
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -12,6 +14,20 @@ import (
 // anthropicUpstream is where a Claude login's turn goes. A login has no
 // endpoint of its own — only a credential.
 const anthropicUpstream = "https://api.anthropic.com"
+
+// KeychainService names the Keychain entry Claude Code writes for one config
+// dir. The suffix is sha256 of the directory path, first eight hex characters;
+// the default login (no CLAUDE_CONFIG_DIR) has no suffix. Only hashing, so it
+// carries no build tag — keychain_darwin.go and keychain_other.go each keep
+// their own keychainToken, the part that actually needs one.
+func KeychainService(configDir string) string {
+	const base = "Claude Code-credentials"
+	if configDir == "" {
+		return base
+	}
+	sum := sha256.Sum256([]byte(configDir))
+	return base + "-" + hex.EncodeToString(sum[:])[:8]
+}
 
 // ErrStaleAccount marks a login whose token could not be read. It is
 // deterministic, so the router must surface it as 400: Claude Code retries a
