@@ -511,11 +511,18 @@ work.
   repeated the identical input 43 times (0.96%). Capping the refusals would only
   re-admit the shape after N tries, which is the bug.
 
-Known residual, deliberately not fixed here: 12 of the 19 unfinished bridged
-checklists carry **no** note on the stuck task — the model simply never revisits
-the list. Native Claude panes show the same at 5 of 21, so it is not bridge
-behaviour and has no root cause yet. Featherless panes write the same note-only
-shape and sit behind `rolefix`, not this bridge.
+The other 12 of the 19 are mostly not this bug: in **11** the user sent a new
+prompt after the last checklist touch, so the stale item reflects a conversation
+that moved on rather than a completion claim. **One** (`6c647f80`) is genuinely
+abandoned with no note and no redirect, and has no root cause yet — do not fix
+it blind. Featherless panes write the same note-only shape and sit behind
+`rolefix`, not this bridge.
+
+Not live-verified against a real app-server: Codex quota is gated until
+2026-09-11. The refusal answers a server-initiated request mid-turn, which is
+shape-identical to what `resume` already does for a real tool result, and the
+fake-RPC tests cover it. Re-run a bridged checklist turn after that date and
+confirm Codex continues the turn after the refusal rather than stalling.
 
 Guarded by `internal/gptbridge/checklist_test.go`, including
 `TestEngineRefusesTheChecklistNoteThatStrandedTaskFive`, which replays record
