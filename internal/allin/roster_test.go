@@ -1,0 +1,110 @@
+package allin
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func rosterEnv(t *testing.T) Env {
+	t.Helper()
+	dir := t.TempDir()
+	accounts := filepath.Join(dir, "claude-accounts")
+	configs := filepath.Join(dir, "claude-configs")
+	if err := os.MkdirAll(filepath.Join(accounts, "personal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(configs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(path, body string) {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, "claude-accounts.list"), "Personal:personal\n")
+	write(filepath.Join(dir, "claude-configs.list"), "Zhipu GLM:zhipu-glm.json\n")
+	write(filepath.Join(configs, "zhipu-glm.json"),
+		`{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"k"}}`)
+	return Env{
+		AccountsList: filepath.Join(dir, "claude-accounts.list"),
+		AccountsDir:  accounts,
+		ConfigsList:  filepath.Join(dir, "claude-configs.list"),
+		ConfigsDir:   configs,
+	}
+}
+
+func models(rows []Row) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.Model)
+	}
+	return out
+}
+
+func has(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRoster_lists_the_default_login_and_every_registered_account(t *testing.T) {
+	got := models(Roster(rosterEnv(t)))
+	if !has(got, "wisp/acct.default/claude-opus-5") {
+		t.Fatalf("no default opus row in %v", got)
+	}
+	if !has(got, "wisp/acct.personal/claude-opus-5") {
+		t.Fatalf("no personal opus row in %v", got)
+	}
+}
+
+func TestRoster_marks_a_1M_capable_model_so_the_client_grants_the_window(t *testing.T) {
+	got := models(Roster(rosterEnv(t)))
+	if !has(got, "wisp/acct.default/claude-opus-5[1m]") {
+		t.Fatalf("no 1m opus row in %v", got)
+	}
+}
+
+func TestRoster_lists_a_configured_providers_models(t *testing.T) {
+	got := models(Roster(rosterEnv(t)))
+	if !has(got, "wisp/cfg.zhipu-glm/glm-4.7") {
+		t.Fatalf("no zhipu row in %v", got)
+	}
+}
+
+func TestRoster_omits_a_model_too_narrow_for_claude_code(t *testing.T) {
+	for _, id := range models(Roster(rosterEnv(t))) {
+		if strings.HasSuffix(id, "/glm-4.5-air") {
+			t.Fatalf("131072-token model was offered: %s", id)
+		}
+	}
+}
+
+func TestRoster_omits_a_provider_that_is_not_served_by_an_api_key(t *testing.T) {
+	env := rosterEnv(t)
+	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "openai-chatgpt.json"),
+		[]byte(`{"env":{"WISP_DECK_SUBSCRIPTION_PROVIDER":"openai-chatgpt"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.ConfigsList,
+		[]byte("Zhipu GLM:zhipu-glm.json\nOpenAI / ChatGPT:openai-chatgpt.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range models(Roster(env)) {
+		if strings.Contains(id, "cfg.openai-chatgpt/") {
+			t.Fatalf("ChatGPT row offered with no endpoint to serve it: %s", id)
+		}
+	}
+}
+
+func TestRoster_labels_a_row_with_its_source(t *testing.T) {
+	for _, row := range Roster(rosterEnv(t)) {
+		if row.Model == "wisp/acct.personal/claude-opus-5" && !strings.Contains(row.Label, "Personal") {
+			t.Fatalf("label %q does not name the account", row.Label)
+		}
+	}
+}
