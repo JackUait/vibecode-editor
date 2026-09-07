@@ -3,6 +3,7 @@ package gptbridge
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -73,6 +74,13 @@ type engineTurn struct {
 	turnID   string
 	tools    map[string]string
 
+	// history digests the Claude conversation this Codex thread was built
+	// from, so a continuation can tell an ordinary append from a client that
+	// rewrote its own transcript. It is refreshed on every resume, because a
+	// turn started at the very beginning of a conversation has an empty
+	// history that anything trivially extends.
+	history [][sha256.Size]byte
+
 	events   chan Notification
 	requests chan ServerRequest
 	errors   chan error
@@ -95,6 +103,53 @@ type unknownContinuationError struct{ id string }
 
 func (e unknownContinuationError) Error() string {
 	return fmt.Sprintf("unknown or expired tool_result %q", e.id)
+}
+
+// staleThreadError marks a continuation whose Codex thread no longer holds the
+// conversation the client is sending. Claude Code's autocompact rewrites the
+// transcript in place and keeps the pending tool call, so the continuation
+// still resolves to a live turn — one whose thread holds every message the
+// compaction just dropped.
+type staleThreadError struct{ threadID string }
+
+func (e staleThreadError) Error() string {
+	return fmt.Sprintf("Codex thread %q no longer holds the client's conversation", e.threadID)
+}
+
+// historyDigests fingerprints each history item. injectHistory refuses an item
+// it cannot encode, so a started thread's items always marshal; an item that
+// somehow does not gets a digest of its Go rendering rather than a shared
+// zero value that would compare equal to every other failure.
+func historyDigests(history []map[string]any) [][sha256.Size]byte {
+	digests := make([][sha256.Size]byte, len(history))
+	for index, item := range history {
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			encoded = []byte(fmt.Sprintf("%#v", item))
+		}
+		digests[index] = sha256.Sum256(encoded)
+	}
+	return digests
+}
+
+// adoptHistory takes incoming as this thread's history if it still begins with
+// every item the thread was built from, and reports whether it did. A tool
+// continuation only ever appends, so anything else means the client replaced
+// its own history — which is what a compaction does — and the thread has become
+// a record of a conversation that no longer exists. It hashes once and adopts
+// in the same pass, because this runs on every tool round of every turn.
+func (t *engineTurn) adoptHistory(incoming []map[string]any) bool {
+	digests := historyDigests(incoming)
+	if len(digests) < len(t.history) {
+		return false
+	}
+	for index, digest := range t.history {
+		if digests[index] != digest {
+			return false
+		}
+	}
+	t.history = digests
+	return true
 }
 
 type pendingDynamicTool struct {
@@ -142,7 +197,8 @@ func (e *Engine) Execute(
 	if len(translation.ToolResults) > 0 {
 		message, err := e.resume(ctx, translation, emit)
 		var unknown unknownContinuationError
-		if !errors.As(err, &unknown) {
+		var stale staleThreadError
+		if !errors.As(err, &unknown) && !errors.As(err, &stale) {
 			return message, err
 		}
 		recovery, ok := recoverContinuationFromHistory(translation)
@@ -308,6 +364,7 @@ func (e *Engine) start(
 		threadID: started.Thread.ID, tools: make(map[string]string),
 		events: make(chan Notification, 256), requests: make(chan ServerRequest, 64),
 		errors: make(chan error, 1), pending: make(map[string]*pendingDynamicTool),
+		history: historyDigests(translation.History),
 	}
 	for _, tool := range translation.DynamicTools {
 		originalName := tool.OriginalName
@@ -418,6 +475,9 @@ func (e *Engine) resume(
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	if !state.adoptHistory(translation.History) {
+		return AnthropicMessage{}, invalidContinuationError{staleThreadError{state.threadID}}
+	}
 
 	e.mu.Lock()
 	if state.timer != nil {
