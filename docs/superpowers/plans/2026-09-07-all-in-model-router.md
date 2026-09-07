@@ -266,6 +266,23 @@ func TestRoster_omits_a_model_too_narrow_for_claude_code(t *testing.T) {
 	}
 }
 
+func TestRoster_omits_a_provider_that_is_not_served_by_an_api_key(t *testing.T) {
+	env := rosterEnv(t)
+	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "openai-chatgpt.json"),
+		[]byte(`{"env":{"WISP_DECK_SUBSCRIPTION_PROVIDER":"openai-chatgpt"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.ConfigsList,
+		[]byte("Zhipu GLM:zhipu-glm.json\nOpenAI / ChatGPT:openai-chatgpt.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range models(Roster(env)) {
+		if strings.Contains(id, "cfg.openai-chatgpt/") {
+			t.Fatalf("ChatGPT row offered with no endpoint to serve it: %s", id)
+		}
+	}
+}
+
 func TestRoster_labels_a_row_with_its_source(t *testing.T) {
 	for _, row := range Roster(rosterEnv(t)) {
 		if row.Model == "wisp/acct.personal/claude-opus-5" && !strings.Contains(row.Label, "Personal") {
@@ -374,6 +391,12 @@ func configRows(env Env) []Row {
 			continue
 		}
 		provider := claudeconfig.ProviderForConfig(env.ConfigsDir, config)
+		// v1 routes API-key providers only. A ChatGPT profile authenticates
+		// through `codex login` and is served by a bridge process, not by an
+		// endpoint with a key, so a row for it would resolve to nothing.
+		if provider.Auth != claudeconfig.AuthAPIKey {
+			continue
+		}
 		source := strings.TrimSuffix(config.File, ".json")
 		for _, model := range providerModels(env, config, provider) {
 			id := model.ID
@@ -1669,6 +1692,6 @@ git commit -m "feat(allin): create and refresh the All-In profile on every insta
 
 ## Отложено сознательно (не в этом плане)
 
-- **GPT-строки через `gptbridge`.** Мост не HTTP-эндпоинт с ключом: его поднимает `gptbridge.StartLoopbackServer(executor, key, ServerOptions{})`, и `Engine.Execute` валидирует `model` по allowlist (`internal/gptbridge/engine.go:140`), поэтому id надо переписывать в голый codex-id. Это отдельная задача поверх Task 4: ленивый старт моста и `Credential` с его loopback-URL.
+- **GPT/ChatGPT-строки через `gptbridge`.** Ростер их сознательно пропускает (`provider.Auth != AuthAPIKey`), поэтому v1 покрывает Claude-логины и API-ключевые провайдеры (Zhipu, MiMo, Kimi, Qwen, Featherless), но не ChatGPT. Мост не HTTP-эндпоинт с ключом: его поднимает `gptbridge.StartLoopbackServer(executor, key, ServerOptions{})`, и `Engine.Execute` валидирует `model` по allowlist (`internal/gptbridge/engine.go:140`), поэтому id надо переписывать в голый codex-id. Это отдельная задача поверх Task 4: ленивый старт моста и `Credential` с его loopback-URL.
 - **Автофейловер на 429** — решено не делать в v1.
 - **Refresh протухших токенов** — решено не делать в v1.
