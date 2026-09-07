@@ -481,6 +481,16 @@ budget. `TestLiveChatGPTBridgeStartsAndServes` re-measures it and fails at 20s.
   inside one turn. Guarded by
   `TestHandler_reports_a_bridge_that_cannot_start_as_400_not_502`, whose
   fail-open mutant (dial a dead loopback port) really does answer 502.
+- **`Close` waits for a start in flight.** It takes the same mutex `Endpoint`
+  holds across the whole start, so a graceful `/exit` during the very first GPT
+  turn's startup blocks until that start finishes — 2s normally, the 60s cap at
+  worst. Left as is: a wedged start means the turn is hanging anyway, and every
+  abrupt exit (Ctrl-C, window close, respawn) goes through `kill_tree` or the
+  stdin-EOF path and never reaches `Close` at all.
+- **An existing All-In profile gains ChatGPT rows on the next `ensure-allin`,**
+  not on a `git pull`: `EnsureProfile` rewrites `modelPicker` only when a
+  mutation site or `bin/wisp-deck` runs it. Opening the Subscriptions modal is
+  the read that catches a machine which mutates nothing.
 - **The Codex path comes from `WISP_DECK_CODEX_CMD`,** which `wrapper.sh` stamps
   into the tmux session env (and `lib/tab-view.sh` re-exports for a new tab), so
   every process in the pane inherits it however deep the launch chain nests. No
