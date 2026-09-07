@@ -11,12 +11,29 @@ import (
 )
 
 var (
-	ccList    string
-	ccDir     string
-	ccPointer string
-	ccFile    string
-	ccName    string
+	ccList         string
+	ccDir          string
+	ccPointer      string
+	ccFile         string
+	ccName         string
+	ccAccountsList string
+	ccAccountsDir  string
 )
+
+// ensureAllInFromCLI refreshes the All-In profile for add/delete, the two
+// mutations reachable from the legacy "Manage Claude configs" menu
+// (lib/config-tui.sh) — the Subscription modal's own add/delete call the same
+// gate directly. A failure here must never fail the config mutation the user
+// asked for, exactly like the sibling ensure-budget/ensure-watchdog sweeps
+// bin/wisp-deck already runs with `|| true`.
+func ensureAllInFromCLI() {
+	_ = allin.EnsureProfileIfEligible(allin.Env{
+		AccountsList: ccAccountsList,
+		AccountsDir:  ccAccountsDir,
+		ConfigsList:  ccList,
+		ConfigsDir:   ccDir,
+	})
+}
 
 func syncOpenCode() {
 	if ccList == "" || ccDir == "" {
@@ -46,6 +63,11 @@ var claudeConfigAddCmd = &cobra.Command{
 			return err
 		}
 		syncOpenCode()
+		// A bare config carries no key, so it is never ConfigReady and this
+		// can never cross the threshold by itself today — wired anyway so an
+		// add that DOES become a source (a future default-populated provider)
+		// is covered without a second change.
+		ensureAllInFromCLI()
 		fmt.Fprintln(cmd.OutOrStdout(), file)
 		return nil
 	},
@@ -67,10 +89,19 @@ var claudeConfigDeleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Delete a Claude config and clear the pointer if it was active",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Read before deleting: once gone, ProfileFile can no longer say the
+		// removed file WAS the router profile, and refreshing right after
+		// deleting it would recreate it on the same keystroke — the source
+		// count that made it eligible does not change just because the
+		// profile itself is what got removed.
+		deletingAllIn := ccFile != "" && ccFile == allin.ProfileFile(ccList)
 		if err := claudeconfig.Delete(ccList, ccDir, ccPointer, ccFile); err != nil {
 			return err
 		}
 		syncOpenCode()
+		if !deletingAllIn {
+			ensureAllInFromCLI()
+		}
 		return nil
 	},
 }
@@ -126,18 +157,9 @@ func newEnsureAllInCommand() *cobra.Command {
 		Use:   "ensure-allin",
 		Short: "Create or refresh the All-In profile's model picker",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			// The gate decides whether to CREATE, never whether to refresh.
-			// accountRows seeds the Default login unconditionally, so a roster
-			// is never empty and a length check admits every machine; a single
-			// source has nothing to route between, and its rows would only
-			// duplicate the built-in lineup behind a proxy. An existing profile
-			// is rebuilt whatever the count — a login removed today otherwise
-			// leaves rows that answer 400 for the life of the profile.
-			if allin.SourceCount(env) < 2 && allin.ProfileFile(env.ConfigsList) == "" {
-				return nil
-			}
-			_, err := allin.EnsureProfile(env, env.ConfigsList, env.ConfigsDir)
-			return err
+			// Shared with the TUI's own login/subscription add and delete, so
+			// the create-vs-refresh gate cannot drift between callers.
+			return allin.EnsureProfileIfEligible(env)
 		},
 	}
 	// The flag names match claude-allin's, which reads the same two files: this
@@ -156,6 +178,8 @@ func init() {
 	claudeConfigAddCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
 	claudeConfigAddCmd.Flags().StringVar(&ccName, "name", "", "Display name for the new config")
 	claudeConfigAddCmd.Flags().StringVar(&ccPointer, "pointer", "", "Path to active config pointer file")
+	claudeConfigAddCmd.Flags().StringVar(&ccAccountsList, "accounts-list", "", "name:dir list of Claude logins (for the All-In gate)")
+	claudeConfigAddCmd.Flags().StringVar(&ccAccountsDir, "accounts-dir", "", "directory holding each login's config dir (for the All-In gate)")
 
 	claudeConfigRenameCmd.Flags().StringVar(&ccList, "list", "", "Path to configs list (name:file)")
 	claudeConfigRenameCmd.Flags().StringVar(&ccFile, "file", "", "Filename of the config to rename")
@@ -167,6 +191,8 @@ func init() {
 	claudeConfigDeleteCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
 	claudeConfigDeleteCmd.Flags().StringVar(&ccPointer, "pointer", "", "Path to active config pointer file")
 	claudeConfigDeleteCmd.Flags().StringVar(&ccFile, "file", "", "Filename of the config to delete")
+	claudeConfigDeleteCmd.Flags().StringVar(&ccAccountsList, "accounts-list", "", "name:dir list of Claude logins (for the All-In gate)")
+	claudeConfigDeleteCmd.Flags().StringVar(&ccAccountsDir, "accounts-dir", "", "directory holding each login's config dir (for the All-In gate)")
 
 	claudeConfigEnsureBudgetCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
 	claudeConfigEnsureWatchdogCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")

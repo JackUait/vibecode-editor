@@ -222,13 +222,18 @@ own repair function is unexported and not reusable as-is. Guarded by
 ### `Env` is built twice, from two different files, and both must agree
 
 `Roster` and `Resolve` are never called from the same `Env`. `Roster` (via
-`EnsureProfile`) is reached only from `ensure-allin`
-(`cmd/wisp-deck-tui/claude_config.go`), whose flags come from
-`bin/wisp-deck:233-236`, using `CONFIGS_DIR` defined at `bin/wisp-deck:194`.
-`Resolve` is reached only from the launch wrapper: `gt_claude_launch_wrapper`
-(`lib/tmux-session.sh`) builds its own `config_root` and passes it to
-`claude-allin` (`cmd/wisp-deck-tui/claude_allin.go`), which never runs
-`Roster` or `EnsureProfile`.
+`EnsureProfile`, through the shared `EnsureProfileIfEligible` gate) is reached
+from the CLI's `ensure-allin`/`add`/`delete` (`cmd/wisp-deck-tui/claude_config.go`)
+and from the TUI's own login and subscription add/delete
+(`internal/tui/subscription_modal*.go`, via `(*MainMenuModel).ensureAllIn`) —
+every one of those call sites builds its `allin.Env` from
+`${XDG_CONFIG_HOME:-$HOME/.config}/wisp-deck`, whether through `bin/wisp-deck`'s
+`CONFIGS_DIR` (`bin/wisp-deck:194`) or the TUI's own `gt_config_dir`
+(`lib/menu-tui.sh`). `Resolve` is reached only from the launch wrapper:
+`gt_claude_launch_wrapper` (`lib/tmux-session.sh`) builds its own
+`config_root` and passes it to `claude-allin`
+(`cmd/wisp-deck-tui/claude_allin.go`), which never runs `Roster` or
+`EnsureProfile`.
 
 The two are **textually independent recomputations** of
 `${XDG_CONFIG_HOME:-$HOME/.config}/wisp-deck` — `CONFIGS_DIR` is not exported,

@@ -100,6 +100,8 @@ func (m *MainMenuModel) addSubscriptionLogin(label string) {
 	m.subscriptionModal.input.Blur()
 	m.subscriptionModal.err = nil
 	m.ensureSubscriptionProfileVisible()
+	// A new login is a new source; it may be the second one on the machine.
+	m.ensureAllIn()
 }
 
 // startSubscriptionLoginRename opens the label input prefilled with the login
@@ -187,6 +189,10 @@ func (m *MainMenuModel) deleteSubscriptionLogin() {
 	m.subscriptionModal.mode = subscriptionBrowse
 	m.subscriptionModal.pane = subscriptionProfilesPane
 	m.subscriptionModal.err = nil
+	// A removed login is a source disappearing; refresh an existing profile
+	// so it stops naming it. Never creates one on its own — removing a login
+	// can only shrink the count.
+	m.ensureAllIn()
 }
 
 // subscriptionLoginDetailLines renders the details pane for a login row.

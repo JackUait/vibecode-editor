@@ -1069,6 +1069,7 @@ func (m *MainMenuModel) saveSubscriptionDraft() {
 		if repaired {
 			m.loadSubscriptionDraft(m.subscriptionModalProfile())
 			m.syncOpenCode()
+			m.ensureAllIn()
 			return
 		}
 	}
@@ -1077,6 +1078,10 @@ func (m *MainMenuModel) saveSubscriptionDraft() {
 	draft.dirty = false
 	m.subscriptionModal.err = nil
 	m.syncOpenCode()
+	// Not gated on keyEdited: a self-hosted profile that already has a key
+	// becomes ready from its model/window fields alone (writeSubscriptionCustomFields
+	// above), so a save with no key edit can still be what crosses the threshold.
+	m.ensureAllIn()
 }
 
 // writeSubscriptionCustomFields persists the model and window a profile supplies
@@ -1548,6 +1553,10 @@ func (m *MainMenuModel) deleteSubscriptionProfile() {
 		m.subscriptionModal.mode = subscriptionBrowse
 		return
 	}
+	// Deleting the All-In profile itself must not bring it right back: the
+	// source count this profile routes between doesn't shrink just because
+	// the profile naming them is what got removed.
+	wasAllIn := profile.Provider.Auth == claudeconfig.AuthWispRouter
 	wasActive := profile.Active
 	oldCursor := m.subscriptionModal.profileCursor
 	if err := claudeconfig.Delete(
@@ -1574,6 +1583,9 @@ func (m *MainMenuModel) deleteSubscriptionProfile() {
 	m.subscriptionModal.pane = subscriptionProfilesPane
 	m.subscriptionModal.err = nil
 	m.syncOpenCode()
+	if !wasAllIn {
+		m.ensureAllIn()
+	}
 }
 
 func (m *MainMenuModel) subscriptionLifecycleLines(width, height int) []string {

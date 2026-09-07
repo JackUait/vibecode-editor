@@ -78,6 +78,30 @@ func EnsureProfile(env Env, listFile, configsDir string) (string, error) {
 	return file, nil
 }
 
+// EnsureProfileIfEligible applies the create-vs-refresh gate every mutation
+// site shares (the CLI's own add/delete/ensure-allin, and the TUI's
+// login/subscription add and delete): create the profile only once the
+// machine has two or more sources, but refresh one that already exists no
+// matter how the count moves — a login or provider removed today would
+// otherwise leave rows that answer 400 for the life of the profile.
+//
+// A caller missing any of the four Env paths is refused rather than run
+// partway: Roster reads an empty AccountsList/ConfigsList as "nothing there",
+// so refreshing from an incomplete Env would silently strip real logins or
+// providers out of an existing picker. No caller legitimately has an empty
+// path here — every site builds all four from the same config root.
+func EnsureProfileIfEligible(env Env) error {
+	if env.AccountsList == "" || env.AccountsDir == "" ||
+		env.ConfigsList == "" || env.ConfigsDir == "" {
+		return nil
+	}
+	if SourceCount(env) < 2 && ProfileFile(env.ConfigsList) == "" {
+		return nil
+	}
+	_, err := EnsureProfile(env, env.ConfigsList, env.ConfigsDir)
+	return err
+}
+
 // routerEnv is the env block the generated profile must carry. Each key exists
 // because something silently stops working without it:
 //
