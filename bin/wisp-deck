@@ -227,6 +227,13 @@ if [ -d "$CONFIGS_DIR/claude-configs" ] && command -v wisp-deck-tui >/dev/null 2
   # stall watchdog was disarmed reports a thinking endpoint as a dead network,
   # then aborts and replays the turn it was working on.
   wisp-deck-tui claude-config ensure-watchdog --dir "$CONFIGS_DIR/claude-configs" >/dev/null 2>&1 || true
+  # The All-In profile's picker rows name a login or a provider config, and
+  # both come and go — so this rebuilds the picker on every install rather
+  # than writing it once.
+  wisp-deck-tui claude-config ensure-allin --dir "$CONFIGS_DIR/claude-configs" \
+    --list "$CONFIGS_DIR/claude-configs.list" \
+    --accounts-list "$CONFIGS_DIR/claude-accounts.list" \
+    --accounts-dir "$CONFIGS_DIR/claude-accounts" >/dev/null 2>&1 || true
 fi
 
 # ---------- Projects ----------

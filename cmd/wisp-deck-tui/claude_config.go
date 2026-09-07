@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jackuait/wisp-deck/internal/allin"
 	"github.com/jackuait/wisp-deck/internal/claudeconfig"
 	"github.com/jackuait/wisp-deck/internal/opencodeconfig"
 	"github.com/spf13/cobra"
@@ -115,6 +116,35 @@ var claudeConfigEnsureWatchdogCmd = &cobra.Command{
 	},
 }
 
+// The All-In profile's picker rows name a login or a provider config, both of
+// which come and go — so unlike add/rename/delete, this rebuilds the picker on
+// every call rather than mutating once. Same repair story as ensure-budget:
+// the profile is never re-copied from defaults once it exists on disk.
+func newEnsureAllInCommand() *cobra.Command {
+	var env allin.Env
+	var listFile string
+	command := &cobra.Command{
+		Use:   "ensure-allin",
+		Short: "Create or refresh the All-In profile's model picker",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			env.ConfigsList = listFile
+			// A machine with no source to route between has nothing to offer,
+			// and an All-In row would only duplicate the built-in lineup.
+			if rows := allin.Roster(env); len(rows) == 0 {
+				return nil
+			}
+			_, err := allin.EnsureProfile(env, listFile, env.ConfigsDir)
+			return err
+		},
+	}
+	flags := command.Flags()
+	flags.StringVar(&env.ConfigsDir, "dir", "", "directory holding the profile settings files")
+	flags.StringVar(&listFile, "list", "", "name:file list of subscription profiles")
+	flags.StringVar(&env.AccountsList, "accounts-list", "", "name:dir list of Claude logins")
+	flags.StringVar(&env.AccountsDir, "accounts-dir", "", "directory holding each login's config dir")
+	return command
+}
+
 func init() {
 	claudeConfigAddCmd.Flags().StringVar(&ccList, "list", "", "Path to configs list (name:file)")
 	claudeConfigAddCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
@@ -136,6 +166,6 @@ func init() {
 	claudeConfigEnsureWatchdogCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
 
 	claudeConfigCmd.AddCommand(claudeConfigAddCmd, claudeConfigRenameCmd, claudeConfigDeleteCmd,
-		claudeConfigEnsureBudgetCmd, claudeConfigEnsureWatchdogCmd)
+		claudeConfigEnsureBudgetCmd, claudeConfigEnsureWatchdogCmd, newEnsureAllInCommand())
 	rootCmd.AddCommand(claudeConfigCmd)
 }
