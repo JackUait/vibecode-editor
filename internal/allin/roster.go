@@ -114,7 +114,14 @@ func accountRows(env Env) []Row {
 
 func configRows(env Env) []Row {
 	var rows []Row
+	// A disabled subscription stays fully manageable in the modal but is
+	// hidden from the in-session switcher popup (claudeconfig.LoadDisabled);
+	// All-In must treat it the same way — the user turned it off.
+	disabled := claudeconfig.LoadDisabled(claudeconfig.DisabledFile(env.ConfigsList))
 	for _, config := range claudeconfig.Load(env.ConfigsList) {
+		if disabled[config.File] {
+			continue
+		}
 		// The generated profile is registered in the very list this iterates,
 		// and a row naming it would send a turn back into the router that asked
 		// for it. Its own AuthWispRouter identity is skipped by the Auth check

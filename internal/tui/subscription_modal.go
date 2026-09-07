@@ -305,6 +305,22 @@ func (m *MainMenuModel) openSubscriptionModal() tea.Cmd {
 	}
 	generation := m.subscriptionModal.auth.generation + 1
 	active := m.CurrentClaudeConfigFile()
+	// A machine whose subscriptions were connected before All-In existed, or
+	// a session that never mutates anything, never reaches any of the
+	// mutation call sites the gate otherwise relies on. Viewing this modal is
+	// the natural read point that closes the gap; reload the list before the
+	// cursor math below, or a profile created here would not be visible until
+	// the modal was reopened. Errors are swallowed for the same reason every
+	// other ensureAllIn call site swallows them: this is a background repair,
+	// not the action the user asked for.
+	//
+	// Only the list is reloaded here — never the full reloadSubscriptionConfigs,
+	// which also re-syncs the active config from disk. `active` above is
+	// already the source of truth for this open, and re-syncing it here would
+	// fight a caller that set the active config in memory for its own reasons
+	// (SetActiveClaudeConfig has no disk counterpart of its own).
+	m.ensureAllIn()
+	m.claudeConfigs = LoadClaudeConfigsList(m.claudeConfigsList)
 	m.subscriptionModal = subscriptionModalState{
 		open:           true,
 		pane:           subscriptionProfilesPane,
@@ -770,6 +786,11 @@ func (m *MainMenuModel) toggleSubscriptionProfileDisabled() {
 		return
 	}
 	m.subscriptionModal.err = nil
+	// Disabling or re-enabling a subscription changes what All-In may route
+	// to, exactly like a rename or a delete — refresh immediately rather than
+	// waiting on the next unrelated mutation or modal reopen to drop (or
+	// restore) this provider's rows.
+	m.ensureAllIn()
 }
 
 func (m *MainMenuModel) moveSubscriptionProfile(delta int) {

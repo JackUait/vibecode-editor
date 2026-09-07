@@ -224,9 +224,14 @@ own repair function is unexported and not reusable as-is. Guarded by
 `Roster` and `Resolve` are never called from the same `Env`. `Roster` (via
 `EnsureProfile`, through the shared `EnsureProfileIfEligible` gate) is reached
 from the CLI's `ensure-allin`/`add`/`delete` (`cmd/wisp-deck-tui/claude_config.go`)
-and from the TUI's own login and subscription add/delete
+and from the TUI's own login and subscription add/delete/disable
 (`internal/tui/subscription_modal*.go`, via `(*MainMenuModel).ensureAllIn`) —
-every one of those call sites builds its `allin.Env` from
+and also from opening the Subscriptions modal itself
+(`openSubscriptionModal`, `internal/tui/subscription_modal.go`), which is a
+read rather than a mutation: it is the only call site that catches a machine
+whose sources were all connected before this feature existed, or a session
+that never mutates anything at all. Every one of those call sites builds its
+`allin.Env` from
 `${XDG_CONFIG_HOME:-$HOME/.config}/wisp-deck`, whether through `bin/wisp-deck`'s
 `CONFIGS_DIR` (`bin/wisp-deck:194`) or the TUI's own `gt_config_dir`
 (`lib/menu-tui.sh`). `Resolve` is reached only from the launch wrapper:
@@ -244,6 +249,40 @@ profile the router's `ConfigsDir` cannot find, and `Resolve` would return
 `allin: profile "…" is not ready` for a profile that plainly is. Change the
 config root in `bin/wisp-deck` and `lib/tmux-session.sh` together, or not at
 all.
+
+### A disabled subscription contributes no row, and `Resolve` does not need to know
+
+`claudeconfig.LoadDisabled` (the same sidecar `internal/tui/subscription_modal.go:219`
+already reads for the switcher popup) hides a config from `configRows` and from
+`SourceCount`, which is derived from `Roster` itself. A machine measured with
+two logins and four ready providers, all four disabled, produced 19 picker rows
+before this — 11 of them for providers the user had explicitly turned off — and
+would still read as eligible on a machine whose only non-login sources were all
+disabled, when it had nothing left to route between.
+
+This is `configRows` deciding what to OFFER, not `routableProfile`
+(`credential.go`) deciding what the router can ADDRESS — and the two do not
+need to agree here. `routableProfile`'s two rules exist because the router
+structurally cannot serve that request (no key to swap in, no repair proxy);
+disabling a profile changes nothing about whether it works, only whether the
+picker offers it. `useSubscriptionProfile` already lets a user select a
+disabled profile directly as their Standard-Claude-mode subscription, so a
+stale All-In picker default saved before the user disabled that provider is
+left to keep working rather than 400 with "not ready" — consistent with
+disabled meaning hidden from discovery, never revoked.
+
+Disabling or re-enabling a profile refreshes an existing All-In profile
+immediately: `toggleSubscriptionProfileDisabled` calls `ensureAllIn` right
+after `claudeconfig.ToggleDisabled`, the same way every other mutation site
+does. A profile left with only one login's rows because its only other source
+got disabled is not deleted — the same "never delete below two sources"
+contract `TestEnsureProfileIfEligible_refreshes_an_existing_profile_below_two_sources`
+already pins for a removed login. Guarded by
+`TestRoster_omits_rows_for_a_disabled_config`,
+`TestSourceCount_excludes_a_disabled_config`,
+`TestEnsureProfileIfEligible_writes_nothing_when_the_only_second_source_is_disabled`,
+`TestEnsureProfileIfEligible_refresh_drops_rows_for_a_source_disabled_after_creation`,
+and `TestToggleSubscriptionProfileDisabled_refreshes_an_existing_allin_profile`.
 
 ### Models narrower than 200000 tokens are not offered
 

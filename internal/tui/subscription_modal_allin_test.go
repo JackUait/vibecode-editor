@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jackuait/wisp-deck/internal/allin"
 	"github.com/jackuait/wisp-deck/internal/claudeconfig"
 	"github.com/jackuait/wisp-deck/internal/models"
@@ -84,6 +85,45 @@ func TestAddSubscriptionLogin_crossing_two_sources_creates_the_allin_profile(t *
 	// it one row short, landing on Default instead.
 	if got := m.subscriptionModalLoginIndex(); got != 1 {
 		t.Fatalf("cursor landed on login index %d, want 1 (Work)", got)
+	}
+}
+
+// A machine whose two-plus sources were connected before this feature
+// existed — or in a session that never mutates anything — never reaches any
+// mutation call site, so it never got the profile any other way. Opening the
+// Subscriptions modal is a read, not a mutation, and is the point that closes
+// the gap.
+func TestOpenSubscriptionModal_creates_the_allin_profile_for_a_user_who_mutates_nothing(t *testing.T) {
+	m := newBareSubscriptionMenu(t)
+	// Two logins connected entirely outside this session — never through
+	// addSubscriptionLogin or any other mutation call site that would already
+	// have run the gate.
+	if err := os.WriteFile(m.claudeAccountsList, []byte("Work:work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(m.claudeAccountsDir, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.SetClaudeAccounts(LoadClaudeAccountsList(m.claudeAccountsList))
+
+	if allin.ProfileFile(m.claudeConfigsList) != "" {
+		t.Fatal("setup: All-In profile already exists")
+	}
+
+	m.openSubscriptionModal()
+
+	file := allin.ProfileFile(m.claudeConfigsList)
+	if file == "" {
+		t.Fatal("opening the Subscriptions modal did not create the All-In profile for an existing two-source machine")
+	}
+	found := false
+	for _, p := range m.subscriptionProfiles() {
+		if p.File == file {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("newly created All-In profile is not visible in the just-opened modal: %+v", m.subscriptionProfiles())
 	}
 }
 
@@ -282,5 +322,51 @@ func TestRenameSubscriptionProfile_refreshes_an_existing_allin_profile(t *testin
 	}
 	if !strings.Contains(string(data), "Zhipu Renamed ·") {
 		t.Fatalf("renamed profile name missing from the refreshed profile: %s", data)
+	}
+}
+
+// Disabling a subscription changes what All-In may route to, exactly like a
+// rename or a delete — every other mutation site refreshes immediately, and
+// this one must too, rather than waiting on the next unrelated mutation or
+// modal reopen to drop the disabled provider's rows.
+func TestToggleSubscriptionProfileDisabled_refreshes_an_existing_allin_profile(t *testing.T) {
+	m := newBareSubscriptionMenu(t) // Default alone: one source
+	file, err := claudeconfig.AddForProvider(m.claudeConfigsList, m.claudeConfigsDir, "Zhipu GLM", "zhipu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := claudeconfig.WriteAPIKey(m.claudeConfigsDir, file, "sk-test"); err != nil {
+		t.Fatal(err)
+	}
+	m.SetClaudeConfigs(LoadClaudeConfigsList(m.claudeConfigsList))
+	m.ensureAllIn() // two sources now (Default + Zhipu GLM): creates
+	allInFile := allin.ProfileFile(m.claudeConfigsList)
+	if allInFile == "" {
+		t.Fatal("setup: All-In profile was not created")
+	}
+	m.SetClaudeConfigs(LoadClaudeConfigsList(m.claudeConfigsList)) // pick up the new all-in row too
+
+	m.openSubscriptionModal()
+	idx := -1
+	for i, p := range m.subscriptionProfiles() {
+		if p.File == file {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("zhipu profile not listed: %+v", m.subscriptionProfiles())
+	}
+	m.selectSubscriptionProfile(idx)
+	m = subscriptionModalKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+
+	if m.subscriptionModal.err != nil {
+		t.Fatalf("disabling the profile failed: %v", m.subscriptionModal.err)
+	}
+	data, err := os.ReadFile(filepath.Join(m.claudeConfigsDir, allInFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "cfg.zhipu-glm/") {
+		t.Fatalf("disabling the subscription did not refresh the All-In profile: %s", data)
 	}
 }

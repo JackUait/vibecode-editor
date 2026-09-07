@@ -120,6 +120,75 @@ func TestEnsureProfileIfEligible_refreshes_an_existing_profile_below_two_sources
 	}
 }
 
+// A machine whose only other source is a disabled config has nothing left to
+// route between: the disabled config contributes no row (see
+// TestRoster_omits_rows_for_a_disabled_config), so SourceCount reads 1
+// (Default alone) and the create gate must not fire.
+func TestEnsureProfileIfEligible_writes_nothing_when_the_only_second_source_is_disabled(t *testing.T) {
+	env := ensureFixture(t, "") // Default alone: one source
+	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "zhipu-glm.json"),
+		[]byte(`{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"k"}}`),
+		0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.ConfigsList, []byte("Zhipu GLM:zhipu-glm.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Sanity: enabled, this config would be a real second source.
+	if got := SourceCount(env); got < 2 {
+		t.Fatalf("setup: expected two sources with the config enabled, got %d", got)
+	}
+	if _, err := claudeconfig.ToggleDisabled(claudeconfig.DisabledFile(env.ConfigsList), "zhipu-glm.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProfileIfEligible(env); err != nil {
+		t.Fatal(err)
+	}
+	if file := ProfileFile(env.ConfigsList); file != "" {
+		t.Fatalf("wrote a profile whose only second source is disabled: %s", file)
+	}
+}
+
+// Disabling a source after the profile exists must only refresh it (drop the
+// disabled source's rows), never delete it — the same "never delete below two
+// sources" contract TestEnsureProfileIfEligible_refreshes_an_existing_profile_
+// below_two_sources already pins for a removed login.
+func TestEnsureProfileIfEligible_refresh_drops_rows_for_a_source_disabled_after_creation(t *testing.T) {
+	env := ensureFixture(t, "") // Default alone
+	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "zhipu-glm.json"),
+		[]byte(`{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"k"}}`),
+		0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.ConfigsList, []byte("Zhipu GLM:zhipu-glm.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProfileIfEligible(env); err != nil { // two sources: creates
+		t.Fatal(err)
+	}
+	file := ProfileFile(env.ConfigsList)
+	if file == "" {
+		t.Fatal("setup: All-In profile was not created")
+	}
+
+	if _, err := claudeconfig.ToggleDisabled(claudeconfig.DisabledFile(env.ConfigsList), "zhipu-glm.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProfileIfEligible(env); err != nil { // refresh: now one source
+		t.Fatal(err)
+	}
+	if got := ProfileFile(env.ConfigsList); got == "" {
+		t.Fatal("disabling the only other source deleted the profile; it must only refresh, never delete")
+	}
+	data, err := os.ReadFile(filepath.Join(env.ConfigsDir, file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "cfg.zhipu-glm/") {
+		t.Fatalf("disabled config's rows survived the refresh: %s", data)
+	}
+}
+
 // A caller missing one of the four paths must be refused outright rather than
 // run partway: Roster reads a missing AccountsList as "no logins", so acting
 // on an incomplete Env would rewrite modelPicker with real rows stripped out

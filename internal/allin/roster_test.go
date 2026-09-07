@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jackuait/wisp-deck/internal/claudeconfig"
 )
 
 func rosterEnv(t *testing.T) Env {
@@ -233,6 +235,37 @@ func TestRoster_omits_the_profile_it_generates(t *testing.T) {
 		if strings.Contains(id, own) {
 			t.Fatalf("All-In offers a row pointing at itself: %s", id)
 		}
+	}
+}
+
+// A disabled subscription is one the user turned off in the modal, and it
+// stays fully manageable there while being hidden from the in-session
+// switcher popup (see claudeconfig.LoadDisabled). All-In must treat it the
+// same way: a disabled source is not a route to offer.
+func TestRoster_omits_rows_for_a_disabled_config(t *testing.T) {
+	env := rosterEnv(t)
+	if _, err := claudeconfig.ToggleDisabled(claudeconfig.DisabledFile(env.ConfigsList), "zhipu-glm.json"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range models(Roster(env)) {
+		if strings.Contains(id, "cfg.zhipu-glm/") {
+			t.Fatalf("a disabled config contributed a row: %s", id)
+		}
+	}
+}
+
+// SourceCount is derived from Roster, so a disabled config disappearing from
+// the roster must also disappear from the count — otherwise a machine with
+// nothing left to route between still reads as eligible.
+func TestSourceCount_excludes_a_disabled_config(t *testing.T) {
+	env := rosterEnv(t)
+	before := SourceCount(env)
+	if _, err := claudeconfig.ToggleDisabled(claudeconfig.DisabledFile(env.ConfigsList), "zhipu-glm.json"); err != nil {
+		t.Fatal(err)
+	}
+	after := SourceCount(env)
+	if after != before-1 {
+		t.Fatalf("SourceCount = %d after disabling the only config, want %d (before %d)", after, before-1, before)
 	}
 }
 
