@@ -12,6 +12,15 @@ import (
 // minRosterContext is the narrowest window worth offering. Claude Code's own
 // floor is ~20k tokens before a conversation starts, and a profile reserves a
 // quarter of the window for the reply, so anything tighter cannot finish a task.
+//
+// It is also the window every row gets. No row carries the "[1m]" marker, even
+// where the model has a 1M window: the marker is read off the raw model string
+// and grants the whole SESSION 1M, and nothing narrows it again when the user
+// picks a 200k row mid-conversation — the transcript is already past the new
+// endpoint's cap, and /compact sends the same oversized transcript plus a
+// summarization prompt, so it fails the same way. A uniform window is the one
+// shape no pick can wedge. Route still strips and reports the marker, and
+// proxy.go still sends the beta header, so 1M can return behind a size guard.
 const minRosterContext = 200000
 
 // Env names the four files the roster is built from. They are the same files
@@ -24,27 +33,32 @@ type Env struct {
 }
 
 // Row is one entry of the settings key `modelPicker.options`.
+//
+// There is deliberately no behavesAs. Measured on a live pane: an unknown model
+// id without it is given thinking:{"type":"adaptive"} and keeps effort
+// available, while behavesAs:claude-sonnet-4-5 turns that into
+// thinking:{"type":"enabled",budget} and "Effort not supported". Absent is the
+// more capable default, and it carries no context window across the router
+// either — so the field bought nothing and cost the pane its effort control.
 type Row struct {
 	Model       string `json:"model"`
 	Label       string `json:"label,omitempty"`
 	Description string `json:"description,omitempty"`
-	BehavesAs   string `json:"behavesAs,omitempty"`
 }
 
 // claudeModel is one first-party model offered for every Claude login.
 type claudeModel struct {
 	id    string
 	label string
-	wide  bool // also offer a [1m] row
 }
 
 // claudeLineup is pinned rather than discovered: Claude Code ships no catalog a
 // third party can read, and an id it does not know still routes fine.
 var claudeLineup = []claudeModel{
-	{"claude-opus-5", "Opus 5", true},
-	{"claude-sonnet-5", "Sonnet 5", true},
-	{"claude-fable-5-1", "Fable 5.1", false},
-	{"claude-haiku-4-5-20251001", "Haiku 4.5", false},
+	{"claude-opus-5", "Opus 5"},
+	{"claude-sonnet-5", "Sonnet 5"},
+	{"claude-fable-5-1", "Fable 5.1"},
+	{"claude-haiku-4-5-20251001", "Haiku 4.5"},
 }
 
 // SourceCount reports how many distinct credentials the roster spans: each
@@ -87,13 +101,6 @@ func accountRows(env Env) []Row {
 				Label:       account.label + " · " + model.label,
 				Description: "Claude subscription: " + account.label,
 			})
-			if model.wide {
-				rows = append(rows, Row{
-					Model:       fmt.Sprintf("wisp/acct.%s/%s[1m]", account.dir, model.id),
-					Label:       account.label + " · " + model.label + " (1M)",
-					Description: "Claude subscription: " + account.label,
-				})
-			}
 		}
 	}
 	return rows
@@ -134,16 +141,12 @@ func configRows(env Env) []Row {
 		}
 		source := strings.TrimSuffix(config.File, ".json")
 		for _, model := range providerModels(env, config, provider) {
-			id := model.ID
-			suffix := ""
-			if model.Context >= 1000000 {
-				suffix = "[1m]"
-			} else if model.Context != 0 && model.Context < minRosterContext {
+			if model.Context != 0 && model.Context < minRosterContext {
 				continue
 			}
 			rows = append(rows, Row{
-				Model:       fmt.Sprintf("wisp/cfg.%s/%s%s", source, id, suffix),
-				Label:       config.Name + " · " + id,
+				Model:       fmt.Sprintf("wisp/cfg.%s/%s", source, model.ID),
+				Label:       config.Name + " · " + model.ID,
 				Description: provider.Name,
 			})
 		}

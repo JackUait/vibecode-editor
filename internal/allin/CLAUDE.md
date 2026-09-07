@@ -17,17 +17,50 @@ this build cannot place — wrong prefix, empty source, empty model — returns
 own credential. Guarded by `TestRoute_keeps_slashes_inside_the_model_id` and
 `TestRoute_treats_an_unparseable_prefix_as_the_session`.
 
-### `[1m]` is the only way a row gets a 1M window
+### Every row is 200k, and the roster emits no `[1m]` — on purpose
 
 Measured live through `/context`: a `wisp/…` row carrying `behavesAs:
-claude-opus-5` gets the flat 200k window — `behavesAs` does not carry a window
-across the router. Only the literal `[1m]` suffix on the raw model string does,
-because Claude Code reads that marker off the string itself. `strip1M`
-(`route.go`) removes it before the id reaches `Resolve` or the upstream, and
-`Want1M` carries the fact forward so `proxy.go` can add the
-`context-1m-2025-08-07` beta header — the suffix and the beta header are the
-only two places this bit is represented; dropping either one silently serves a
-200k session to a row that promised 1M.
+claude-opus-5` gets the flat 200k window, so `behavesAs` does not carry a window
+across the router. The literal `[1m]` suffix on the raw model string does,
+because Claude Code reads that marker off the string itself.
+
+**`roster.go` no longer writes it.** A 1M window granted off the model string is
+granted to the whole *session*, and nothing narrows it again when the user picks
+a 200k row later in the same conversation: by then the transcript is already
+past the new endpoint's cap, and `/compact` cannot escape it — it sends that
+same oversized transcript plus a summarization prompt, so it is larger than the
+turn that already failed. This is the unrecoverable class the root `CLAUDE.md`
+documents, and `_guard_subscription_context` — which catches it on a
+subscription *switch* — does not run on a `/model` pick. A uniform 200k across
+every row is the one shape no pick can wedge, so the capability was traded away
+rather than shipped as a trap.
+
+The machinery it needed is intact and still tested: `strip1M` (`route.go`)
+removes the marker before an id reaches `Resolve` or the upstream, `Want1M`
+carries the fact forward, and `proxy.go` adds the `context-1m-2025-08-07` beta
+header. 1M returns by putting a size guard in front of that, never by
+re-emitting the suffix from the roster. Guarded by
+`TestRoster_never_offers_a_1m_row`.
+
+The generated profile also declares `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`
+(`routerEnv`, `profile.go`), because the rows are not the only model string in
+play: the session's *starting* model comes from the user's global settings, and
+a global `opus[1m]` would grant 1M before any row is picked. Every other sub-1M
+profile gets that key from `stampContextBudget`, which returns early here —
+All-In declares no model mappings for it to size a window from, so this is the
+one profile that must declare it itself.
+
+### `Row` declares no `behavesAs`, and re-adding one costs the pane its effort control
+
+Measured on a live pane: an unknown model id **without** `behavesAs` is given
+`thinking: {"type":"adaptive"}` and keeps effort available; the same id **with**
+`behavesAs: claude-sonnet-4-5` is given `thinking: {"type":"enabled", budget}`
+and the pane reports "Effort not supported". Absent is the more capable default,
+and (per the measurement above) it carries no context window across the router
+either — so the field bought nothing and cost the pane a control. It was
+declared on `Row` and never set by anything; it is now gone. Guarded by
+`TestRoster_never_declares_behaves_as`, which reads the serialized rows so it
+fails on a field that is re-declared *and* populated.
 
 ### A stale credential must surface as HTTP 400, never 401 or 5xx
 

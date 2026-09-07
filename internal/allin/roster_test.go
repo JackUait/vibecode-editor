@@ -1,6 +1,7 @@
 package allin
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,10 +63,31 @@ func TestRoster_lists_the_default_login_and_every_registered_account(t *testing.
 	}
 }
 
-func TestRoster_marks_a_1M_capable_model_so_the_client_grants_the_window(t *testing.T) {
-	got := models(Roster(rosterEnv(t)))
-	if !has(got, "wisp/acct.default/claude-opus-5[1m]") {
-		t.Fatalf("no 1m opus row in %v", got)
+// The suffix is the only thing that grants a row a 1M window, and nothing
+// narrows the window again when the user picks a 200k row later in the same
+// conversation: the transcript is already past the new endpoint's cap, and
+// /compact is larger than the turn that just failed. Every row is uniformly
+// 200k so no pick can wedge the session. Route keeps stripping and reporting
+// the marker — 1M returns behind a size guard, not by re-adding this.
+func TestRoster_never_offers_a_1m_row(t *testing.T) {
+	for _, id := range models(Roster(rosterEnv(t))) {
+		if strings.HasSuffix(id, "[1m]") {
+			t.Fatalf("a row promises a 1M window nothing can narrow again: %s", id)
+		}
+	}
+}
+
+// Measured on a live pane: an unknown model id WITHOUT behavesAs is given
+// thinking:{"type":"adaptive"} and effort stays available; with
+// behavesAs:claude-sonnet-4-5 it becomes thinking:{"type":"enabled",budget} and
+// the pane reports "Effort not supported". Absent is the more capable default.
+func TestRoster_never_declares_behaves_as(t *testing.T) {
+	encoded, err := json.Marshal(Roster(rosterEnv(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "behavesAs") {
+		t.Fatalf("a row declares behavesAs, which costs it adaptive thinking: %s", encoded)
 	}
 }
 
@@ -168,7 +190,7 @@ func TestRoster_omits_a_self_hosted_model_too_narrow_for_claude_code(t *testing.
 	}
 }
 
-func TestRoster_marks_a_self_hosted_model_with_1M_window(t *testing.T) {
+func TestRoster_offers_a_wide_self_hosted_model_at_the_uniform_window(t *testing.T) {
 	env := rosterEnv(t)
 	// Custom provider with 1M+ context window.
 	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "wide-host.json"),
@@ -192,8 +214,8 @@ func TestRoster_marks_a_self_hosted_model_with_1M_window(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := models(Roster(env))
-	if !has(got, "wisp/cfg.wide-host/qwen-1m[1m]") {
-		t.Fatalf("no 1m wide-host row in %v", got)
+	if !has(got, "wisp/cfg.wide-host/qwen-1m") {
+		t.Fatalf("no wide-host row in %v", got)
 	}
 }
 
