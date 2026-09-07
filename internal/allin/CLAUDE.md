@@ -252,6 +252,50 @@ branch has no credential to hand it, so a row for it would resolve to nothing.
 This is v1 scope, not an oversight: see "Решения по v1" in the spec. Guarded by
 `TestRoster_omits_a_provider_that_is_not_served_by_an_api_key`.
 
+### Known exposure: the loopback port mints turns on any credential, unauthenticated
+
+The router will mint a turn on **any** login's OAuth token or **any** provider's
+API key, chosen by a string in the request body, for anything that can reach its
+loopback port. `claude-rolefix` does not do this — it forwards the credential the
+client already had — so this is a real escalation over the proxy it is modelled
+on, and it is recorded here rather than fixed.
+
+It is **not** an escalation over what a local process on this machine can already
+do. `keychainToken` shells out to `security find-generic-password -w`, which
+returns without a prompt for the user's own login keychain, and every provider key
+sits in a 0600 file the same process can read. Anything that can open the loopback
+port can already read both sources directly.
+
+The right end state is a shared secret: mint a random id at launch, stamp it into
+the settings overlay as a header the client sends, and refuse a request without
+it — the same shape `gptbridge` already uses for `randomBridgeID`. It was
+deliberately **not** bundled with the profile-shape redesign this wave: an auth
+scheme added alongside a Critical fix, with one review pass left, is how a worse
+bug ships. Add it as its own change, with its own tests.
+
+### Known gap: a freshly created profile misses that install's watchdog sweep
+
+`bin/wisp-deck` runs `ensure-watchdog` before `ensure-allin`, so a profile
+created by that same install does not get `CLAUDE_ENABLE_STREAM_WATCHDOG=0`
+until the next one. The gap is one install and it self-heals, but before
+`routerEnv` existed it was permanent: `EnsureStreamWatchdog` returns early on a
+settings object with no `env` key, and the old profile had none.
+
+The fix is to run `ensure-allin` before the two sweeps, not to have `routerEnv`
+write the key — a declared watchdog value is documented as the user's own and is
+kept by every other path, while `routerEnv` deliberately rewrites its keys on
+every call.
+
+### `ensure-allin` and `claude-allin` name the same two files the same way
+
+Both take `--configs-list` and `--configs-dir` (plus `--accounts-list` and
+`--accounts-dir`). `ensure-allin`'s siblings under `claude-config` use bare
+`--list`/`--dir`, but this command already takes an explicit `--accounts-*`
+pair, so the bare names identified the configs pair only by omission — and the
+two commands read the same files from the same roots. `bin/wisp-deck` passes the
+long names; see also the `Env` section above, which is what those roots must
+agree with.
+
 ### Known limitation: there is no token refresh
 
 An account whose Keychain access token has expired resolves as

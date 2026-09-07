@@ -46,11 +46,6 @@ opencode_adapter_prefix() {
   esac
 }
 
-# Build the AI tool launch command string. Claude's complete raw fallback chain
-# is supervised once when the generation runtime is present; the screenshot
-# filter remains inside that chain as its sole PTY boundary.
-# Usage: build_ai_launch_cmd <tool> <tool_cmd> [extra_args_or_project_dir]
-
 # gt_claude_launch_wrapper <settings_path> <provider_marker>
 #
 # Print the argv prefix that wraps one Claude launch, or nothing. Gated on the
@@ -88,6 +83,11 @@ gt_claude_launch_wrapper() {
 
   return 0
 }
+
+# Build the AI tool launch command string. Claude's complete raw fallback chain
+# is supervised once when the generation runtime is present; the screenshot
+# filter remains inside that chain as its sole PTY boundary.
+# Usage: build_ai_launch_cmd <tool> <tool_cmd> [extra_args_or_project_dir]
 
 build_ai_launch_cmd() {
   local tool="$1" tool_cmd="$2" raw config_root state_q generation_q config_q raw_q
