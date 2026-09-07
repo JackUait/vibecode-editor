@@ -29,6 +29,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -40,6 +41,13 @@ import (
 // images runs to megabytes; anything past the cap is forwarded untouched rather
 // than held in memory twice.
 const maxRewriteBytes = 128 << 20
+
+// discardLog swallows httputil.ReverseProxy's own error logging. Its default
+// ErrorLog is nil, which falls back to package log writing straight to
+// stderr — and the wrapped process's stderr is the terminal Claude Code paints
+// on (see wrapper-stderr-is-the-ai-pane in project memory), so an unset
+// ErrorLog here prints a raw "http: proxy error: ..." into the agent's screen.
+var discardLog = log.New(io.Discard, "", 0)
 
 // Rewrite replaces every messages[].role of "system" with "user", reporting
 // whether anything changed. A body it cannot parse as a Messages request comes
@@ -121,6 +129,7 @@ func NewHandler(upstream string) http.Handler {
 		// its first token, and those are what keep Claude Code's byte-stall
 		// watchdog from aborting and replaying a working turn.
 		FlushInterval: -1,
+		ErrorLog:      discardLog,
 		ModifyResponse: func(resp *http.Response) error {
 			plan, ok := resp.Request.Context().Value(planKey).(responsePlan)
 			if !ok {

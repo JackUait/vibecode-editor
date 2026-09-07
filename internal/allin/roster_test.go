@@ -2,6 +2,7 @@ package allin
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,31 +126,49 @@ func TestRoster_omits_a_provider_that_is_not_served_by_an_api_key(t *testing.T) 
 	}
 }
 
-func TestRoster_omits_featherless_because_the_router_has_no_role_repair(t *testing.T) {
-	env := rosterEnv(t)
-	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "featherless.json"),
-		[]byte(`{
+// featherlessProfile writes a ready Featherless config, RemoteCatalog with the
+// given declared window. contextTokens is what CLAUDE_CODE_MAX_CONTEXT_TOKENS
+// declares — providerModels reads it via ReadContextWindow because Featherless
+// (like custom) ships no static Models list of its own.
+func featherlessProfile(t *testing.T, env Env, model string, contextTokens int) {
+	t.Helper()
+	writeProfile(t, env, "Featherless", "featherless.json", fmt.Sprintf(`{
 "name":"Featherless",
 "env":{
 "WISP_DECK_SUBSCRIPTION_PROVIDER":"featherless",
 "ANTHROPIC_BASE_URL":"https://api.featherless.ai",
 "ANTHROPIC_AUTH_TOKEN":"sk-test",
-"ANTHROPIC_DEFAULT_OPUS_MODEL":"zai-org/GLM-5.3-Flash",
-"ANTHROPIC_DEFAULT_SONNET_MODEL":"zai-org/GLM-5.3-Flash",
-"ANTHROPIC_DEFAULT_FABLE_MODEL":"zai-org/GLM-5.3-Flash",
-"ANTHROPIC_DEFAULT_HAIKU_MODEL":"zai-org/GLM-5.3-Flash",
-"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"262144"
+"ANTHROPIC_DEFAULT_OPUS_MODEL":"%[1]s",
+"ANTHROPIC_DEFAULT_SONNET_MODEL":"%[1]s",
+"ANTHROPIC_DEFAULT_FABLE_MODEL":"%[1]s",
+"ANTHROPIC_DEFAULT_HAIKU_MODEL":"%[1]s",
+"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"%[2]d"
 }
-}`), 0o600); err != nil {
-		t.Fatal(err)
+}`, model, contextTokens))
+}
+
+// The router now composes rolefix's request/response repairs (see proxy.go),
+// so a ready Featherless profile is a routable source again, exactly like any
+// other RemoteCatalog gateway.
+func TestRoster_admits_a_ready_featherless_profile(t *testing.T) {
+	env := rosterEnv(t)
+	featherlessProfile(t, env, "zai-org/GLM-5.3-Flash", 262144)
+	got := models(Roster(env))
+	if !has(got, "wisp/cfg.featherless/zai-org/GLM-5.3-Flash") {
+		t.Fatalf("no featherless row in %v", got)
 	}
-	if err := os.WriteFile(env.ConfigsList,
-		[]byte("Zhipu GLM:zhipu-glm.json\nFeatherless:featherless.json\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+}
+
+// The context floor is a separate rule from the repair gap above, and it must
+// still fire for a RemoteCatalog provider: Featherless ships no static Models
+// list, so providerModels sizes its one synthetic Model from the profile's own
+// declared CLAUDE_CODE_MAX_CONTEXT_TOKENS, exactly like a self-hosted profile.
+func TestRoster_omits_a_featherless_model_below_the_context_floor(t *testing.T) {
+	env := rosterEnv(t)
+	featherlessProfile(t, env, "TurboVadim/Qwen3.8-27B-OBLITERATED", 32768)
 	for _, id := range models(Roster(env)) {
 		if strings.Contains(id, "cfg.featherless/") {
-			t.Fatalf("Featherless row offered with no repair proxy in the router: %s", id)
+			t.Fatalf("32768-token Featherless model was offered: %s", id)
 		}
 	}
 }

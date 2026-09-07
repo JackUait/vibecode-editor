@@ -78,22 +78,25 @@ declared on `Row` and never set by anything; it is now gone. Guarded by
 `TestRoster_never_declares_behaves_as`, which reads the serialized rows so it
 fails on a field that is re-declared *and* populated.
 
-### The roster's exclusions are advice until `Resolve` enforces them too
+### The roster's exclusion is advice until `Resolve` enforces it too
 
 `configRows` decides what the picker OFFERS. `Resolve` decides what the router
 will actually address, and a model id arrives off the wire — hand-typed into
 `/model`, or saved as a picker default by an older roster — so a row the roster
 would never have written still reaches it. `routableProfile` (`credential.go`)
-therefore re-applies the same two rules: not `AuthAPIKey` is refused (a ChatGPT
+therefore re-applies the one rule left: not `AuthAPIKey` is refused (a ChatGPT
 profile has no key to swap in, and so does the All-In profile itself, which
-sits in the very same configs list), and `RemoteCatalog` is refused (Featherless
-needs `internal/rolefix`'s repairs to call a tool at all).
+sits in the very same configs list).
 
-It must key on `RemoteCatalog`, never on `SuppliesOwnModel()` — that is true for
-a self-hosted profile too, and a self-hosted endpoint speaks the Anthropic API
+`RemoteCatalog` (Featherless) is NOT refused here — see the delegation section
+below — but `routableProfile` still hands its caller the resolved `Provider`,
+because `Resolve` needs its `RemoteCatalog` bit for a different decision: it
+must key on `RemoteCatalog`, never on `SuppliesOwnModel()` — that is true for a
+self-hosted profile too, and a self-hosted endpoint speaks the Anthropic API
 directly and needs no repair. Guarded by
 `TestResolve_refuses_a_provider_the_roster_would_not_offer`,
-`TestResolve_refuses_the_router_profile_itself`, and the two
+`TestResolve_refuses_the_router_profile_itself`,
+`TestResolve_does_not_mark_an_ordinary_gateway_for_repair`, and the two
 `TestResolve_still_serves_*` counterweights that stop the refusal widening.
 
 ### Every error carries the `allin:` prefix, never `wisp-deck:`
@@ -195,29 +198,92 @@ gated on the same `if`/`elif` chain, so a false-positive All-In match would
 strip the role-repair proxy that is the only reason a Featherless pane can
 call a tool at all. This was mutation-proven in review.
 
-### Featherless is excluded from the roster, because the router does no repair
+### A RemoteCatalog target is served through `rolefix`'s own handler, not a second repair
 
-`configRows` (`roster.go`) skips any provider with `RemoteCatalog` set —
-currently only Featherless — even though it is `AuthAPIKey` and would
-otherwise pass the ChatGPT-exclusion check above. `internal/rolefix` exists
-because Featherless 400s on Claude Code's `role:"system"` capability
-listings and silently stops parsing tool calls once a request carries a
-`thinking` field; both are things Claude Code sends on every turn. This
-router does neither repair, so an unfiltered Featherless row would fail on
-its first turn — either a hard 400, or the failure mode the root `CLAUDE.md`
-already documents for an unrepaired Featherless pane: it can "look alive and
-still do nothing," rendering a model's raw tool-call markup as plain text
-while no tool ever runs.
+Featherless 400s on Claude Code's `role:"system"` capability listings and
+silently stops parsing tool calls once a request carries a `thinking` field;
+both are things Claude Code sends on every turn. An earlier draft of this
+router excluded Featherless from the roster entirely on the theory that
+`rolefix`'s repair function was unexported and not reusable outside its own
+package. **That theory was wrong.** `rolefix.NewHandler(upstream string)
+http.Handler` is exported and self-contained: it builds its own reverse proxy
+to `upstream` and wires both the request repair (role rewrite, `thinking`
+strip) and the response repairs (`ModifyResponse`: structured-output
+extraction, synthesized usage, mis-spelled tool names) — the same handler
+`claude-rolefix` (`cmd/wisp-deck-tui/claude_rolefix.go`) already wraps a
+dedicated Featherless pane in. There is nothing here for this router to
+reimplement.
 
-`UserConfigured` (the self-hosted `custom` provider) is deliberately NOT
-skipped by the same check: it speaks the Anthropic API directly and needs no
-repair. The two flags look similar (`SuppliesOwnModel()` is true for both)
-but only `RemoteCatalog` names the one needing a proxy this router doesn't
-have — checking `SuppliesOwnModel()` instead of `RemoteCatalog` would wrongly
-exclude every self-hosted profile too. Re-admitting Featherless requires
-composing `rolefix`'s request/response repairs into this router; `rolefix`'s
-own repair function is unexported and not reusable as-is. Guarded by
-`TestRoster_omits_featherless_because_the_router_has_no_role_repair`.
+So `configRows` no longer skips `RemoteCatalog`, and `routableProfile`
+(`credential.go`) no longer refuses it either — `Resolve`'s `KindConfig` branch
+reads the resolved `Provider`'s `RemoteCatalog` bit and sets
+`Credential.NeedsRepair`. `NewHandler` (`proxy.go`) checks that flag right
+where it used to always call `newReverseProxy`: a `NeedsRepair` target is
+served by `rolefix.NewHandler(base).ServeHTTP(w, r)` instead — everything the
+plain path already did (credential headers swapped in, `model` rewritten from
+the `wisp/…` id to the real one, body reassigned onto `r`) has already run by
+that point, so `rolefix` only ever sees an ordinary, already-addressed
+Featherless request.
+
+- **The credential survives delegation because `rolefix`'s `Director` never
+  touches it.** It sets only `req.URL.Scheme`, `req.URL.Host`, `req.URL.Path`
+  and `req.Host` — `httputil.ReverseProxy` forwards every other header
+  (Authorization included) unchanged, so the credential this router just swapped
+  in reaches Featherless exactly as it would from a dedicated pane. Verified by
+  `TestHandler_repairs_a_featherless_request_before_it_reaches_the_upstream`,
+  which asserts the swapped `Authorization` header on the fake upstream.
+- **`FlushInterval: -1` needs no second declaration.** `rolefix.NewHandler` sets
+  it on its own `ReverseProxy`, so the keep-alive bytes Featherless sends before
+  its first token still stream through unbuffered — this router's own
+  `newReverseProxy` sets the same field for the plain path, but delegation does
+  not run through it at all. Guarded by
+  `TestHandler_streams_a_repaired_targets_first_chunk_before_the_second_is_sent`.
+- **`validUpstream` must still run first.** It is what turns a malformed
+  address into this package's deterministic 400 rather than a retryable 5xx;
+  `rolefix.NewHandler`'s own bad-URL fallback answers 500. The delegation
+  branch runs strictly after `validUpstream` succeeds, so it can never reach
+  that fallback. Guarded by
+  `TestHandler_reports_a_malformed_upstream_as_400_not_502_for_a_repaired_target`,
+  which fails with a 500 if the two are ever reordered.
+- **`rolefix.NewHandler` sets its OWN `ErrorLog` too, as of this change** —
+  it previously had none, so a dial failure on either a dedicated Featherless
+  pane or (now) a `NeedsRepair` All-In row printed
+  `http: proxy error: dial tcp ...` straight into the agent's pane, the exact
+  failure mode this package's own `discardLog` exists to prevent for the plain
+  path. Fixed once in `rolefix` rather than re-declared here, so both callers
+  get it. Guarded by `TestNewHandler_does_not_log_a_dial_failure_to_stderr`
+  (`internal/rolefix/rolefix_test.go`).
+- **The handler is built fresh per request, deliberately, not cached.**
+  Measured: `rolefix.NewHandler(upstream)` costs 288ns and 4 allocations
+  (`url.Parse` plus one `ReverseProxy` struct literal) — dwarfed by the
+  milliseconds-to-seconds of the HTTP round trip it is about to make, and this
+  router already builds a fresh `newReverseProxy` per request the same way. A
+  cache would add a concurrency-safe map for a cost too small to be worth
+  measuring against real network I/O — the "measure per-tick cost" discipline in
+  the root `CLAUDE.md` is about a background loop running many times a second
+  forever; this runs once per LLM turn.
+- **`UserConfigured` (the self-hosted `custom` provider) is still never marked
+  `NeedsRepair`.** It speaks the Anthropic API directly. The two flags look
+  similar (`SuppliesOwnModel()` is true for both) but only `RemoteCatalog` names
+  the one needing `rolefix` at all — keying off `SuppliesOwnModel()` instead
+  would wrongly route a self-hosted profile's already-conforming requests
+  through a rewrite they don't need. Guarded by
+  `TestResolve_still_serves_a_self_hosted_profile`.
+- **The context floor is unaffected and still applies to Featherless.**
+  `providerModels` already built Featherless's single synthetic `Model` from the
+  profile's own declared `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (it ships no static
+  `Models` list — `SuppliesOwnModel()` is true for it), and `configRows`'s
+  `model.Context < minRosterContext` check runs on that `Model` exactly as it
+  does for any other provider. Nothing about admitting the provider touches this
+  check. Guarded by `TestRoster_omits_a_featherless_model_below_the_context_floor`.
+
+Guarded end to end by `TestRoster_admits_a_ready_featherless_profile`,
+`TestResolve_serves_a_featherless_target_and_marks_it_for_repair`,
+`TestResolve_does_not_mark_an_ordinary_gateway_for_repair`,
+`TestHandler_repairs_a_featherless_request_before_it_reaches_the_upstream`, and
+`TestHandler_leaves_an_unrepaired_target_untouched` (the selectivity
+counterweight — nothing routes through `rolefix` except a `NeedsRepair`
+target).
 
 ### `Env` is built twice, from two different files, and both must agree
 

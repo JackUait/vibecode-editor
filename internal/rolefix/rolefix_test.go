@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -373,5 +374,34 @@ func TestProxy_forwards_a_body_with_thinking_stripped(t *testing.T) {
 	}
 	if gotLen != int64(len(gotBody)) {
 		t.Errorf("Content-Length = %d, want %d — a stale length re-frames the body", gotLen, len(gotBody))
+	}
+}
+
+// A dial failure to a dead upstream must not print httputil.ReverseProxy's own
+// "http: proxy error: ..." into the terminal. The wrapped process's stderr is
+// the pane Claude Code paints on (see wrapper-stderr-is-the-ai-pane in project
+// memory), and ReverseProxy's default ErrorLog is nil, which falls back to
+// package log writing straight there.
+func TestNewHandler_does_not_log_a_dial_failure_to_stderr(t *testing.T) {
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadURL := dead.URL
+	dead.Close() // closed before any request reaches it: the port refuses the dial
+
+	var buf bytes.Buffer
+	original := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(original) })
+
+	proxy := httptest.NewServer(NewHandler(deadURL))
+	defer proxy.Close()
+
+	resp, err := http.Post(proxy.URL+"/v1/messages", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if buf.Len() != 0 {
+		t.Fatalf("a dial failure was logged to the pane's own stderr: %s", buf.String())
 	}
 }

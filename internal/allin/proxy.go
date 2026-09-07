@@ -11,6 +11,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"github.com/jackuait/wisp-deck/internal/rolefix"
 )
 
 // maxRouteBytes caps how large a request body this handler will re-address.
@@ -32,6 +34,7 @@ var discardLog = log.New(io.Discard, "", 0)
 func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		base, body := sessionUpstream, []byte(nil)
+		needsRepair := false
 		if r.Method == http.MethodPost && r.Body != nil {
 			// Read one byte past the cap: ContentLength is unreliable (-1 for
 			// a chunked request), so the only way to know a body exceeded the
@@ -65,6 +68,7 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 				return
 			}
 			base = credential.BaseURL
+			needsRepair = credential.NeedsRepair
 			rewritten, err := rewriteModel(payload, target.Model)
 			if err != nil {
 				writeRoutingError(w, target, err)
@@ -94,6 +98,26 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 			// header set here would only be a second copy to keep in step.
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.ContentLength = int64(len(body))
+		}
+		if needsRepair {
+			// A RemoteCatalog target (Featherless): compose rolefix's own
+			// handler rather than re-implementing its repairs here. It reads
+			// the request body itself and rewrites it (role:"system" ->
+			// "user", drops "thinking"), and its ModifyResponse repairs the
+			// reply (structured-output extraction, synthesized usage,
+			// mis-spelled tool names). Its Director only sets Scheme/Host/
+			// Path/Host, so the credential header this handler just swapped
+			// in survives untouched into the upstream call. validUpstream
+			// above already parsed base and proved it has a scheme and host,
+			// so rolefix.NewHandler(base) cannot fail its own url.Parse — the
+			// malformed-upstream 400 is still decided here, never by rolefix's
+			// own 500 fallback (see the NeedsRepair case of
+			// TestHandler_reports_a_malformed_upstream_as_400_not_502).
+			// Built fresh per request like newReverseProxy below: measured at
+			// 288ns/4 allocs, dwarfed by one real HTTP round trip, so caching
+			// would buy nothing but a staleness hazard.
+			rolefix.NewHandler(base).ServeHTTP(w, r)
+			return
 		}
 		newReverseProxy(upstreamURL).ServeHTTP(w, r)
 	})

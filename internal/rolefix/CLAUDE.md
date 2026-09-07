@@ -100,3 +100,17 @@ no declared tool is left exactly as it arrived — that is the model inventing a
 tool (`read_file` was observed), and the client's own error beats running
 something nobody asked for. Two tools whose names differ only by case resolve to
 neither.
+
+### `NewHandler`'s own dial failures must not print into the pane
+
+`httputil.ReverseProxy`'s `ErrorLog` defaults to nil, which falls back to
+package `log` writing straight to stderr — and the wrapped process's stderr is
+the terminal Claude Code paints on (see `wrapper-stderr-is-the-ai-pane` in
+project memory). A Featherless dial failure — the endpoint down, DNS broken —
+used to print a raw `http: proxy error: dial tcp ...` into the agent's screen.
+`NewHandler` now sets `ErrorLog` to a `log.New(io.Discard, "", 0)` logger,
+exactly like `internal/allin/proxy.go`'s own `discardLog` does for its plain
+reverse-proxy path. Fixing it here rather than in each caller covers both: a
+dedicated `claude-rolefix`-wrapped pane, and `internal/allin`'s router
+delegating a `NeedsRepair` (Featherless) target to this same handler. Guarded
+by `TestNewHandler_does_not_log_a_dial_failure_to_stderr`.

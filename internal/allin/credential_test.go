@@ -107,35 +107,58 @@ func writeProfile(t *testing.T, env Env, name, file, body string) {
 	}
 }
 
-// configRows will not offer these, for reasons that are about the ROUTER, not
-// about the profile: it does no role/thinking repair, so a Featherless row 400s
-// or silently stops calling tools, and a ChatGPT profile is served by a bridge
-// process that has no key to hand over. Resolve enforced neither, so a
-// hand-typed id — or a picker default saved from an older roster — walked
-// straight past the exclusion the roster exists to apply.
+// configRows will not offer this, for a reason that is about the ROUTER, not
+// about the profile: a ChatGPT profile is served by a bridge process that has
+// no key to hand over. Resolve enforces the same rule, so a hand-typed id — or
+// a picker default saved from an older roster — cannot walk past it.
 func TestResolve_refuses_a_provider_the_roster_would_not_offer(t *testing.T) {
-	for _, tc := range []struct{ name, file, body string }{
-		{"Featherless", "featherless.json", `{"env":{
-"WISP_DECK_SUBSCRIPTION_PROVIDER":"featherless",
-"ANTHROPIC_BASE_URL":"https://api.featherless.ai",
-"ANTHROPIC_AUTH_TOKEN":"sk-test"}}`},
-		{"OpenAI / ChatGPT", "openai-chatgpt.json", `{"env":{
+	env := rosterEnv(t)
+	writeProfile(t, env, "OpenAI / ChatGPT", "openai-chatgpt.json", `{"env":{
 "WISP_DECK_SUBSCRIPTION_PROVIDER":"openai-chatgpt",
 "ANTHROPIC_BASE_URL":"https://api.openai.com",
-"ANTHROPIC_AUTH_TOKEN":"sk-test"}}`},
-	} {
-		t.Run(tc.file, func(t *testing.T) {
-			env := rosterEnv(t)
-			writeProfile(t, env, tc.name, tc.file, tc.body)
-			source := strings.TrimSuffix(tc.file, ".json")
-			_, err := NewResolver(env).Resolve(Target{Kind: KindConfig, Source: source, Model: "m"})
-			if err == nil {
-				t.Fatalf("%s resolved, so an unrepaired turn goes to it", tc.name)
-			}
-			if !strings.Contains(err.Error(), source) {
-				t.Fatalf("error does not name the profile: %v", err)
-			}
-		})
+"ANTHROPIC_AUTH_TOKEN":"sk-test"}}`)
+	_, err := NewResolver(env).Resolve(Target{Kind: KindConfig, Source: "openai-chatgpt", Model: "m"})
+	if err == nil {
+		t.Fatal("ChatGPT resolved, but it has no key to hand over")
+	}
+	if !strings.Contains(err.Error(), "openai-chatgpt") {
+		t.Fatalf("error does not name the profile: %v", err)
+	}
+}
+
+// Featherless (RemoteCatalog) now resolves rather than being refused: proxy.go
+// delegates a NeedsRepair credential to internal/rolefix's own handler, which
+// runs the same role/thinking repairs a dedicated Featherless pane gets. A
+// hand-typed or stale-roster id must reach that path too, not a dead end.
+func TestResolve_serves_a_featherless_target_and_marks_it_for_repair(t *testing.T) {
+	env := rosterEnv(t)
+	writeProfile(t, env, "Featherless", "featherless.json", `{"env":{
+"WISP_DECK_SUBSCRIPTION_PROVIDER":"featherless",
+"ANTHROPIC_BASE_URL":"https://api.featherless.ai",
+"ANTHROPIC_AUTH_TOKEN":"sk-test"}}`)
+	got, err := NewResolver(env).Resolve(Target{Kind: KindConfig, Source: "featherless", Model: "m"})
+	if err != nil {
+		t.Fatalf("Featherless refused to resolve: %v", err)
+	}
+	if got.BaseURL != "https://api.featherless.ai" || got.Value != "Bearer sk-test" {
+		t.Fatalf("got %+v", got)
+	}
+	if !got.NeedsRepair {
+		t.Fatalf("got %+v, want NeedsRepair so proxy.go routes it through rolefix", got)
+	}
+}
+
+// A gateway that speaks the Anthropic API natively (Zhipu here) must not be
+// marked for repair — that would send an ordinary, already-conforming request
+// through rolefix's role/thinking rewrite for no reason.
+func TestResolve_does_not_mark_an_ordinary_gateway_for_repair(t *testing.T) {
+	env := rosterEnv(t)
+	got, err := NewResolver(env).Resolve(Target{Kind: KindConfig, Source: "zhipu-glm", Model: "glm-4.7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.NeedsRepair {
+		t.Fatalf("got %+v, an ordinary gateway must not be routed through rolefix", got)
 	}
 }
 
@@ -163,16 +186,21 @@ func TestResolve_still_serves_a_provider_the_roster_offers(t *testing.T) {
 }
 
 // A self-hosted profile speaks the Anthropic API directly and needs no repair,
-// so the refusal above must key on RemoteCatalog, never on SuppliesOwnModel —
-// both are true for Featherless and only the first names the repair gap.
+// so it must resolve AND must not be routed through rolefix — NeedsRepair must
+// key on RemoteCatalog, never on SuppliesOwnModel, which is true for both a
+// self-hosted profile and Featherless and would wrongly repair this one too.
 func TestResolve_still_serves_a_self_hosted_profile(t *testing.T) {
 	env := rosterEnv(t)
 	writeProfile(t, env, "Self Hosted", "self-hosted.json", `{"env":{
 "WISP_DECK_SUBSCRIPTION_PROVIDER":"custom",
 "ANTHROPIC_BASE_URL":"http://localhost:8000",
 "ANTHROPIC_AUTH_TOKEN":"sk-test"}}`)
-	if _, err := NewResolver(env).Resolve(
-		Target{Kind: KindConfig, Source: "self-hosted", Model: "qwen"}); err != nil {
+	got, err := NewResolver(env).Resolve(
+		Target{Kind: KindConfig, Source: "self-hosted", Model: "qwen"})
+	if err != nil {
 		t.Fatalf("a self-hosted profile stopped resolving: %v", err)
+	}
+	if got.NeedsRepair {
+		t.Fatalf("got %+v, a self-hosted profile must not be routed through rolefix", got)
 	}
 }

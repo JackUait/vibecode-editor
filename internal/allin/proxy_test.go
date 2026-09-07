@@ -181,6 +181,23 @@ func TestHandler_reports_a_malformed_upstream_as_400_not_502(t *testing.T) {
 	}
 }
 
+// The 400-not-502/500 guarantee must hold for a NeedsRepair target too:
+// validUpstream has to run BEFORE the rolefix delegation, or a malformed
+// address reaches rolefix.NewHandler's own url.Parse failure path, which
+// answers 500 rather than this package's deterministic 400.
+func TestHandler_reports_a_malformed_upstream_as_400_not_502_for_a_repaired_target(t *testing.T) {
+	handler := NewHandler(fakeResolver{credential: Credential{
+		BaseURL: "http://exa mple.com", Header: "Authorization", Value: "Bearer x", NeedsRepair: true,
+	}}, "http://unused.invalid")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"wisp/cfg.featherless/some-model"}`)))
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, body %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHandler_clears_both_credential_headers_before_swapping_in_one(t *testing.T) {
 	// credential.Header == "Authorization" already deleted X-Api-Key on its
 	// own, so the defect only shows through a credential that swaps in the
@@ -392,5 +409,150 @@ func TestRewriteModel_replaces_the_routed_id(t *testing.T) {
 	}
 	if decoded["model"] != "claude-opus-5" || decoded["max_tokens"] != float64(8) {
 		t.Fatalf("decoded %v", decoded)
+	}
+}
+
+// A Credential.NeedsRepair target (Featherless) must go through
+// internal/rolefix's own handler rather than the plain reverse proxy: Claude
+// Code's role:"system" capability listings 400 on Featherless's strict schema,
+// and a request declaring "thinking" turns its tool-call parser off. Both must
+// be gone by the time the upstream sees the body. This also proves the
+// NewHandler-delegation premise: the credential this handler swapped in
+// (Authorization: Bearer swapped) must survive into the upstream call, because
+// rolefix's own Director never touches that header.
+func TestHandler_repairs_a_featherless_request_before_it_reaches_the_upstream(t *testing.T) {
+	var gotAuth string
+	var gotBody []byte
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	handler := NewHandler(fakeResolver{credential: Credential{
+		BaseURL: upstream.URL, Header: "Authorization", Value: "Bearer swapped", NeedsRepair: true,
+	}}, "http://unused.invalid")
+
+	body := `{"model":"wisp/cfg.featherless/TurboVadim/Qwen3.8-27B-OBLITERATED",` +
+		`"thinking":{"type":"adaptive","display":"omitted"},` +
+		`"messages":[{"role":"system","content":"agent roster"},{"role":"user","content":"hi"}]}`
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(body)))
+
+	if gotAuth != "Bearer swapped" {
+		t.Fatalf("credential did not survive delegation to rolefix: auth %q", gotAuth)
+	}
+	var sent map[string]any
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("upstream body is not JSON: %v (%s)", err, gotBody)
+	}
+	if sent["model"] != "TurboVadim/Qwen3.8-27B-OBLITERATED" {
+		t.Fatalf("routed id not rewritten to the real model: %v", sent["model"])
+	}
+	if _, ok := sent["thinking"]; ok {
+		t.Fatalf("thinking field reached Featherless, which turns its tool-call parser off: %s", gotBody)
+	}
+	messages, _ := sent["messages"].([]any)
+	if len(messages) == 0 {
+		t.Fatalf("no messages in %s", gotBody)
+	}
+	first, _ := messages[0].(map[string]any)
+	if first["role"] != "user" {
+		t.Fatalf("role:\"system\" reached Featherless unrewritten: %s", gotBody)
+	}
+}
+
+// A target that needs no repair (an ordinary Anthropic-speaking gateway) must
+// go through the plain reverse proxy unchanged: rolefix's rewrite must never
+// run on a request that has no reason to be touched.
+func TestHandler_leaves_an_unrepaired_target_untouched(t *testing.T) {
+	var gotBody []byte
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	handler := NewHandler(fakeResolver{credential: Credential{
+		BaseURL: upstream.URL, Header: "Authorization", Value: "Bearer swapped", NeedsRepair: false,
+	}}, "http://unused.invalid")
+
+	body := `{"model":"wisp/cfg.zhipu-glm/glm-4.7",` +
+		`"thinking":{"type":"adaptive","display":"omitted"},` +
+		`"messages":[{"role":"system","content":"agent roster"}]}`
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(body)))
+
+	var sent map[string]any
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("upstream body is not JSON: %v (%s)", err, gotBody)
+	}
+	if _, ok := sent["thinking"]; !ok {
+		t.Fatalf("thinking field was stripped from a target that needs no repair: %s", gotBody)
+	}
+	messages, _ := sent["messages"].([]any)
+	first, _ := messages[0].(map[string]any)
+	if first["role"] != "system" {
+		t.Fatalf("role rewritten for a target that needs no repair: %s", gotBody)
+	}
+}
+
+// FlushInterval: -1 is what keeps Claude Code's byte-stall watchdog from
+// aborting and replaying a turn while Featherless sends ": keep-alive"
+// comments before its first token. rolefix.NewHandler sets this itself, but
+// delegation must not wrap it in anything that buffers.
+func TestHandler_streams_a_repaired_targets_first_chunk_before_the_second_is_sent(t *testing.T) {
+	release := make(chan struct{})
+	var closeOnce sync.Once
+	closeRelease := func() { closeOnce.Do(func() { close(release) }) }
+	t.Cleanup(closeRelease)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "11")
+		flusher := w.(http.Flusher)
+		_, _ = w.Write([]byte("first"))
+		flusher.Flush()
+		select {
+		case <-release:
+		case <-time.After(2 * time.Second):
+		}
+		_, _ = w.Write([]byte("second"))
+	}))
+	defer upstream.Close()
+
+	handler := NewHandler(fakeResolver{credential: Credential{
+		BaseURL: upstream.URL, Header: "Authorization", Value: "Bearer swapped", NeedsRepair: true,
+	}}, "http://unused.invalid")
+	proxy := httptest.NewServer(handler)
+	defer proxy.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		resp, err := http.Post(proxy.URL+"/v1/messages", "application/json",
+			strings.NewReader(`{"model":"wisp/cfg.featherless/some-model"}`))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer resp.Body.Close()
+		buf := make([]byte, 5)
+		if _, err := io.ReadFull(resp.Body, buf); err != nil {
+			t.Error(err)
+			return
+		}
+		if string(buf) != "first" {
+			t.Errorf("chunk %q", buf)
+		}
+	}()
+
+	select {
+	case <-done:
+		closeRelease()
+	case <-time.After(1 * time.Second):
+		closeRelease()
+		<-done
+		t.Fatal("first chunk was not observed before the upstream sent its second write")
 	}
 }
