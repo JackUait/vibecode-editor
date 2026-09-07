@@ -101,6 +101,35 @@ func TestRoster_omits_a_provider_that_is_not_served_by_an_api_key(t *testing.T) 
 	}
 }
 
+func TestRoster_omits_featherless_because_the_router_has_no_role_repair(t *testing.T) {
+	env := rosterEnv(t)
+	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "featherless.json"),
+		[]byte(`{
+"name":"Featherless",
+"env":{
+"WISP_DECK_SUBSCRIPTION_PROVIDER":"featherless",
+"ANTHROPIC_BASE_URL":"https://api.featherless.ai",
+"ANTHROPIC_AUTH_TOKEN":"sk-test",
+"ANTHROPIC_DEFAULT_OPUS_MODEL":"zai-org/GLM-5.3-Flash",
+"ANTHROPIC_DEFAULT_SONNET_MODEL":"zai-org/GLM-5.3-Flash",
+"ANTHROPIC_DEFAULT_FABLE_MODEL":"zai-org/GLM-5.3-Flash",
+"ANTHROPIC_DEFAULT_HAIKU_MODEL":"zai-org/GLM-5.3-Flash",
+"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"262144"
+}
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.ConfigsList,
+		[]byte("Zhipu GLM:zhipu-glm.json\nFeatherless:featherless.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range models(Roster(env)) {
+		if strings.Contains(id, "cfg.featherless/") {
+			t.Fatalf("Featherless row offered with no repair proxy in the router: %s", id)
+		}
+	}
+}
+
 func TestRoster_labels_a_row_with_its_source(t *testing.T) {
 	for _, row := range Roster(rosterEnv(t)) {
 		if row.Model == "wisp/acct.personal/claude-opus-5" && !strings.Contains(row.Label, "Personal") {

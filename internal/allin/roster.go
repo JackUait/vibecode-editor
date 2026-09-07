@@ -96,6 +96,16 @@ func configRows(env Env) []Row {
 		if provider.Auth != claudeconfig.AuthAPIKey {
 			continue
 		}
+		// Featherless (RemoteCatalog) needs internal/rolefix's request/response
+		// repair to call a tool at all: it 400s on Claude Code's role:"system"
+		// messages and stops parsing tool calls when `thinking` is present.
+		// This router does neither repair, so a Featherless row would 400 or
+		// silently stop calling tools on its first turn. UserConfigured (the
+		// self-hosted `custom` provider) speaks the Anthropic API directly and
+		// needs no repair, so it is not skipped here.
+		if provider.RemoteCatalog {
+			continue
+		}
 		source := strings.TrimSuffix(config.File, ".json")
 		for _, model := range providerModels(env, config, provider) {
 			id := model.ID

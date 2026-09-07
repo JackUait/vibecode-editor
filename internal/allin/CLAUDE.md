@@ -102,20 +102,52 @@ named `wisp`, and a false positive here silently steals the launch from the
 **other** branch of the same function: a Featherless profile's launch is
 gated on the same `if`/`elif` chain, so a false-positive All-In match would
 strip the role-repair proxy that is the only reason a Featherless pane can
-call a tool at all. This was mutation-proven in review. The two proxies never
-need to stack — the router already forwards to whatever endpoint a row names,
-so a routed row never also needs Featherless's role-repair.
+call a tool at all. This was mutation-proven in review.
 
-### The config root must match `wrapper.sh` and `root.go` exactly
+### Featherless is excluded from the roster, because the router does no repair
 
-`Env`'s four paths (`AccountsList`, `AccountsDir`, `ConfigsList`, `ConfigsDir`)
-are built in `lib/tmux-session.sh` from
-`${XDG_CONFIG_HOME:-$HOME/.config}/wisp-deck`, the same root `wrapper.sh` and
-`cmd/wisp-deck-tui/root.go` use. A divergence here does not error — it makes
-`Roster` and `Resolve` read from a directory that simply does not exist, and
-`readLines`/`os.ReadFile` failures are treated as "nothing configured" rather
-than surfaced, so the picker would quietly offer zero extra rows instead of
-naming the wrong path.
+`configRows` (`roster.go`) skips any provider with `RemoteCatalog` set —
+currently only Featherless — even though it is `AuthAPIKey` and would
+otherwise pass the ChatGPT-exclusion check above. `internal/rolefix` exists
+because Featherless 400s on Claude Code's `role:"system"` capability
+listings and silently stops parsing tool calls once a request carries a
+`thinking` field; both are things Claude Code sends on every turn. This
+router does neither repair, so an unfiltered Featherless row would fail on
+its first turn — either a hard 400, or the failure mode the root `CLAUDE.md`
+already documents for an unrepaired Featherless pane: it can "look alive and
+still do nothing," rendering a model's raw tool-call markup as plain text
+while no tool ever runs.
+
+`UserConfigured` (the self-hosted `custom` provider) is deliberately NOT
+skipped by the same check: it speaks the Anthropic API directly and needs no
+repair. The two flags look similar (`SuppliesOwnModel()` is true for both)
+but only `RemoteCatalog` names the one needing a proxy this router doesn't
+have — checking `SuppliesOwnModel()` instead of `RemoteCatalog` would wrongly
+exclude every self-hosted profile too. Re-admitting Featherless requires
+composing `rolefix`'s request/response repairs into this router; `rolefix`'s
+own repair function is unexported and not reusable as-is. Guarded by
+`TestRoster_omits_featherless_because_the_router_has_no_role_repair`.
+
+### `Env` is built twice, from two different files, and both must agree
+
+`Roster` and `Resolve` are never called from the same `Env`. `Roster` (via
+`EnsureProfile`) is reached only from `ensure-allin`
+(`cmd/wisp-deck-tui/claude_config.go`), whose flags come from
+`bin/wisp-deck:233-236`, using `CONFIGS_DIR` defined at `bin/wisp-deck:194`.
+`Resolve` is reached only from the launch wrapper: `gt_claude_launch_wrapper`
+(`lib/tmux-session.sh`) builds its own `config_root` and passes it to
+`claude-allin` (`cmd/wisp-deck-tui/claude_allin.go`), which never runs
+`Roster` or `EnsureProfile`.
+
+The two are **textually independent recomputations** of
+`${XDG_CONFIG_HOME:-$HOME/.config}/wisp-deck` — `CONFIGS_DIR` is not exported,
+and `lib/tmux-session.sh` never reads it. Editing one without the other does
+not error: it makes the roster get built from one directory while the router
+resolves credentials from another. A row's picker id would then name a
+profile the router's `ConfigsDir` cannot find, and `Resolve` would return
+`allin: profile "…" is not ready` for a profile that plainly is. Change the
+config root in `bin/wisp-deck` and `lib/tmux-session.sh` together, or not at
+all.
 
 ### Models narrower than 200000 tokens are not offered
 
