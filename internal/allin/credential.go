@@ -74,6 +74,9 @@ func (r *FileResolver) Resolve(target Target) (Credential, error) {
 		return Credential{BaseURL: anthropicUpstream, Header: "Authorization", Value: "Bearer " + token}, nil
 	case KindConfig:
 		file := target.Source + ".json"
+		if err := routableProfile(r.Env, file); err != nil {
+			return Credential{}, err
+		}
 		key := claudeconfig.ReadAPIKey(r.Env.ConfigsDir, file)
 		base := claudeconfig.ReadBaseURL(r.Env.ConfigsDir, file)
 		if key == "" || base == "" {
@@ -82,6 +85,40 @@ func (r *FileResolver) Resolve(target Target) (Credential, error) {
 		return Credential{BaseURL: base, Header: "Authorization", Value: "Bearer " + key}, nil
 	}
 	return Credential{}, errors.New("allin: session target needs no credential")
+}
+
+// routableProfile refuses the providers configRows deliberately leaves out of
+// the roster. The id comes off the wire — hand-typed, or saved as a picker
+// default by an older build — so the roster's exclusions are advice until they
+// are enforced here too, and each one exists because of something this ROUTER
+// does not do:
+//
+//   - Anything but AuthAPIKey has no key to swap in. A ChatGPT profile is
+//     served by a bridge process, and the All-In profile itself is in this same
+//     configs list, so a row can name the router that is asking for it.
+//   - RemoteCatalog (Featherless) needs internal/rolefix's request and response
+//     repair to call a tool at all. Unrepaired it answers a 400, or renders the
+//     model's raw tool-call markup as text while nothing runs — a turn that
+//     looks alive and does nothing.
+//
+// UserConfigured is deliberately NOT refused: a self-hosted endpoint speaks the
+// Anthropic API directly. SuppliesOwnModel() is true for both, so checking that
+// instead would wrongly refuse every self-hosted profile.
+func routableProfile(env Env, file string) error {
+	name := ""
+	for _, config := range claudeconfig.Load(env.ConfigsList) {
+		if config.File == file {
+			name = config.Name
+			break
+		}
+	}
+	provider := claudeconfig.ProviderForConfig(env.ConfigsDir,
+		claudeconfig.Config{Name: name, File: file})
+	if provider.Auth != claudeconfig.AuthAPIKey || provider.RemoteCatalog {
+		return fmt.Errorf("allin: profile %q is served by %s, which this router cannot address",
+			strings.TrimSuffix(file, ".json"), provider.Name)
+	}
+	return nil
 }
 
 // validSource keeps a model id from naming a path. The id comes off the wire,

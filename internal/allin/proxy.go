@@ -39,11 +39,11 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 			raw, err := io.ReadAll(io.LimitReader(r.Body, maxRouteBytes+1))
 			_ = r.Body.Close()
 			if err != nil {
-				writeRoutingError(w, Target{}, fmt.Errorf("wisp-deck: reading request body: %w", err))
+				writeRoutingError(w, Target{}, fmt.Errorf("allin: reading request body: %w", err))
 				return
 			}
 			if len(raw) > maxRouteBytes {
-				writeRoutingError(w, Target{}, fmt.Errorf("wisp-deck: request body exceeds the %d byte routing cap", maxRouteBytes))
+				writeRoutingError(w, Target{}, fmt.Errorf("allin: request body exceeds the %d byte routing cap", maxRouteBytes))
 				return
 			}
 			body = raw
@@ -65,10 +65,12 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 				return
 			}
 			base = credential.BaseURL
-			payload["model"] = target.Model
-			if rewritten, err := json.Marshal(payload); err == nil {
-				body = rewritten
+			rewritten, err := rewriteModel(payload, target.Model)
+			if err != nil {
+				writeRoutingError(w, target, err)
+				return
 			}
+			body = rewritten
 			// Clear both credential headers unconditionally: Credential.Header
 			// names which one to set, but the session's own value on the OTHER
 			// header would otherwise survive and reach the swapped-to endpoint
@@ -88,12 +90,32 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 		}
 
 		if body != nil {
+			// ContentLength alone: Transport writes the header from it, and a
+			// header set here would only be a second copy to keep in step.
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.ContentLength = int64(len(body))
-			r.Header.Set("Content-Length", fmt.Sprint(len(body)))
 		}
 		newReverseProxy(upstreamURL).ServeHTTP(w, r)
 	})
+}
+
+// rewriteModel replaces the routed id in an already-parsed body and re-encodes
+// it. Both failures here must be fatal to the turn, and both are unreachable
+// today only because a non-local invariant holds — Route answers KindSession
+// for the empty id a nil payload yields, and a payload decoded from JSON always
+// re-encodes. Failing open would swap the credential in while leaving the
+// wisp/… id in the body, so a third-party endpoint would receive a routing id
+// it cannot answer, carrying someone else's real credential.
+func rewriteModel(payload map[string]any, model string) ([]byte, error) {
+	if payload == nil {
+		return nil, errors.New("allin: request body is not a JSON object")
+	}
+	payload["model"] = model
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("allin: re-encoding the routed request: %w", err)
+	}
+	return rewritten, nil
 }
 
 // validUpstream rejects a base URL httputil.ReverseProxy could never have
@@ -103,10 +125,10 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 func validUpstream(raw string) (*url.URL, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("wisp-deck: invalid upstream address %q: %w", raw, err)
+		return nil, fmt.Errorf("allin: invalid upstream address %q: %w", raw, err)
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return nil, fmt.Errorf("wisp-deck: invalid upstream address %q", raw)
+		return nil, fmt.Errorf("allin: invalid upstream address %q", raw)
 	}
 	return parsed, nil
 }

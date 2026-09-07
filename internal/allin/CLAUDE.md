@@ -62,6 +62,42 @@ declared on `Row` and never set by anything; it is now gone. Guarded by
 `TestRoster_never_declares_behaves_as`, which reads the serialized rows so it
 fails on a field that is re-declared *and* populated.
 
+### The roster's exclusions are advice until `Resolve` enforces them too
+
+`configRows` decides what the picker OFFERS. `Resolve` decides what the router
+will actually address, and a model id arrives off the wire — hand-typed into
+`/model`, or saved as a picker default by an older roster — so a row the roster
+would never have written still reaches it. `routableProfile` (`credential.go`)
+therefore re-applies the same two rules: not `AuthAPIKey` is refused (a ChatGPT
+profile has no key to swap in, and so does the All-In profile itself, which
+sits in the very same configs list), and `RemoteCatalog` is refused (Featherless
+needs `internal/rolefix`'s repairs to call a tool at all).
+
+It must key on `RemoteCatalog`, never on `SuppliesOwnModel()` — that is true for
+a self-hosted profile too, and a self-hosted endpoint speaks the Anthropic API
+directly and needs no repair. Guarded by
+`TestResolve_refuses_a_provider_the_roster_would_not_offer`,
+`TestResolve_refuses_the_router_profile_itself`, and the two
+`TestResolve_still_serves_*` counterweights that stop the refusal widening.
+
+### Every error carries the `allin:` prefix, never `wisp-deck:`
+
+`writeRoutingError` renders `fmt.Sprintf("wisp-deck: %v", err)` itself, so an
+error that already begins with that string reaches the user as
+`wisp-deck: wisp-deck: …`. Every error raised in this package uses the package
+prefix instead. Guarded by `TestHandler_never_doubles_the_wisp_deck_prefix`.
+
+### The rewrite fails closed, because failing open sends a credential with a routing id
+
+`rewriteModel` (`proxy.go`) refuses a nil payload and a body that will not
+re-encode, and the handler answers 400 rather than forwarding. Both are
+unreachable today, and only because a non-local invariant holds: `Route` answers
+`KindSession` for the empty id a nil payload yields, and a payload decoded from
+JSON always re-encodes. Failing open there is worse than it looks — the
+credential is swapped **before** the body is rewritten, so a third-party
+endpoint would receive an unresolvable `wisp/…` id while holding someone's real
+token. Guarded by `TestRewriteModel_refuses_a_body_it_cannot_re_address`.
+
 ### A stale credential must surface as HTTP 400, never 401 or 5xx
 
 Claude Code retries a 401, a 429, or a 5xx about eleven times before giving up.
@@ -82,14 +118,20 @@ before the proxy ever runs. Guarded by
 silently truncated body with a nil error — there is no way to tell "the body
 was exactly this size" from "the body was cut off" without seeing one more
 byte arrive. The handler reads `maxRouteBytes+1` and rejects anything that
-actually filled it. This matters more here than in an ordinary proxy: the
+actually filled it, and it never consults `r.ContentLength`: a chunked request
+reports `-1` there, so a cap enforced on that field passes the very body it
+exists to stop. This matters more here than in an ordinary proxy: the
 All-In profile sets `replaceBuiltInOptions: true` on its picker, so there is no
 built-in row to fall back to — a truncated body's `model` field would parse to
 some other row's id, or to none, and forward silently instead of failing
 loudly. Same lesson `internal/rolefix` already records for its own repair
 budget. Guarded by `TestHandler_rejects_a_body_over_the_routing_cap` and
 `TestHandler_routes_correctly_when_content_length_is_unknown` (a chunked
-request reports `ContentLength: -1`, so the cap can only be enforced by reading).
+request reports `ContentLength: -1`, so the cap can only be enforced by reading),
+and by `TestHandler_rejects_an_over_cap_body_that_declares_no_length`, which is
+the one that actually kills the `ContentLength`-plus-plain-`LimitReader` mutant:
+the two tests before it both pass while a truncated body is forwarded with a
+200.
 
 ### Both credential headers are deleted before the swap, unconditionally
 

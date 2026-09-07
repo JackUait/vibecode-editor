@@ -270,3 +270,127 @@ func TestHandler_streams_the_first_chunk_before_the_second_is_sent(t *testing.T)
 		t.Fatal("first chunk was not observed before the upstream sent its second write")
 	}
 }
+
+// errReader fails partway through a body, the way a client that goes away does.
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+
+// writeRoutingError renders "wisp-deck: %v" itself, so an error that already
+// carries that prefix reaches the user as "wisp-deck: wisp-deck: …". Every
+// error this package raises uses the package's own "allin:" prefix instead.
+func TestHandler_never_doubles_the_wisp_deck_prefix(t *testing.T) {
+	cases := map[string]func() *http.Request{
+		"body over the cap": func() *http.Request {
+			return httptest.NewRequest(http.MethodPost, "/v1/messages",
+				strings.NewReader(strings.Repeat("a", maxRouteBytes+1)))
+		},
+		"body that cannot be read": func() *http.Request {
+			return httptest.NewRequest(http.MethodPost, "/v1/messages", errReader{})
+		},
+	}
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			handler := NewHandler(fakeResolver{err: errors.New("must not be called")},
+				"http://unused.invalid")
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, build())
+			if body := recorder.Body.String(); strings.Contains(body, "wisp-deck: wisp-deck:") {
+				t.Fatalf("doubled prefix: %s", body)
+			}
+		})
+	}
+}
+
+func TestHandler_never_doubles_the_prefix_on_a_malformed_upstream(t *testing.T) {
+	handler := NewHandler(fakeResolver{credential: Credential{
+		BaseURL: "http://exa mple.com", Header: "Authorization", Value: "Bearer x",
+	}}, "http://unused.invalid")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"wisp/acct.personal/claude-opus-5"}`)))
+	if body := recorder.Body.String(); strings.Contains(body, "wisp-deck: wisp-deck:") {
+		t.Fatalf("doubled prefix: %s", body)
+	}
+}
+
+// A chunked request declares ContentLength -1, so a cap enforced on that field
+// never fires and io.LimitReader(body, max) hands back a silently truncated
+// body with a nil error. The read has to go one byte past the cap.
+func TestHandler_rejects_an_over_cap_body_that_declares_no_length(t *testing.T) {
+	reached := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer upstream.Close()
+
+	handler := NewHandler(fakeResolver{err: errors.New("must not be called")}, upstream.URL)
+	request := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(strings.Repeat("a", maxRouteBytes+1)))
+	request.ContentLength = -1
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status %d", recorder.Code)
+	}
+	if reached {
+		t.Fatal("a truncated body was forwarded instead of rejected")
+	}
+}
+
+// A compressed body is bytes the next hop cannot read, and this Director-level
+// constraint has no other symptom: the turn simply fails at the endpoint.
+func TestHandler_asks_the_upstream_for_an_undecoded_body(t *testing.T) {
+	var gotEncoding string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotEncoding = r.Header.Get("Accept-Encoding")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer upstream.Close()
+
+	handler := NewHandler(fakeResolver{credential: Credential{
+		BaseURL: upstream.URL, Header: "Authorization", Value: "Bearer swapped",
+	}}, "http://unused.invalid")
+	request := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"wisp/acct.personal/claude-opus-5"}`))
+	request.Header.Set("Accept-Encoding", "gzip, br")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	if gotEncoding != "identity" {
+		t.Fatalf("Accept-Encoding %q, want identity", gotEncoding)
+	}
+}
+
+// Both of these are unreachable through the handler today, and only because two
+// non-local invariants hold: Route returns KindSession for the empty id a nil
+// payload produces, and a payload decoded from JSON always re-encodes. Failing
+// open here means the credential is swapped while the wisp/… id is NOT, so a
+// third-party endpoint receives a routing id it cannot answer — carrying
+// someone's real credential.
+func TestRewriteModel_refuses_a_body_it_cannot_re_address(t *testing.T) {
+	if _, err := rewriteModel(nil, "claude-opus-5"); err == nil {
+		t.Fatal("a nil payload was accepted; assigning into it panics")
+	}
+	// A channel has no JSON encoding, so Marshal fails on the whole object.
+	if _, err := rewriteModel(map[string]any{"x": make(chan int)}, "claude-opus-5"); err == nil {
+		t.Fatal("an unencodable payload was accepted")
+	}
+}
+
+func TestRewriteModel_replaces_the_routed_id(t *testing.T) {
+	got, err := rewriteModel(map[string]any{
+		"model": "wisp/acct.personal/claude-opus-5", "max_tokens": float64(8),
+	}, "claude-opus-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["model"] != "claude-opus-5" || decoded["max_tokens"] != float64(8) {
+		t.Fatalf("decoded %v", decoded)
+	}
+}
