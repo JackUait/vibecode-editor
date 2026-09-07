@@ -514,3 +514,51 @@ func TestEnsureContextBudgetAll_sweeps_every_profile_and_skips_what_it_cannot_pa
 		t.Errorf("legacy budget = %q, want %q", got, "131072")
 	}
 }
+
+// Astra's window is Codex's, not the API docs': the app-server enforces the
+// registry's `context_window`, and a profile that maps every alias to Astra
+// takes its whole budget from that one number. Overshooting it lands in the
+// >=1M branch, which ships neither an auto-compact cap nor an output reserve —
+// the session then grows past what Codex will accept and /compact cannot
+// recover it. Live registry for client 0.153.4, fetched 2026-09-07:
+// gpt-6-astra context_window = 272000.
+func TestWriteModelMappings_astra_declares_the_window_codex_enforces(t *testing.T) {
+	const codexAstraWindow = 272000
+
+	if window, _, ok := ModelLimit("gpt-6-astra"); !ok || window != codexAstraWindow {
+		t.Errorf("ModelLimit(gpt-6-astra) = (%d, %v), want (%d, true)", window, ok, codexAstraWindow)
+	}
+
+	dir := t.TempDir()
+	listFile := filepath.Join(dir, "list")
+	file, err := AddForProvider(listFile, dir, "astra probe", "openai-chatgpt")
+	if err != nil {
+		t.Fatalf("AddForProvider: %v", err)
+	}
+	models := ProviderModels["openai-chatgpt"]
+	astra := -1
+	for i, m := range models {
+		if m == "gpt-6-astra" {
+			astra = i
+		}
+	}
+	if astra < 0 {
+		t.Fatal("gpt-6-astra missing from the openai-chatgpt model list")
+	}
+	if err := WriteModelMappings(dir, file, [4]int{astra, astra, astra, astra}, models); err != nil {
+		t.Fatalf("WriteModelMappings: %v", err)
+	}
+
+	env := readEnvMap(t, filepath.Join(dir, file))
+	want := map[string]string{
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  strconv.Itoa(codexAstraWindow),
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": strconv.Itoa(codexAstraWindow),
+		"CLAUDE_CODE_DISABLE_1M_CONTEXT":  "1",
+		"CLAUDE_CODE_MAX_OUTPUT_TOKENS":   "32000",
+	}
+	for key, value := range want {
+		if got := env[key]; got != value {
+			t.Errorf("with every alias on Astra, %s = %q, want %q", key, got, value)
+		}
+	}
+}

@@ -102,16 +102,27 @@ var Providers = []Provider{
 		Auth:           AuthCodexChatGPT,
 		MirrorOpenCode: false,
 		// Fable is the alias a GPT pane launches on, so Astra is what the
-		// session actually runs. The other three stay on the 5.6 tier, which
-		// keeps ContextBudget's minimum at 272000 — /model and subagents move
-		// freely across all four, so the session must fit the tightest of them.
+		// session actually runs. The whole tier shares one 272000 window, so
+		// the budget is 272000 whichever of them /model or a subagent picks.
 		DefaultModels: [4]string{"gpt-5.6-terra", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"},
 		Models: []Model{
 			// Astra reaches the bridge only from Codex 0.153.0 or newer: the
 			// engine's model allowlist is whatever the running app-server
 			// reports, so an older Codex answers a picked Astra with
 			// "model not available" rather than launching it.
-			{"gpt-6-astra", 0, 0, 1050000, 0},
+			//
+			// The window is Codex's `context_window`, because the app-server
+			// is what a bridged turn is actually measured against. Both copies
+			// of its registry agree — the one embedded in the 0.153.4 binary
+			// and the server-fetched ~/.codex/models_cache.json — and the
+			// whole tier reports the same 272000, which is why every sibling
+			// below carries it too. The larger `max_context_window` beside it
+			// is not what runs unconfigured: the override that would reach it,
+			// config.toml's `model_context_window`, is recorded as null in
+			// every rollout here. It shipped as 1050000, which put Astra in
+			// the >=1M branch that declares no auto-compact cap and no output
+			// reserve at all.
+			{"gpt-6-astra", 0, 0, 272000, 0},
 			{"gpt-5.6-sol", 0, 0, 272000, 0},
 			{"gpt-5.6-terra", 0, 0, 272000, 0},
 			{"gpt-5.6-luna", 0, 0, 272000, 0},
