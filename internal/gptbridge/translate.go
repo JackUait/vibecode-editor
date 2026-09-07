@@ -166,6 +166,53 @@ type toolPlan struct {
 // what makes that failure reachable.
 const taskOutputTool = "TaskOutput"
 
+// taskUpdateTool is Claude Code's checklist tool, and a call that carries a
+// note but no status is a silent no-op on the task's state. Claude Code builds
+// its acknowledgement as "Updated task #5 description" and reports a
+// statusChange only when the call supplied one, so a model that writes its
+// completion report into the description reads that back as success while the
+// task stays in_progress for the rest of the session. Measured across this
+// machine's transcripts, the bridged model shipped that shape on 44% of its
+// TaskUpdate calls (1005 of 2284; 402 note-only, 244 metadata-only) against
+// 10.8% for native Claude panes — 35 of whose 36 were dependency wiring, which
+// changes no status by design. It is what leaves a finished checklist reading
+// "7 done, 1 in progress".
+const taskUpdateTool = "TaskUpdate"
+
+// checklistNoteRefusal names the status the call left standing rather than
+// demanding a new one: a model forced to invent a status would reopen finished
+// work, which is worse than the note it replaced.
+const checklistNoteRefusal = "TaskUpdate was not performed: it names no status, so it would have " +
+	"rewritten the task's text and left the status exactly as it stands — which is how a finished " +
+	"task stays in_progress for the rest of the session. Send it again with an explicit status: " +
+	"\"completed\" if the work this note describes is done, otherwise whatever status the task " +
+	"already holds (TaskGet reports it). The description and metadata may travel with it."
+
+// unstatusedChecklistNote reports whether a checklist call rewrites a task's
+// stored text without saying where the task now stands. Dependency wiring, an
+// owner claim and a renamed subject carry no status by design, so a note is the
+// only shape refused.
+func unstatusedChecklistNote(name string, arguments json.RawMessage) bool {
+	if name != taskUpdateTool {
+		return false
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &fields); err != nil {
+		return false
+	}
+	// A present-but-empty status names nothing, so the key alone must not open
+	// the gate — that is the hole this shape would come back through.
+	if raw, present := fields["status"]; present {
+		var status string
+		if err := json.Unmarshal(raw, &status); err == nil && status != "" {
+			return false
+		}
+	}
+	_, note := fields["description"]
+	_, metadata := fields["metadata"]
+	return note || metadata
+}
+
 // withholdUnreliableTools drops tools the bridge cannot serve dependably. It
 // yields to tool_choice rather than converting a host-forced call into a 400:
 // a named choice is honoured outright, and "any" keeps the tool when nothing

@@ -116,6 +116,14 @@ func (e staleThreadError) Error() string {
 	return fmt.Sprintf("Codex thread %q no longer holds the client's conversation", e.threadID)
 }
 
+// refusedDynamicToolError carries a call the bridge answers itself instead of
+// relaying. The turn stays healthy: Codex reads the unsuccessful result and
+// keeps generating, so the call never reaches Claude and the thread is not
+// torn down.
+type refusedDynamicToolError struct{ reason string }
+
+func (e refusedDynamicToolError) Error() string { return e.reason }
+
 // historyDigests fingerprints each history item. injectHistory refuses an item
 // it cannot encode, so a started thread's items always marshal; an item that
 // somehow does not gets a digest of its Go rendering rather than a shared
@@ -614,6 +622,17 @@ func (e *Engine) runTurnBoundary(
 		case request := <-state.requests:
 			call, err := e.acceptDynamicTool(state, request)
 			if err != nil {
+				var refused refusedDynamicToolError
+				if errors.As(err, &refused) {
+					if err := e.rpc.Respond(request.ID, map[string]any{
+						"success":      false,
+						"contentItems": []ToolOutputItem{{Type: "inputText", Text: refused.reason}},
+					}); err != nil {
+						e.cleanupTurn(state, true)
+						return AnthropicMessage{}, err
+					}
+					continue
+				}
 				_ = e.rpc.RespondError(request.ID, -32602, err.Error(), nil)
 				e.cleanupTurn(state, true)
 				return AnthropicMessage{}, err
@@ -684,6 +703,10 @@ func (e *Engine) acceptDynamicTool(state *engineTurn, request ServerRequest) (Dy
 	}
 	if !validJSONObject(params.Arguments) {
 		return DynamicToolCall{}, errors.New("dynamic tool arguments must be an object")
+	}
+	// Refuse before registering: an answered call has no pending entry to reap.
+	if unstatusedChecklistNote(originalName, params.Arguments) {
+		return DynamicToolCall{}, refusedDynamicToolError{checklistNoteRefusal}
 	}
 	bridgeID, err := randomBridgeID("toolu_wisp_")
 	if err != nil {
