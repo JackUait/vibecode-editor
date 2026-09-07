@@ -50,6 +50,41 @@ opencode_adapter_prefix() {
 # is supervised once when the generation runtime is present; the screenshot
 # filter remains inside that chain as its sole PTY boundary.
 # Usage: build_ai_launch_cmd <tool> <tool_cmd> [extra_args_or_project_dir]
+
+# gt_claude_launch_wrapper <settings_path> <provider_marker>
+#
+# Print the argv prefix that wraps one Claude launch, or nothing. Gated on the
+# settings file itself holding wisp/ picker rows, never on the profile's
+# display name: claudeconfig.Rename can retarget the name at any time, and a
+# profile still carrying those rows must still route or every turn goes to
+# the session's own upstream carrying an id nothing there can resolve.
+# Featherless keeps the role-repair proxy otherwise. The two never stack: the
+# router already forwards to whatever endpoint a row names.
+gt_claude_launch_wrapper() {
+  local settings_path="$1" provider_marker="$2"
+  local config_root="${WISP_DECK_CONFIG_DIR:-$HOME/.config/wisp-deck}"
+  local settings_q accounts_list_q accounts_dir_q configs_list_q configs_dir_q
+
+  if [ -f "$settings_path" ] && grep -q 'wisp/' "$settings_path" 2>/dev/null; then
+    printf -v settings_q '%q' "$settings_path"
+    printf -v accounts_list_q '%q' "$config_root/claude-accounts.list"
+    printf -v accounts_dir_q '%q' "$config_root/claude-accounts"
+    printf -v configs_list_q '%q' "$config_root/claude-configs.list"
+    printf -v configs_dir_q '%q' "$config_root/claude-configs"
+    printf 'wisp-deck-tui claude-allin --settings %s --accounts-list %s --accounts-dir %s --configs-list %s --configs-dir %s --' \
+      "$settings_q" "$accounts_list_q" "$accounts_dir_q" "$configs_list_q" "$configs_dir_q"
+    return 0
+  fi
+
+  if [ "$provider_marker" = "featherless" ]; then
+    printf -v settings_q '%q' "$settings_path"
+    printf 'wisp-deck-tui claude-rolefix --settings %s --' "$settings_q"
+    return 0
+  fi
+
+  return 0
+}
+
 build_ai_launch_cmd() {
   local tool="$1" tool_cmd="$2" raw config_root state_q generation_q config_q raw_q
 
@@ -131,21 +166,22 @@ build_ai_launch_cmd() {
     raw="wisp-deck-tui claude-gpt-adapter --codex ${codex_q} -- bash -c ${raw_q}"
   fi
 
-  # Featherless mishandles two things Claude Code sends. It validates the
-  # published Messages schema, where a message role is only "user" or
-  # "assistant", so the capability listings Claude Code puts in messages[] with
-  # role "system" draw a 400 that kills the turn. And a request declaring
-  # "thinking" turns its tool-call parser off, so the model's own tool call
-  # comes back as raw XML text and the pane never runs anything. The proxy
-  # repairs both and points this session's settings overlay at itself; with no
-  # overlay there is nothing to redirect, so the launch is left alone.
-  if [ "$tool" = "claude" ] \
-     && [ "${WISP_DECK_CLAUDE_PROVIDER:-}" = "featherless" ] \
-     && [ -n "${WISP_DECK_CLAUDE_SETTINGS:-}" ]; then
-    local settings_q
-    printf -v settings_q '%q' "$WISP_DECK_CLAUDE_SETTINGS"
-    printf -v raw_q '%q' "$raw"
-    raw="wisp-deck-tui claude-rolefix --settings ${settings_q} -- bash -c ${raw_q}"
+  # A settings file holding wisp/ picker rows needs the cross-account router.
+  # Otherwise, Featherless mishandles two things Claude Code sends. It
+  # validates the published Messages schema, where a message role is only
+  # "user" or "assistant", so the capability listings Claude Code puts in
+  # messages[] with role "system" draw a 400 that kills the turn. And a
+  # request declaring "thinking" turns its tool-call parser off, so the
+  # model's own tool call comes back as raw XML text and the pane never runs
+  # anything. Either proxy points this session's settings overlay at itself;
+  # with no overlay there is nothing to redirect, so the launch is left alone.
+  if [ "$tool" = "claude" ] && [ -n "${WISP_DECK_CLAUDE_SETTINGS:-}" ]; then
+    local wrapper_prefix
+    wrapper_prefix="$(gt_claude_launch_wrapper "$WISP_DECK_CLAUDE_SETTINGS" "${WISP_DECK_CLAUDE_PROVIDER:-}")"
+    if [ -n "$wrapper_prefix" ]; then
+      printf -v raw_q '%q' "$raw"
+      raw="${wrapper_prefix} bash -c ${raw_q}"
+    fi
   fi
   if [ "$tool" = "claude" ] \
      && [ -n "${WISP_DECK_ATTENTION_FILE:-}" ] \
