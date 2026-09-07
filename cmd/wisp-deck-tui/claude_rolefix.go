@@ -34,10 +34,6 @@ func newClaudeRolefixCommand(run claudeRolefixRunner) *cobra.Command {
 // newClaudeRolefixCommandWithExit wraps one Claude launch in a loopback proxy
 // that repairs the message roles a strict Anthropic endpoint rejects, and points
 // the session's settings overlay at it.
-//
-// Nothing here may cost the user their session: an overlay that cannot be read,
-// declares no endpoint, or already points somewhere local runs the child exactly
-// as it was going to run anyway.
 func newClaudeRolefixCommandWithExit(run claudeRolefixRunner, exit func(int)) *cobra.Command {
 	var settingsPath string
 	command := &cobra.Command{
@@ -46,48 +42,60 @@ func newClaudeRolefixCommandWithExit(run claudeRolefixRunner, exit func(int)) *c
 		Hidden:       true,
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
-		RunE: func(command *cobra.Command, argv []string) error {
-			if run == nil {
-				return errors.New("child runner is unavailable")
-			}
-			finish := func(err error) error {
-				var code exitCodeError
-				if errors.As(err, &code) {
-					// Claude's own exit status is the session's; surfacing it as
-					// a cobra error would print a banner and lose the code.
-					if exit != nil {
-						exit(int(code))
-					}
-					return nil
-				}
-				return err
-			}
-			upstream, err := rolefix.UpstreamFromSettings(settingsPath)
-			if err != nil {
-				return finish(run(argv))
-			}
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				return finish(run(argv))
-			}
-			defer func() { _ = listener.Close() }()
-
-			server := &http.Server{Handler: rolefix.NewHandler(upstream)}
-			go func() { _ = server.Serve(listener) }()
-			defer func() { _ = server.Close() }()
-
-			proxyURL := fmt.Sprintf("http://%s", listener.Addr().String())
-			if err := rolefix.PointSettingsAt(settingsPath, proxyURL); err != nil {
-				// The overlay still names the real endpoint, so the session is
-				// no worse off than without this wrapper.
-				return finish(run(argv))
-			}
-			return finish(run(argv))
+		RunE: func(_ *cobra.Command, argv []string) error {
+			return runLoopbackWrappedLaunch(settingsPath, argv, run, exit, rolefix.NewHandler)
 		},
 	}
 	command.Flags().StringVar(&settingsPath, "settings", "",
 		"Path to the launch settings overlay to point at the proxy")
 	return command
+}
+
+// runLoopbackWrappedLaunch is the launch shape claude-rolefix and claude-allin
+// both need: point the settings overlay at a fresh loopback listener serving
+// newHandler(upstream), then run the child and propagate its exit code.
+//
+// Nothing here may cost the user their session: an overlay that cannot be
+// read, declares no endpoint, or already points somewhere local, a listener
+// that cannot bind, or a failed overlay rewrite, all fall through to running
+// the child exactly as it was going to run anyway.
+func runLoopbackWrappedLaunch(settingsPath string, argv []string, run claudeRolefixRunner, exit func(int), newHandler func(upstream string) http.Handler) error {
+	if run == nil {
+		return errors.New("child runner is unavailable")
+	}
+	finish := func(err error) error {
+		var code exitCodeError
+		if errors.As(err, &code) {
+			// The child's own exit status is the session's; surfacing it as
+			// a cobra error would print a banner and lose the code.
+			if exit != nil {
+				exit(int(code))
+			}
+			return nil
+		}
+		return err
+	}
+	upstream, err := rolefix.UpstreamFromSettings(settingsPath)
+	if err != nil {
+		return finish(run(argv))
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return finish(run(argv))
+	}
+	defer func() { _ = listener.Close() }()
+
+	server := &http.Server{Handler: newHandler(upstream)}
+	go func() { _ = server.Serve(listener) }()
+	defer func() { _ = server.Close() }()
+
+	proxyURL := fmt.Sprintf("http://%s", listener.Addr().String())
+	if err := rolefix.PointSettingsAt(settingsPath, proxyURL); err != nil {
+		// The overlay still names the real endpoint, so the session is
+		// no worse off than without this wrapper.
+		return finish(run(argv))
+	}
+	return finish(run(argv))
 }
 
 func runClaudeRolefixChild(argv []string) error {

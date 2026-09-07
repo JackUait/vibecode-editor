@@ -2,11 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
+// The child is launched against a live local router: proving the rewritten
+// URL is already accepting connections is what rules out a first-turn race
+// against a router that has not started serving yet.
 func TestClaudeAllIn_points_the_overlay_at_the_local_router(t *testing.T) {
 	dir := t.TempDir()
 	settings := filepath.Join(dir, "overlay.json")
@@ -22,6 +28,14 @@ func TestClaudeAllIn_points_the_overlay_at_the_local_router(t *testing.T) {
 		}
 		_ = json.Unmarshal(data, &parsed)
 		seen = parsed.Env["ANTHROPIC_BASE_URL"]
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Get(seen + "/healthz")
+		if err != nil {
+			t.Errorf("router is not listening when the child starts: %v", err)
+			return nil
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	})
 	command.SetArgs([]string{"--settings", settings, "--", "true"})
