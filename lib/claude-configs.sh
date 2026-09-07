@@ -94,7 +94,11 @@ get_claude_config_provider() {
     | select(type == "string")
   ' "$settings_path" 2>/dev/null)" || return 0
   case "$provider" in
-    zhipu|mimo|moonshot|moonshot-coding|openai-chatgpt|featherless) printf '%s\n' "$provider" ;;
+    # allin has no launch decision keyed to it, unlike openai-chatgpt and
+    # featherless — it exists so _subscription_choice_ready can judge the
+    # router profile's readiness by marker instead of the token check it has
+    # none of.
+    zhipu|mimo|moonshot|moonshot-coding|openai-chatgpt|featherless|allin) printf '%s\n' "$provider" ;;
   esac
 }
 

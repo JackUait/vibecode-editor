@@ -1664,6 +1664,10 @@ _subscription_choice_ready() {
     _tool_command_ready codex
     return
   fi
+  # All-In routes each request through the Keychain, so it carries no
+  # ANTHROPIC_AUTH_TOKEN by design — the token check below would always
+  # refuse it.
+  [ "$provider" = "allin" ] && return 0
   command -v jq >/dev/null 2>&1 || return 1
   jq -er '.env.ANTHROPIC_AUTH_TOKEN | select(type == "string" and length > 0)' "$config_path" >/dev/null 2>&1
 }

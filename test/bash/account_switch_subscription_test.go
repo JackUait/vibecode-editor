@@ -486,6 +486,45 @@ func TestApplyAccountSwitchChoice_subscription_relaunches_without_popup(t *testi
 	}
 }
 
+// The generated All-In profile has no ANTHROPIC_AUTH_TOKEN by design — its
+// credentials come from the Keychain per request, not from this file — so it
+// needs its own marker branch in both functions that gate a subscription
+// switch. Without get_claude_config_provider allowlisting "allin", the marker
+// is dropped, the name fallback lands on zhipu, and _subscription_choice_ready
+// then refuses on the missing token: clicking All-In in the pill's menu does
+// nothing.
+func TestApplyAccountSwitchChoice_allin_relaunches_without_a_token(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "claude-accounts.list", "Work:work\n")
+	writeTempFile(t, filepath.Join(dir, "claude-accounts", "work"), ".keep", "")
+	allinSettings := writeTempFile(t, filepath.Join(dir, "claude-configs"), "allin.json",
+		`{"env":{"WISP_DECK_SUBSCRIPTION_PROVIDER":"allin","ANTHROPIC_BASE_URL":"https://api.anthropic.com"}}`)
+	writeTempFile(t, dir, "claude-configs.list", "All-In:allin.json\n")
+
+	providerOut, providerCode := runBashFunc(t, "lib/claude-configs.sh", "get_claude_config_provider",
+		[]string{allinSettings}, nil)
+	assertExitCode(t, providerCode, 0)
+	if strings.TrimSpace(providerOut) != "allin" {
+		t.Fatalf("get_claude_config_provider(allin.json) = %q, want allin", providerOut)
+	}
+
+	rec := filepath.Join(dir, "tmux.log")
+	bin := switcherResultMockTmux(t, dir, "work", "", "CANCEL", rec)
+	relaunch := subscriptionRelaunchCtx(t, dir)
+	env := buildEnv(t, []string{bin}, "HOME="+dir)
+
+	_, code := runBashSnippet(t, accountSwitchSnippet(t,
+		fmt.Sprintf("apply_account_switch_choice tmux %q subscription allin.json", relaunch)), env)
+
+	assertExitCode(t, code, 0)
+	logOut, _ := runBashSnippet(t, fmt.Sprintf("cat %q", rec), nil)
+	assertContains(t, logOut, "respawn-pane")
+	ptr, _ := runBashSnippet(t, fmt.Sprintf("cat %q", filepath.Join(dir, "claude-config")), nil)
+	if strings.TrimSpace(ptr) != "allin.json" {
+		t.Fatalf("config pointer = %q, want allin.json", ptr)
+	}
+}
+
 func TestApplyAccountSwitchChoice_reads_session_identities_once(t *testing.T) {
 	dir := t.TempDir()
 	writeTempFile(t, filepath.Join(dir, "claude-accounts", "work"), ".keep", "")

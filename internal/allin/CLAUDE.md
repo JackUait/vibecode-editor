@@ -320,3 +320,40 @@ user can fix it — but the fix is manual: open a wisp-deck tab on that login
 once, which makes Claude Code itself refresh the token. Nothing in this
 package attempts a refresh. This is a stated v1 decision (see "Открытые
 риски" in the spec), not a bug to fix reflexively.
+
+### `allin` is a third key in `get_claude_config_provider`'s allowlist, and it is admitted for a different reason than the other two
+
+`ConfigReady` (`internal/claudeconfig/claudeconfig.go`) treats `AuthWispRouter`
+as always ready — the profile's credentials are resolved per request from the
+Keychain, so there is nothing local to check. That marks the switcher's
+All-In row selectable on the Go side, but the shell side that actually
+performs the switch (`lib/account-switch.sh`) never learned the same fact:
+
+- `get_claude_config_provider` (`lib/claude-configs.sh`) only returns a marker
+  it allowlists; `allin` was absent, so it read as no marker at all.
+- With no marker, `_subscription_choice_ready`'s name-fallback `case`
+  (`lib/account-switch.sh`) matches nothing and lands on `provider=zhipu`.
+- Zhipu is an `AuthAPIKey` provider in spirit, so readiness fell through to
+  `jq -er '.env.ANTHROPIC_AUTH_TOKEN | select(...)'` — a check the generated
+  All-In profile can never pass, because it deliberately carries no
+  `ANTHROPIC_AUTH_TOKEN` (`routerEnv` in `profile.go`).
+
+So clicking All-In in the pill's menu did nothing: the row was offered
+(`ConfigReady` said yes) and then silently refused (the shell said no).
+
+`allin` joins the allowlist for a **different reason** than `featherless` (the
+gateway needing the repair proxy) or `openai-chatgpt` (the GPT bridge): no
+shell launch decision is keyed to it — `wrapper.sh`, `lib/tmux-session.sh` and
+`lib/account-switch.sh` all branch only on `openai-chatgpt` or `featherless`
+literal strings, never on `allin`. It exists purely so
+`_subscription_choice_ready` can name the router profile and give it its own
+branch — `return 0` before the token check — mirroring the honest parallel
+already in that function: the ChatGPT branch, which likewise cannot be judged
+by a token.
+
+Guarded by `TestApplyAccountSwitchChoice_allin_relaunches_without_a_token`
+(`test/bash/account_switch_subscription_test.go`), which fails two different
+ways depending on which half of the fix is missing: no allowlist entry means
+`get_claude_config_provider` reports no marker at all, while no `allin` branch
+in `_subscription_choice_ready` means the marker resolves correctly but the
+switch is still refused on the missing token.
