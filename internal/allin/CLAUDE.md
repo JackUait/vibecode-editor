@@ -410,14 +410,22 @@ manufacture the very silence Claude Code's byte watchdog aborts on) and the
   `wisp/cfg.<profile>/` and `rewriteModel` puts the remainder back in the body,
   so `gpt-6-astra` is what `Engine.Execute` checks against its allowlist —
   which is whatever the **running** app-server reported from `model/list`, not
-  the catalog. Verified against a live 0.153.4 app-server:
-  `gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5,
-  gpt-5.4-mini, gpt-5.3-codex-spark`. Guarded by
+  the catalog. Guarded by
   `TestHandler_sends_a_chatgpt_turn_to_the_bridge_with_the_bare_codex_model_id`.
-- **`gpt-5.4` is in the catalog and NOT in that live list**, so its row resolves,
-  reaches the engine, and comes back as a deterministic 400 naming the model. A
-  catalog trim belongs in `internal/claudeconfig`, not here — the roster is built
-  by a process with no app-server, so it cannot ask.
+- **The catalog and that allowlist are two different lists, and All-In is what
+  makes them matter.** `claudeconfig`'s `openai-chatgpt` `Models` are written by
+  hand; the roster turns each into a picker row; the engine refuses any the
+  running app-server does not report. Probed against a live 0.153.4 app-server
+  on 2026-09-08, `includeHidden:false` (what `StartAppServer` asks for) returns
+  seven: `gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5,
+  gpt-5.4-mini, gpt-5.3-codex-spark`. `includeHidden:true` adds only
+  `gpt-reserve` and `codex-auto-review`, both `hidden`, and neither reaches the
+  allowlist. The catalog held an eighth, `gpt-5.4`, which is served under
+  neither flag — a row that resolved and then 400d — so it was removed.
+  `TestLiveChatGPTCatalogMatchesTheAppServer` (env-gated, one app-server start,
+  no quota) is what catches the next drift, in both directions. Note the live
+  list is per-subscription: a narrower ChatGPT plan legitimately reports fewer,
+  so read a failure against the account before editing the catalog.
 - **ChatGPT rows land at the flat 200k window like every other row.** The whole
   5.6/6 tier declares 272000 (over `minRosterContext`, so it is offered) and
   `gpt-5.3-codex-spark`'s 128000 is dropped. No row carries `[1m]`, for the

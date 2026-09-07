@@ -127,7 +127,13 @@ var Providers = []Provider{
 			{"gpt-5.6-terra", 0, 0, 272000, 0},
 			{"gpt-5.6-luna", 0, 0, 272000, 0},
 			{"gpt-5.5", 0, 0, 272000, 0},
-			{"gpt-5.4", 0, 0, 272000, 0},
+			// gpt-5.4 was here and is gone: a live 0.153.4 app-server does not
+			// report it from model/list, hidden or not, so the engine's
+			// allowlist refuses it. Harmless while these ids only named a
+			// mapping, but All-In turns each one into a picker row, and a row
+			// that resolves and then 400s is the failure this feature twice
+			// declined to ship. internal/usage keeps its price: old rollouts
+			// still name it.
 			{"gpt-5.4-mini", 0, 0, 272000, 0},
 			{"gpt-5.3-codex-spark", 0, 0, 128000, 0},
 		},

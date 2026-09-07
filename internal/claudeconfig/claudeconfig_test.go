@@ -384,13 +384,16 @@ func TestOpenAIProviderModelsAndLimits(t *testing.T) {
 	if provider.Key != "openai-chatgpt" {
 		t.Fatalf("provider key = %q, want openai-chatgpt", provider.Key)
 	}
+	// Exactly what a live Codex app-server reports from model/list with
+	// includeHidden:false, which is what Engine's allowlist is built from — an
+	// id here that it does not serve is a picker row that 400s. Probed against
+	// 0.153.4 on 2026-09-08; gpt-5.4 was in this list and is not served.
 	want := []string{
 		"gpt-6-astra",
 		"gpt-5.6-sol",
 		"gpt-5.6-terra",
 		"gpt-5.6-luna",
 		"gpt-5.5",
-		"gpt-5.4",
 		"gpt-5.4-mini",
 		"gpt-5.3-codex-spark",
 	}
