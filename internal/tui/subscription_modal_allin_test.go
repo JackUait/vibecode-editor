@@ -59,8 +59,31 @@ func TestAddSubscriptionLogin_crossing_two_sources_creates_the_allin_profile(t *
 	if m.subscriptionModal.err != nil {
 		t.Fatalf("addSubscriptionLogin failed: %v", m.subscriptionModal.err)
 	}
-	if file := allin.ProfileFile(m.claudeConfigsList); file == "" {
+	file := allin.ProfileFile(m.claudeConfigsList)
+	if file == "" {
 		t.Fatal("adding a second login did not create the All-In profile")
+	}
+
+	// The profile must be visible and selectable in the SAME open modal,
+	// without a relaunch — m.claudeConfigs has to be reloaded after the
+	// write, not left holding the pre-creation list.
+	found := false
+	for _, p := range m.subscriptionProfiles() {
+		if p.File == file {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("newly created All-In profile is not visible in the open modal: %+v", m.subscriptionProfiles())
+	}
+
+	// The cursor must land on the login just added ("Work", claudeAccounts[0],
+	// so subscriptionModalLoginIndex() == 1). subscriptionLoginRowStart() is
+	// len(subscriptionProfiles())+1, which grows by one the moment the All-In
+	// config row is created — computing the cursor BEFORE that reload leaves
+	// it one row short, landing on Default instead.
+	if got := m.subscriptionModalLoginIndex(); got != 1 {
+		t.Fatalf("cursor landed on login index %d, want 1 (Work)", got)
 	}
 }
 
@@ -165,7 +188,99 @@ func TestSaveSubscriptionDraft_creates_allin_when_a_model_only_save_completes_re
 	if m.subscriptionModal.err != nil {
 		t.Fatalf("saveSubscriptionDraft failed: %v", m.subscriptionModal.err)
 	}
-	if allin.ProfileFile(m.claudeConfigsList) == "" {
+	allInFile := allin.ProfileFile(m.claudeConfigsList)
+	if allInFile == "" {
 		t.Fatal("a model-only save that completed readiness did not create the All-In profile")
+	}
+
+	// The new profile must be visible in the same open modal without a
+	// relaunch — m.claudeConfigs has to be reloaded after ensureAllIn writes.
+	found := false
+	for _, p := range m.subscriptionProfiles() {
+		if p.File == allInFile {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("newly created All-In profile is not visible in the open modal: %+v", m.subscriptionProfiles())
+	}
+}
+
+// Renaming a login changes the display label roster.go's accountRows embeds
+// in every one of its rows for that login. A stale label survives in an
+// already-existing All-In profile until something refreshes it.
+func TestRenameSubscriptionLogin_refreshes_an_existing_allin_profile(t *testing.T) {
+	m := newBareSubscriptionMenu(t)
+	m.addSubscriptionLogin("Work") // two sources: creates the profile
+	file := allin.ProfileFile(m.claudeConfigsList)
+	if file == "" {
+		t.Fatal("setup: All-In profile was not created")
+	}
+
+	m.subscriptionModal.profileCursor = m.subscriptionLoginRowStart() + 1 // "Work"
+	m.renameSubscriptionLogin("Office")
+
+	if m.subscriptionModal.err != nil {
+		t.Fatalf("renameSubscriptionLogin failed: %v", m.subscriptionModal.err)
+	}
+	data, err := os.ReadFile(filepath.Join(m.claudeConfigsDir, file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "Work ·") {
+		t.Fatalf("stale login label survived the rename: %s", data)
+	}
+	if !strings.Contains(string(data), "Office ·") {
+		t.Fatalf("renamed login label missing from the refreshed profile: %s", data)
+	}
+}
+
+// Renaming a subscription profile changes the display name roster.go's
+// configRows embeds in every one of its rows for that profile. A stale name
+// survives in an already-existing All-In profile until something refreshes
+// it.
+func TestRenameSubscriptionProfile_refreshes_an_existing_allin_profile(t *testing.T) {
+	m := newBareSubscriptionMenu(t) // Default alone: one source
+	file, err := claudeconfig.AddForProvider(m.claudeConfigsList, m.claudeConfigsDir, "Zhipu GLM", "zhipu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := claudeconfig.WriteAPIKey(m.claudeConfigsDir, file, "sk-test"); err != nil {
+		t.Fatal(err)
+	}
+	m.SetClaudeConfigs(LoadClaudeConfigsList(m.claudeConfigsList))
+	m.ensureAllIn() // two sources now (Default + Zhipu GLM): creates
+	allInFile := allin.ProfileFile(m.claudeConfigsList)
+	if allInFile == "" {
+		t.Fatal("setup: All-In profile was not created")
+	}
+	m.SetClaudeConfigs(LoadClaudeConfigsList(m.claudeConfigsList)) // pick up the new all-in row too
+
+	profiles := m.subscriptionProfiles()
+	idx := -1
+	for i, p := range profiles {
+		if p.File == file {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("zhipu profile not listed: %+v", profiles)
+	}
+	m.subscriptionModal.profileCursor = idx
+
+	m.renameSubscriptionProfile("Zhipu Renamed")
+
+	if m.subscriptionModal.err != nil {
+		t.Fatalf("renameSubscriptionProfile failed: %v", m.subscriptionModal.err)
+	}
+	data, err := os.ReadFile(filepath.Join(m.claudeConfigsDir, allInFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "Zhipu GLM ·") {
+		t.Fatalf("stale profile name survived the rename: %s", data)
+	}
+	if !strings.Contains(string(data), "Zhipu Renamed ·") {
+		t.Fatalf("renamed profile name missing from the refreshed profile: %s", data)
 	}
 }

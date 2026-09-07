@@ -2,6 +2,7 @@ package allin
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -85,20 +86,34 @@ func EnsureProfile(env Env, listFile, configsDir string) (string, error) {
 // matter how the count moves — a login or provider removed today would
 // otherwise leave rows that answer 400 for the life of the profile.
 //
-// A caller missing any of the four Env paths is refused rather than run
-// partway: Roster reads an empty AccountsList/ConfigsList as "nothing there",
-// so refreshing from an incomplete Env would silently strip real logins or
-// providers out of an existing picker. No caller legitimately has an empty
-// path here — every site builds all four from the same config root.
+// A caller missing any of the four Env paths gets an error rather than a
+// silent no-op: Roster reads an empty AccountsList/ConfigsList as "nothing
+// there", so refreshing from an incomplete Env would silently strip real
+// logins or providers out of an existing picker. Every one of today's six
+// call sites discards the error (this must never break the mutation the user
+// asked for), so an error here is the only signal a structurally broken
+// caller leaves behind — a silent nil would make that caller invisible
+// forever. No caller legitimately has an empty path — every site builds all
+// four from the same config root.
 func EnsureProfileIfEligible(env Env) error {
 	if env.AccountsList == "" || env.AccountsDir == "" ||
 		env.ConfigsList == "" || env.ConfigsDir == "" {
-		return nil
+		return fmt.Errorf("allin: incomplete Env: AccountsList, AccountsDir, ConfigsList and ConfigsDir must all be set")
 	}
 	if SourceCount(env) < 2 && ProfileFile(env.ConfigsList) == "" {
 		return nil
 	}
-	_, err := EnsureProfile(env, env.ConfigsList, env.ConfigsDir)
+	file, err := EnsureProfile(env, env.ConfigsList, env.ConfigsDir)
+	if err != nil {
+		return err
+	}
+	// A profile born here has no other creation path to reach it: it is
+	// never copied from a default (there is no default) and never swept by
+	// bin/wisp-deck's own ensure-watchdog, which only sees a file already on
+	// disk. Never move this into routerEnv — that block rewrites its keys on
+	// every call, while a declared watchdog value is documented as the
+	// user's own and every other path keeps it untouched.
+	_, err = claudeconfig.EnsureStreamWatchdog(env.ConfigsDir, file)
 	return err
 }
 

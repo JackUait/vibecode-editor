@@ -94,14 +94,21 @@ func (m *MainMenuModel) addSubscriptionLogin(label string) {
 	m.SetClaudeAccounts(LoadClaudeAccountsList(m.claudeAccountsList))
 	m.SetActiveClaudeAccount(dir)
 	m.persistClaudeAccount()
+	// A new login is a new source; it may be the second one on the machine,
+	// which can create the All-In config row. Both calls MUST run before the
+	// cursor math below: subscriptionLoginRowStart() is
+	// len(subscriptionProfiles())+1, and a newly created row grows that
+	// count — computed first, the cursor lands one row short (on Default
+	// instead of the login just added), and reloadSubscriptionConfigs() is
+	// also what makes the new profile selectable in this same open modal.
+	m.ensureAllIn()
+	m.reloadSubscriptionConfigs()
 	m.subscriptionModal.profileCursor = m.subscriptionLoginRowStart() + m.selectedAccount
 	m.subscriptionModal.mode = subscriptionBrowse
 	m.subscriptionModal.pane = subscriptionProfilesPane
 	m.subscriptionModal.input.Blur()
 	m.subscriptionModal.err = nil
 	m.ensureSubscriptionProfileVisible()
-	// A new login is a new source; it may be the second one on the machine.
-	m.ensureAllIn()
 }
 
 // startSubscriptionLoginRename opens the label input prefilled with the login
@@ -154,6 +161,11 @@ func (m *MainMenuModel) renameSubscriptionLogin(label string) {
 	m.subscriptionModal.pane = subscriptionProfilesPane
 	m.subscriptionModal.input.Blur()
 	m.subscriptionModal.err = nil
+	// The label just changed is embedded in every row this login contributes
+	// (roster.go's accountRows); refresh an existing profile so it stops
+	// showing the old one. A rename never changes the source count, so this
+	// never creates a profile that did not already exist.
+	m.ensureAllIn()
 }
 
 // startSubscriptionLoginDelete asks to remove the managed login under the
@@ -189,9 +201,11 @@ func (m *MainMenuModel) deleteSubscriptionLogin() {
 	m.subscriptionModal.mode = subscriptionBrowse
 	m.subscriptionModal.pane = subscriptionProfilesPane
 	m.subscriptionModal.err = nil
-	// A removed login is a source disappearing; refresh an existing profile
-	// so it stops naming it. Never creates one on its own — removing a login
-	// can only shrink the count.
+	// A removed login is a source disappearing. Usually that just refreshes
+	// an existing profile so it stops naming the login — but if the machine
+	// has none (deleted separately) and the count after this removal is
+	// still two or more, the gate creates one: shrinking the count does not
+	// itself prevent creation, only reaching one source does.
 	m.ensureAllIn()
 }
 

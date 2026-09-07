@@ -294,18 +294,27 @@ deliberately **not** bundled with the profile-shape redesign this wave: an auth
 scheme added alongside a Critical fix, with one review pass left, is how a worse
 bug ships. Add it as its own change, with its own tests.
 
-### Known gap: a freshly created profile misses that install's watchdog sweep
+### The stream watchdog is disarmed inside `EnsureProfileIfEligible` itself, not left to a sweep
 
-`bin/wisp-deck` runs `ensure-watchdog` before `ensure-allin`, so a profile
-created by that same install does not get `CLAUDE_ENABLE_STREAM_WATCHDOG=0`
-until the next one. The gap is one install and it self-heals, but before
-`routerEnv` existed it was permanent: `EnsureStreamWatchdog` returns early on a
-settings object with no `env` key, and the old profile had none.
+A profile can now be born on a keypress — the moment a second subscription
+connects, from the TUI or the CLI's `add`/`delete` — never touching
+`bin/wisp-deck`'s `ensure-watchdog` sweep at all. `EnsureProfileIfEligible`
+therefore calls `claudeconfig.EnsureStreamWatchdog` itself, right after
+`EnsureProfile` writes the file, rather than relying on that install-time
+sweep to catch up on the next run. Without it, an All-In pane routed to a
+gateway sits with the event-tier watchdog armed for its whole life: root
+`CLAUDE.md`'s "keepalive buys 30 pings" section measures the consequence — a
+stream carrying only keepalives is aborted and replayed at 610s, and the
+replay repeats the same work.
 
-The fix is to run `ensure-allin` before the two sweeps, not to have `routerEnv`
-write the key — a declared watchdog value is documented as the user's own and is
-kept by every other path, while `routerEnv` deliberately rewrites its keys on
-every call.
+**Never move this into `routerEnv`.** That block rewrites its keys on every
+call, while a declared watchdog value is documented as the user's own and is
+kept untouched by every other path (`stampStreamWatchdog` already no-ops on a
+key that is already declared) — writing it there would blow away a value the
+user set deliberately. `EnsureStreamWatchdog` needs the settings object to
+already have an `env` key, which `routerEnv` guarantees the file always has by
+the time this runs. Guarded by
+`TestEnsureProfileIfEligible_disarms_the_stream_watchdog_on_a_freshly_created_profile`.
 
 ### `ensure-allin` and `claude-allin` name the same two files the same way
 

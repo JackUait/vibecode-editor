@@ -1,10 +1,13 @@
 package allin
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jackuait/wisp-deck/internal/claudeconfig"
 )
 
 // EnsureProfileIfEligible is the one gate every mutation site (CLI and TUI)
@@ -59,6 +62,38 @@ func TestEnsureProfileIfEligible_writes_a_profile_at_two_sources(t *testing.T) {
 	}
 }
 
+// A profile born here has no other creation path to catch up on: it never
+// goes through bin/wisp-deck's ensure-watchdog sweep at all, so the event-tier
+// stream watchdog must be disarmed at the moment of creation or it is armed
+// for the profile's whole life. See root CLAUDE.md's "keepalive buys 30
+// pings" section for what an armed watchdog does to a gateway/self-hosted
+// stream.
+func TestEnsureProfileIfEligible_disarms_the_stream_watchdog_on_a_freshly_created_profile(t *testing.T) {
+	env := ensureFixture(t, "Personal:personal\n") // two sources: creates
+	if err := EnsureProfileIfEligible(env); err != nil {
+		t.Fatal(err)
+	}
+	file := ProfileFile(env.ConfigsList)
+	if file == "" {
+		t.Fatal("setup: profile was not created")
+	}
+	data, err := os.ReadFile(filepath.Join(env.ConfigsDir, file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	env2, _ := settings["env"].(map[string]any)
+	if env2 == nil {
+		t.Fatalf("profile has no env block: %s", data)
+	}
+	if got, _ := env2[claudeconfig.StreamWatchdogKey].(string); got != "0" {
+		t.Fatalf("%s = %q, want \"0\" (disarmed) on a freshly created profile", claudeconfig.StreamWatchdogKey, got)
+	}
+}
+
 func TestEnsureProfileIfEligible_refreshes_an_existing_profile_below_two_sources(t *testing.T) {
 	env := ensureFixture(t, "Personal:personal\n") // two sources: creates
 	if err := EnsureProfileIfEligible(env); err != nil {
@@ -90,11 +125,16 @@ func TestEnsureProfileIfEligible_refreshes_an_existing_profile_below_two_sources
 // on an incomplete Env would rewrite modelPicker with real rows stripped out
 // from under it. No production caller legitimately has an empty path — every
 // site builds all four from the same config root before calling this.
+// Every one of the six production call sites discards this error (a failed
+// refresh must never fail the mutation the user asked for), so this is the
+// ONLY place a structurally broken caller (missing one of the four paths)
+// leaves a trace at all. A silent nil here would make that caller invisible
+// forever.
 func TestEnsureProfileIfEligible_refuses_an_incomplete_env(t *testing.T) {
 	env := ensureFixture(t, "Personal:personal\n") // otherwise eligible: two sources
 	env.AccountsList = ""
-	if err := EnsureProfileIfEligible(env); err != nil {
-		t.Fatal(err)
+	if err := EnsureProfileIfEligible(env); err == nil {
+		t.Fatal("expected an error for an incomplete Env, got nil")
 	}
 	if file := ProfileFile(env.ConfigsList); file != "" {
 		t.Fatalf("wrote a profile from an incomplete env: %s", file)

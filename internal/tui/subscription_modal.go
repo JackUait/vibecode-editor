@@ -1069,7 +1069,11 @@ func (m *MainMenuModel) saveSubscriptionDraft() {
 		if repaired {
 			m.loadSubscriptionDraft(m.subscriptionModalProfile())
 			m.syncOpenCode()
+			// reloadSubscriptionConfigs() is what makes a freshly created
+			// All-In row selectable in this same open modal — ensureAllIn()
+			// alone only writes it to disk.
 			m.ensureAllIn()
+			m.reloadSubscriptionConfigs()
 			return
 		}
 	}
@@ -1081,7 +1085,11 @@ func (m *MainMenuModel) saveSubscriptionDraft() {
 	// Not gated on keyEdited: a self-hosted profile that already has a key
 	// becomes ready from its model/window fields alone (writeSubscriptionCustomFields
 	// above), so a save with no key edit can still be what crosses the threshold.
+	// reloadSubscriptionConfigs() is what makes a freshly created All-In row
+	// selectable in this same open modal — ensureAllIn() alone only writes it
+	// to disk.
 	m.ensureAllIn()
+	m.reloadSubscriptionConfigs()
 }
 
 // writeSubscriptionCustomFields persists the model and window a profile supplies
@@ -1527,6 +1535,11 @@ func (m *MainMenuModel) renameSubscriptionProfile(name string) {
 	m.subscriptionModal.input.Blur()
 	m.subscriptionModal.err = nil
 	m.syncOpenCode()
+	// The name just changed is embedded in every row this profile contributes
+	// (roster.go's configRows); refresh an existing profile so it stops
+	// showing the old one. A rename never changes the source count, so this
+	// never creates a profile that did not already exist.
+	m.ensureAllIn()
 }
 
 func (m *MainMenuModel) startSubscriptionDelete() {
