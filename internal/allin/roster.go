@@ -136,10 +136,11 @@ func configRows(env Env) []Row {
 			continue
 		}
 		provider := claudeconfig.ProviderForConfig(env.ConfigsDir, config)
-		// v1 routes API-key providers only. A ChatGPT profile authenticates
-		// through `codex login` and is served by a bridge process, not by an
-		// endpoint with a key, so a row for it would resolve to nothing.
-		if provider.Auth != claudeconfig.AuthAPIKey {
+		// routableAuth (credential.go) is the same rule Resolve enforces, so
+		// the picker can never offer a row the router refuses. It admits an
+		// API-key provider and a ChatGPT one — the latter has no endpoint and
+		// no key of its own, and is served by the Codex bridge instead.
+		if !routableAuth(provider.Auth) {
 			continue
 		}
 		// RemoteCatalog (Featherless) is offered too: proxy.go delegates a

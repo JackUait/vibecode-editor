@@ -109,23 +109,6 @@ func TestRoster_omits_a_model_too_narrow_for_claude_code(t *testing.T) {
 	}
 }
 
-func TestRoster_omits_a_provider_that_is_not_served_by_an_api_key(t *testing.T) {
-	env := rosterEnv(t)
-	if err := os.WriteFile(filepath.Join(env.ConfigsDir, "openai-chatgpt.json"),
-		[]byte(`{"env":{"WISP_DECK_SUBSCRIPTION_PROVIDER":"openai-chatgpt"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(env.ConfigsList,
-		[]byte("Zhipu GLM:zhipu-glm.json\nOpenAI / ChatGPT:openai-chatgpt.json\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range models(Roster(env)) {
-		if strings.Contains(id, "cfg.openai-chatgpt/") {
-			t.Fatalf("ChatGPT row offered with no endpoint to serve it: %s", id)
-		}
-	}
-}
-
 // featherlessProfile writes a ready Featherless config, RemoteCatalog with the
 // given declared window. contextTokens is what CLAUDE_CODE_MAX_CONTEXT_TOKENS
 // declares — providerModels reads it via ReadContextWindow because Featherless

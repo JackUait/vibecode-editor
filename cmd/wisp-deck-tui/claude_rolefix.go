@@ -43,7 +43,7 @@ func newClaudeRolefixCommandWithExit(run claudeRolefixRunner, exit func(int)) *c
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, argv []string) error {
-			return runLoopbackWrappedLaunch(settingsPath, argv, run, exit, rolefix.NewHandler)
+			return runLoopbackWrappedLaunch(settingsPath, argv, run, exit, rolefix.NewHandler, nil)
 		},
 	}
 	command.Flags().StringVar(&settingsPath, "settings", "",
@@ -59,11 +59,23 @@ func newClaudeRolefixCommandWithExit(run claudeRolefixRunner, exit func(int)) *c
 // read, declares no endpoint, or already points somewhere local, a listener
 // that cannot bind, or a failed overlay rewrite, all fall through to running
 // the child exactly as it was going to run anyway.
-func runLoopbackWrappedLaunch(settingsPath string, argv []string, run claudeRolefixRunner, exit func(int), newHandler func(upstream string) http.Handler) error {
+//
+// cleanup (nil for claude-rolefix, the ChatGPT bridge's Close for claude-allin)
+// runs on EVERY route out — including the fall-through ones that leave the
+// launch unwrapped — and it runs BEFORE the exit code is propagated. exit is os.Exit in production, which runs
+// no deferred function — so a `defer cleanup()` here would leak a 220MB Codex
+// app-server on the one route that actually happens.
+func runLoopbackWrappedLaunch(settingsPath string, argv []string, run claudeRolefixRunner, exit func(int), newHandler func(upstream string) http.Handler, cleanup func()) error {
 	if run == nil {
+		if cleanup != nil {
+			cleanup()
+		}
 		return errors.New("child runner is unavailable")
 	}
 	finish := func(err error) error {
+		if cleanup != nil {
+			cleanup()
+		}
 		var code exitCodeError
 		if errors.As(err, &code) {
 			// The child's own exit status is the session's; surfacing it as

@@ -108,21 +108,27 @@ func writeProfile(t *testing.T, env Env, name, file, body string) {
 }
 
 // configRows will not offer this, for a reason that is about the ROUTER, not
-// about the profile: a ChatGPT profile is served by a bridge process that has
-// no key to hand over. Resolve enforces the same rule, so a hand-typed id — or
-// a picker default saved from an older roster — cannot walk past it.
+// about the profile: a wisp-router profile has no credential of its own, and a
+// row naming it would send the turn back into the router that asked for it.
+// Resolve enforces the same rule, so a hand-typed id — or a picker default
+// saved from an older roster — cannot walk past it. The name is deliberately
+// not "All-In": the display-name guard would catch that one, and the check
+// under test here is the marker.
 func TestResolve_refuses_a_provider_the_roster_would_not_offer(t *testing.T) {
 	env := rosterEnv(t)
-	writeProfile(t, env, "OpenAI / ChatGPT", "openai-chatgpt.json", `{"env":{
-"WISP_DECK_SUBSCRIPTION_PROVIDER":"openai-chatgpt",
-"ANTHROPIC_BASE_URL":"https://api.openai.com",
-"ANTHROPIC_AUTH_TOKEN":"sk-test"}}`)
-	_, err := NewResolver(env).Resolve(Target{Kind: KindConfig, Source: "openai-chatgpt", Model: "m"})
+	writeProfile(t, env, "Everything", "everything.json", `{"env":{
+"WISP_DECK_SUBSCRIPTION_PROVIDER":"allin",
+"ANTHROPIC_BASE_URL":"https://api.anthropic.com"}}`)
+	_, err := NewResolver(env).Resolve(Target{Kind: KindConfig, Source: "everything", Model: "m"})
 	if err == nil {
-		t.Fatal("ChatGPT resolved, but it has no key to hand over")
+		t.Fatal("a router profile resolved as a routing destination")
 	}
-	if !strings.Contains(err.Error(), "openai-chatgpt") {
-		t.Fatalf("error does not name the profile: %v", err)
+	// The exact refusal, not just any error: without the routableAuth check the
+	// resolver falls through to the key/endpoint read and answers "is not
+	// ready" — an accident of this profile carrying no token, which would stop
+	// holding the moment a user added one to it by hand.
+	if !strings.Contains(err.Error(), `profile "everything" is served by All-In, which this router cannot address`) {
+		t.Fatalf("error does not refuse the profile by its provider: %v", err)
 	}
 }
 

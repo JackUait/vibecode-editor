@@ -168,3 +168,34 @@ func TestClaudeLaunchWrapper_quotes_a_config_root_containing_a_space(t *testing.
 	assertArgvHasToken(t, argv, filepath.Join(configRoot, "claude-configs.list"))
 	assertArgvHasToken(t, argv, filepath.Join(configRoot, "claude-configs"))
 }
+
+// An All-In session serves ChatGPT as one picker row among many, through the
+// router's own lazily started bridge. It must never ALSO be wrapped in
+// claude-gpt-adapter, which owns a second app-server and points the child's
+// env at its own loopback API — the settings overlay beats the environment, so
+// the router would win the routing and the adapter's Codex process would be a
+// pure leak for the life of the pane.
+//
+// The two branches are mutually exclusive today because the All-In profile's
+// provider marker is "allin", never "openai-chatgpt". This is what goes red if
+// something ever reports it as the latter.
+func TestClaudeLaunch_never_stacks_the_gpt_adapter_on_the_all_in_router(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := writeTempFile(t, dir, "overlay.json", allInPickerRow)
+	env := buildEnv(t, nil,
+		"HOME=/home/tester",
+		"WISP_DECK_CLAUDE_PROVIDER=allin",
+		"WISP_DECK_CODEX_CMD=/opt/Codex App/codex",
+		"WISP_DECK_CLAUDE_SETTINGS="+settingsPath,
+		"WISP_DECK_RESUME=0",
+		"WISP_DECK_RESUME_SESSION=",
+	)
+	out, code := runBashFunc(t, "lib/tmux-session.sh", "build_ai_launch_cmd",
+		[]string{"claude", "claude"}, env)
+	assertExitCode(t, code, 0)
+	got := strings.TrimSpace(out)
+	if strings.Count(got, "claude-allin") != 1 {
+		t.Fatalf("router count != 1: %q", got)
+	}
+	assertNotContains(t, got, "claude-gpt-adapter")
+}

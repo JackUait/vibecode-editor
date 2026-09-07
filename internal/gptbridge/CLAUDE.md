@@ -2,6 +2,36 @@
 
 Gotchas for the Codex bridge. Loaded when Claude opens a file in this package.
 
+### There are two ways in, and only one of them owns a terminal
+
+`RunAdapter` is the dedicated GPT pane: it owns the app-server, the loopback
+API **and** the Claude child, and it runs before Claude exists.
+`ChatGPTBridge` (`chatgptbridge.go`) is the middle piece alone, for
+`internal/allin`'s router, which serves ChatGPT as one row among many.
+
+Everything that differs between them follows from the terminal:
+
+- **No interactive login.** `RunAdapter` can call `LoginChatGPT` and print an
+  auth URL because nothing is painting the pane yet. A bridge started from the
+  router is starting inside a live turn, where stdout/stderr are the screen
+  Claude Code is drawing on — so `buildAppServer` refuses a signed-out Codex
+  with a turn error naming `codex login` instead.
+- **A 60s startup timeout, not three minutes.** `RunAdapter`'s budget is paid
+  once at pane launch; this one is paid inside a turn, against Claude Code's
+  20s stall banner and 180s abort. Measured on this machine under load average
+  25: 2.15s through the npm shim, 2.25s for the 220MB native binary on a fresh
+  inode, 436ms warm.
+- **Lazy, shared, and closed by hand.** Nothing starts until `Endpoint` is
+  called; the mutex is held across the whole start so concurrent first turns
+  share one app-server; a **failed** start is never cached, because the usual
+  cause is fixed between turns. `Close` is called explicitly before `os.Exit`
+  by the launch wrapper — see `internal/allin/CLAUDE.md` for the shutdown
+  routes, including the measured 7.6ms stdin-EOF exit that covers a SIGKILL.
+
+`buildBundle` is one function used both for the first start and as
+`ResilientExecutor`'s rebuild, so a mid-session app-server death is replaced
+under the same account check.
+
 ### Compaction runs at low effort, and the match must not be anchored
 
 Claude Code reuses the session's thinking budget for the summarization prompt it

@@ -51,11 +51,26 @@ type Resolver interface {
 	Resolve(Target) (Credential, error)
 }
 
+// ChatGPTBridge is the one thing this package knows about Codex: something that
+// can hand it a loopback endpoint and a key. Everything else — the app-server
+// child, the engine, the Anthropic translation, the lazy start, the shutdown —
+// lives behind gptbridge.ChatGPTBridge, so this package stays "route a request
+// and swap a credential".
+//
+// It is asked once per ChatGPT turn. Deduplication is the bridge's own job:
+// asking here is how the router says "this turn needs Codex", not how it says
+// "start one".
+type ChatGPTBridge interface {
+	Endpoint() (baseURL string, key string, err error)
+}
+
 // FileResolver reads the same files the account switcher owns. Token is a seam
-// so tests never touch the real Keychain.
+// so tests never touch the real Keychain; Bridge is nil in every build that
+// cannot start Codex, which is a refusal rather than a panic.
 type FileResolver struct {
-	Env   Env
-	Token func(configDir string) (string, error)
+	Env    Env
+	Token  func(configDir string) (string, error)
+	Bridge ChatGPTBridge
 }
 
 func NewResolver(env Env) *FileResolver {
@@ -83,6 +98,12 @@ func (r *FileResolver) Resolve(target Target) (Credential, error) {
 		if err != nil {
 			return Credential{}, err
 		}
+		// Ahead of the key/endpoint read, which a ChatGPT profile fails by
+		// design: Codex authenticates it and a bridge process serves it, so it
+		// stores neither.
+		if provider.Auth == claudeconfig.AuthCodexChatGPT {
+			return r.chatGPTCredential()
+		}
 		key := claudeconfig.ReadAPIKey(r.Env.ConfigsDir, file)
 		base := claudeconfig.ReadBaseURL(r.Env.ConfigsDir, file)
 		if key == "" || base == "" {
@@ -98,12 +119,47 @@ func (r *FileResolver) Resolve(target Target) (Credential, error) {
 	return Credential{}, errors.New("allin: session target needs no credential")
 }
 
-// routableProfile refuses the one provider configRows deliberately leaves out
-// of the roster: anything but AuthAPIKey has no key to swap in. A ChatGPT
-// profile is served by a bridge process, and the All-In profile itself is in
-// this same configs list, so a row can name the router that is asking for it.
-// The id comes off the wire — hand-typed, or saved as a picker default by an
-// older build — so this exclusion is advice until it is enforced here too.
+// chatGPTCredential starts (or reuses) the Codex bridge and addresses the turn
+// at it. NeedsRepair stays false: rolefix rewrites a request for Featherless's
+// stricter published schema, and the bridge reads the very fields it strips.
+func (r *FileResolver) chatGPTCredential() (Credential, error) {
+	if r.Bridge == nil {
+		return Credential{}, errors.New(
+			"allin: this session cannot serve the OpenAI / ChatGPT subscription — " +
+				"it was launched without a Codex bridge")
+	}
+	base, key, err := r.Bridge.Endpoint()
+	if err != nil {
+		return Credential{}, fmt.Errorf("allin: the ChatGPT bridge could not start: %w", err)
+	}
+	if base == "" || key == "" {
+		return Credential{}, errors.New("allin: the ChatGPT bridge reported no endpoint")
+	}
+	return Credential{BaseURL: base, Header: "Authorization", Value: "Bearer " + key}, nil
+}
+
+// routableAuth is the one rule the roster and the resolver must agree on:
+// which authentication shapes this router can address at all. It is an
+// allowlist rather than a "not AuthWispRouter" test, so a new AuthKind is
+// refused until someone decides how to serve it — the safe direction, because
+// an unserved row 400s a turn while an unoffered one costs nothing.
+//
+//   - AuthAPIKey: the profile stores the endpoint and the key; the router
+//     swaps the header and forwards.
+//   - AuthCodexChatGPT: the profile stores neither, and a lazily started Codex
+//     bridge supplies both (see FileResolver.chatGPTCredential).
+//   - AuthWispRouter is refused. The generated All-In profile sits in the very
+//     configs list this iterates, so a row could name the router that is asking
+//     for it. configRows also skips it by display name, but a renamed profile
+//     keeps its marker, so this is the check that actually holds.
+func routableAuth(auth claudeconfig.AuthKind) bool {
+	return auth == claudeconfig.AuthAPIKey || auth == claudeconfig.AuthCodexChatGPT
+}
+
+// routableProfile refuses what routableAuth refuses. configRows decides what
+// the picker OFFERS; this decides what the router will ADDRESS, and the id
+// comes off the wire — hand-typed, or saved as a picker default by an older
+// build — so the roster's exclusion is advice until it is enforced here too.
 //
 // RemoteCatalog (Featherless) is NOT refused: the caller (Resolve) reads the
 // returned provider's RemoteCatalog bit and marks the credential NeedsRepair,
@@ -123,7 +179,7 @@ func routableProfile(env Env, file string) (claudeconfig.Provider, error) {
 	}
 	provider := claudeconfig.ProviderForConfig(env.ConfigsDir,
 		claudeconfig.Config{Name: name, File: file})
-	if provider.Auth != claudeconfig.AuthAPIKey {
+	if !routableAuth(provider.Auth) {
 		return provider, fmt.Errorf("allin: profile %q is served by %s, which this router cannot address",
 			strings.TrimSuffix(file, ".json"), provider.Name)
 	}

@@ -84,9 +84,15 @@ fails on a field that is re-declared *and* populated.
 will actually address, and a model id arrives off the wire — hand-typed into
 `/model`, or saved as a picker default by an older roster — so a row the roster
 would never have written still reaches it. `routableProfile` (`credential.go`)
-therefore re-applies the one rule left: not `AuthAPIKey` is refused (a ChatGPT
-profile has no key to swap in, and so does the All-In profile itself, which
-sits in the very same configs list).
+therefore re-applies the one rule left, through the `routableAuth` predicate
+both sides share: the router profile itself is refused. It sits in the very
+same configs list, so a row could name the router that is asking for it, and
+`configRows`'s display-name skip does not survive a rename — the marker does.
+
+`routableAuth` is an **allowlist** (`AuthAPIKey`, `AuthCodexChatGPT`), not a
+"not `AuthWispRouter`" test, so a new `AuthKind` is refused until someone
+decides how to serve it. That is the safe direction: an unserved row 400s a
+turn, an unoffered one costs nothing.
 
 `RemoteCatalog` (Featherless) is NOT refused here — see the delegation section
 below — but `routableProfile` still hands its caller the resolved `Provider`,
@@ -94,7 +100,10 @@ because `Resolve` needs its `RemoteCatalog` bit for a different decision: it
 must key on `RemoteCatalog`, never on `SuppliesOwnModel()` — that is true for a
 self-hosted profile too, and a self-hosted endpoint speaks the Anthropic API
 directly and needs no repair. Guarded by
-`TestResolve_refuses_a_provider_the_roster_would_not_offer`,
+`TestResolve_refuses_a_provider_the_roster_would_not_offer` (which asserts the
+exact refusal, not just an error — without `routableAuth` the resolver falls
+through to the key read and answers "is not ready", an accident of that profile
+carrying no token that stops holding the moment a user adds one),
 `TestResolve_refuses_the_router_profile_itself`,
 `TestResolve_does_not_mark_an_ordinary_gateway_for_repair`, and the two
 `TestResolve_still_serves_*` counterweights that stop the refusal widening.
@@ -369,14 +378,115 @@ than Claude Code can run a turn on. Guarded by
 `TestRoster_omits_a_model_too_narrow_for_claude_code` and
 `TestRoster_omits_a_self_hosted_model_too_narrow_for_claude_code`.
 
-### A ChatGPT profile is skipped, on purpose
+### A ChatGPT row is served by a Codex bridge this launch starts lazily
 
-`configRows` skips any provider whose `Auth` is not `claudeconfig.AuthAPIKey`.
-A ChatGPT profile authenticates through `codex login` and is served by a
-bridge process, not an endpoint holding an API key — `Resolve`'s `KindConfig`
-branch has no credential to hand it, so a row for it would resolve to nothing.
-This is v1 scope, not an oversight: see "Решения по v1" in the spec. Guarded by
-`TestRoster_omits_a_provider_that_is_not_served_by_an_api_key`.
+ChatGPT was the one subscription this router excluded: `configRows` skipped any
+provider that was not `AuthAPIKey`, and `routableProfile` refused it, because a
+ChatGPT profile stores **no endpoint and no key** — Codex authenticates it and a
+bridge process serves it. It is admitted now, and the rule both sides share is
+`routableAuth` (`credential.go`): `AuthAPIKey` and `AuthCodexChatGPT` are
+routable, `AuthWispRouter` is not. One predicate, called from `configRows` and
+from `routableProfile`, so the picker can never offer a row the router refuses.
+
+The Codex knowledge lives entirely behind `gptbridge.ChatGPTBridge`, an
+`Endpoint() (baseURL, key string, err error)` this package sees through its own
+one-method `ChatGPTBridge` interface. `FileResolver.Bridge` holds it beside
+`Token`, and `Resolve`'s ChatGPT branch just returns
+`Credential{BaseURL: <loopback>, Header: "Authorization", Value: "Bearer <key>"}`.
+`proxy.go` is untouched: a ChatGPT turn is an ordinary reverse-proxy forward to
+a loopback address, so it already gets `FlushInterval: -1` (the bridge answers a
+reasoning turn with `event: ping` alone for minutes — buffering those would
+manufacture the very silence Claude Code's byte watchdog aborts on) and the
+`discardLog` ErrorLog.
+
+- **The branch sits BEFORE the key/endpoint read.** A ChatGPT profile fails
+  `key == "" || base == ""` by design, so placing it after answers a working
+  subscription with `profile "openai-chatgpt" is not ready`. Guarded by
+  `TestResolve_serves_a_chatgpt_target_through_the_bridge`.
+- **`NeedsRepair` stays false.** `rolefix` rewrites a request for Featherless's
+  stricter *published* schema; the bridge reads the fields it strips. Only
+  `RemoteCatalog` is repaired.
+- **The id reaching the bridge is the bare Codex id.** `Route` strips
+  `wisp/cfg.<profile>/` and `rewriteModel` puts the remainder back in the body,
+  so `gpt-6-astra` is what `Engine.Execute` checks against its allowlist —
+  which is whatever the **running** app-server reported from `model/list`, not
+  the catalog. Verified against a live 0.153.4 app-server:
+  `gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5,
+  gpt-5.4-mini, gpt-5.3-codex-spark`. Guarded by
+  `TestHandler_sends_a_chatgpt_turn_to_the_bridge_with_the_bare_codex_model_id`.
+- **`gpt-5.4` is in the catalog and NOT in that live list**, so its row resolves,
+  reaches the engine, and comes back as a deterministic 400 naming the model. A
+  catalog trim belongs in `internal/claudeconfig`, not here — the roster is built
+  by a process with no app-server, so it cannot ask.
+- **ChatGPT rows land at the flat 200k window like every other row.** The whole
+  5.6/6 tier declares 272000 (over `minRosterContext`, so it is offered) and
+  `gpt-5.3-codex-spark`'s 128000 is dropped. No row carries `[1m]`, for the
+  reason the section above gives. Guarded by
+  `TestRoster_never_offers_a_1m_chatgpt_row` and
+  `TestRoster_omits_a_chatgpt_model_too_narrow_for_claude_code`.
+
+### The bridge starts on the first GPT turn, is reused, and is shut down by hand
+
+Three invariants, each with a guard, and each is about a 220MB process:
+
+- **Lazy.** `newClaudeAllInCommandWithBridge` constructs the bridge for every
+  launch and starts nothing; only `chatGPTCredential` calls `Endpoint`, and only
+  a `AuthCodexChatGPT` target reaches it. A session that never picks a GPT row
+  never execs Codex. Guarded by
+  `TestHandler_never_starts_a_bridge_for_a_non_chatgpt_turn` and, in gptbridge,
+  `TestChatGPTBridge_starts_nothing_until_a_turn_asks_for_an_endpoint` — which
+  checks the struct as well as the seam, because an eager start in the
+  constructor runs before a test can install the seam.
+- **Reused.** The router asks once per ChatGPT turn; deduplication is the
+  facade's job. `ChatGPTBridge` holds its mutex across the whole start, so eight
+  concurrent first turns share one app-server. A **failed** start is never
+  cached — the usual cause is a signed-out Codex, fixed between turns.
+- **Shut down before the exit code.** `runLoopbackWrappedLaunch` takes a
+  `cleanup func()` (nil for claude-rolefix) and runs it at the top of `finish`,
+  on every route out. It cannot be a `defer`: `exit` is `os.Exit` in production
+  and runs no deferred function, which is the route that actually happens when
+  Claude exits. Guarded by
+  `TestClaudeAllIn_closes_the_chatgpt_bridge_before_it_propagates_an_exit_code`.
+
+The routes Go never gets to run anything on are covered by two measured facts.
+`kill_tree` (`lib/process.sh`) is depth-first — children before the parent — so
+a window close reaps the app-server while claude-allin is still its parent. And
+a `respawn-pane -k` or a SIGKILL closes the pipe holding the app-server's stdin:
+measured, a real `codex app-server` exits **7.6ms** after stdin EOF
+(`TestLiveCodexAppServerExitsWhenItsParentPipeCloses`, env-gated). Between them
+there is no orphan route, which is why claude-allin installs **no** signal
+handler — `signal.NotifyContext` would suppress the default action and leave the
+wrapper alive after a SIGTERM meant to kill it, while nothing in the blocking
+`child.Run()` watches a context.
+
+**The cold start is not hidden and does not need to be.** Measured on this
+machine at load average 25: **2.15s** through the npm shim and **2.25s** for the
+220MB native binary copied to a fresh inode (so the exec goes genuinely cold),
+436ms warm. Claude Code paints its stall banner after **20s** of raw-byte
+silence, so no keep-alive scaffolding is warranted — and the start finishes
+before any response header is written, so there is no `text/event-stream` body
+for that watchdog to be armed on yet. `StartupTimeout` is 60s (not
+`RunAdapter`'s three minutes, which is paid at pane launch rather than inside a
+turn), so the worst case is a deterministic 400 well inside the 180s abort
+budget. `TestLiveChatGPTBridgeStartsAndServes` re-measures it and fails at 20s.
+
+- **Codex is never signed in from here.** A dedicated GPT pane owns the terminal
+  before Claude starts, so `RunAdapter` can open a browser login; here the only
+  writable stream is the pane Claude Code is painting on (see
+  `wrapper-stderr-is-the-ai-pane` in project memory), so `buildAppServer` reports
+  a signed-out Codex as a turn error naming `codex login`.
+- **Every bridge failure is a 400**, like every other routing failure — a
+  signed-out Codex, an absent Codex, a bridge that will not start. Claude Code
+  retries a 5xx about eleven times, and none of these get better on a retry
+  inside one turn. Guarded by
+  `TestHandler_reports_a_bridge_that_cannot_start_as_400_not_502`, whose
+  fail-open mutant (dial a dead loopback port) really does answer 502.
+- **The Codex path comes from `WISP_DECK_CODEX_CMD`,** which `wrapper.sh` stamps
+  into the tmux session env (and `lib/tab-view.sh` re-exports for a new tab), so
+  every process in the pane inherits it however deep the launch chain nests. No
+  change to `gt_claude_launch_wrapper` was needed. A **relative** value is
+  dropped rather than resolved — it would exec against whatever directory the
+  pane sits in — and reads as absent, which is the bridge's own 400 naming Codex.
 
 ### Known exposure: the loopback port mints turns on any credential, unauthenticated
 
