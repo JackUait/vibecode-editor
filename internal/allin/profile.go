@@ -31,8 +31,15 @@ func EnsureProfile(env Env, listFile, configsDir string) (string, error) {
 
 	path := filepath.Join(configsDir, file)
 	settings := map[string]any{}
-	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &settings)
+	// A missing file starts empty; any other read or parse failure must not
+	// be treated as "no keys" — that would silently drop the user's own keys
+	// (env, permissions, an API key) the next time this writes the file.
+	if data, err := os.ReadFile(path); err != nil {
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+	} else if err := json.Unmarshal(data, &settings); err != nil {
+		return "", err
 	}
 	rows := Roster(env)
 	options := make([]Row, 0, len(rows))

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -91,5 +92,74 @@ func TestEnsureProfile_keeps_every_other_key_in_the_profile(t *testing.T) {
 	_ = json.Unmarshal(data, &settings)
 	if settings["statusLine"] != "keep me" {
 		t.Fatalf("unrelated key lost: %s", data)
+	}
+}
+
+func TestEnsureProfile_a_corrupted_existing_profile_fails_loudly_and_is_left_untouched(t *testing.T) {
+	env := rosterEnv(t)
+	listFile := filepath.Join(t.TempDir(), "claude-configs.list")
+	file, err := EnsureProfile(env, listFile, env.ConfigsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(env.ConfigsDir, file)
+	corrupted := []byte("{ this is not valid json")
+	if err := os.WriteFile(path, corrupted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := EnsureProfile(env, listFile, env.ConfigsDir); err == nil {
+		t.Fatal("expected an error reading a corrupted profile, got nil")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(corrupted) {
+		t.Fatalf("corrupted profile was overwritten: got %q, want %q", data, corrupted)
+	}
+}
+
+func TestEnsureProfile_recomputes_the_roster_on_every_call(t *testing.T) {
+	env := rosterEnv(t)
+	listFile := filepath.Join(t.TempDir(), "claude-configs.list")
+	file, err := EnsureProfile(env, listFile, env.ConfigsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(env.ConfigsDir, file)
+	before := readPicker(t, path)
+	beforeOptions, _ := before["options"].([]any)
+
+	// A second account appears after the first EnsureProfile call, the same
+	// way a real login can be added while the profile already exists.
+	existing, err := os.ReadFile(env.AccountsList)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := string(existing) + "Second:second\n"
+	if err := os.WriteFile(env.AccountsList, []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := EnsureProfile(env, listFile, env.ConfigsDir); err != nil {
+		t.Fatal(err)
+	}
+	after := readPicker(t, path)
+	afterOptions, _ := after["options"].([]any)
+	if len(afterOptions) <= len(beforeOptions) {
+		t.Fatalf("roster did not grow: before=%d after=%d", len(beforeOptions), len(afterOptions))
+	}
+
+	found := false
+	for _, row := range afterOptions {
+		fields, _ := row.(map[string]any)
+		if model, _ := fields["model"].(string); strings.Contains(model, "acct.second/") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no row for the newly registered account in %v", afterOptions)
 	}
 }
