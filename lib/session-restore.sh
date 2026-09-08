@@ -64,16 +64,28 @@ restore_log() {
 # orphaned.
 # Usage: _sweep_stale_lock <lock_dir>
 _sweep_stale_lock() {
-  local lock="$1" now mtime
-  [ -d "$lock" ] || return 0
+  local lock="$1" now stamp mtime ino ino_now
+  # An unreadable age means the lock is GONE, never that it is ancient: the one
+  # ordinary reason stat fails here is that the holder released it a moment ago.
+  # Defaulting to epoch 0 puts it ~1.8 billion seconds past the threshold, so the
+  # sweep rmdir's whatever fresh lock another launch has since taken at that path
+  # — two pops then run inside the mutex at once, read the same queue head, and
+  # restore one project into two tabs.
+  stamp="$(stat -f '%m %i' "$lock" 2>/dev/null)" || return 0
+  mtime="${stamp%% *}"
+  ino="${stamp##* }"
+  case "$mtime" in '' | *[!0-9]*) return 0 ;; esac
   now="$(date +%s)"
-  mtime="$(stat -f %m "$lock" 2>/dev/null || echo 0)"
-  if [ $((now - mtime)) -gt 10 ]; then
-    # A builder that died between its lock pre-acquire and its pop leaves an
-    # owner stamp behind; rmdir needs the dir empty.
-    rm -f "$lock/owner" 2>/dev/null
-    rmdir "$lock" 2>/dev/null
-  fi
+  [ $((now - mtime)) -gt 10 ] || return 0
+  # Same race, slower: between measuring the age and acting on it the stale holder
+  # may release and a fresh lock appear. Remove only the directory that was
+  # actually measured.
+  ino_now="$(stat -f '%i' "$lock" 2>/dev/null)" || return 0
+  [ "$ino_now" = "$ino" ] || return 0
+  # A builder that died between its lock pre-acquire and its pop leaves an
+  # owner stamp behind; rmdir needs the dir empty.
+  rm -f "$lock/owner" 2>/dev/null
+  rmdir "$lock" 2>/dev/null
   return 0
 }
 
