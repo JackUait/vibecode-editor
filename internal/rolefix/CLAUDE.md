@@ -2,6 +2,81 @@
 
 Gotchas for the Featherless request/response repair proxy. Loaded when Claude opens a file in this package.
 
+### A Featherless pane runs behind a request repair proxy
+
+Featherless serves the Anthropic Messages API, but it validates the **published
+schema**, where a message role is only `user` or `assistant`. Claude Code puts
+its capability listings — the agent-type roster and the skills roster — into
+`messages[]` as entries with `role: "system"`. Anthropic's own API accepts them;
+Featherless answers the whole request with
+`400 messages.1.role: Invalid enum value ... received 'system'`, which kills the
+turn before the model ever sees it.
+
+Measured, not decoded: a request captured from a live pane was replayed as sent
+(**400**) and with that one role rewritten to `"user"` (**200**, normal
+completion).
+
+The proxy repairs a second thing, and it is the reason a Featherless pane could
+look alive and still do nothing. **A request that declares `thinking` turns
+Featherless's tool-call parser off.** Extended thinking is on by default, so
+Claude Code puts `thinking: {"type":"adaptive","display":"omitted"}` on every
+request; the model still emits a tool call, but the endpoint stops converting
+it, so the raw Qwen `<tool_call><function=…><parameter=…>` XML arrives as
+assistant **text**. The pane renders the markup, no tool runs, and the turn ends
+`end_turn` — so nothing errors and the session simply spins.
+
+Measured 2026-09-02, same prompt and model, both arms, on
+`TurboVadim/Qwen3.8-27B-OBLITERATED` and
+`huihui-ai/Huihui-Qwen3.8-27B-abliterated`: without the field `stop_reason` is
+`tool_use` and a `tool_use` block arrives; with it `stop_reason` is `end_turn`
+and the XML sits in a text block. Confirmed end to end through the launch chain
+— the pre-fix binary printed the bare XML and called nothing, the fixed one ran
+`Read` and answered.
+
+- **Dropping `thinking` costs no reasoning.** Featherless returns a `thinking`
+  block whether or not the request asks for one, so the field buys the turn
+  nothing and breaks its tool calling. It is the *presence* of the key that does
+  it — `{"type":"enabled","budget_tokens":N}` fails the same way, and
+  `output_config.effort` is innocent. So is the header: both arms sent the same
+  `Anthropic-Beta: …,interleaved-thinking-2025-05-14,…`, and the repaired one
+  called tools with it still there. The body field is the whole lever.
+- **The strip is safe for a model the bug never touched.** Not every class
+  mis-parses: `zai-org/GLM-5.3-Flash` and `GLM-4.7-Flash` answer `tool_use` with
+  a `thinking` block in BOTH arms, identically. So stripping unconditionally for
+  every Featherless pane repairs the broken classes and takes nothing from the
+  working ones — which is why this needs no per-model probe.
+- **The repair is one pass, and `changed` gates the rewrite.** `Rewrite` returns
+  the body untouched when nothing moved, so a deletion recorded after that guard
+  would be silently thrown away.
+- **There is no settings-level escape.** `--disallowedTools Task` removes the
+  agent roster and the skills roster takes its place; both are Claude Code's own
+  emissions. Disabling enough tools to silence them costs more than the proxy.
+- **The settings file beats the process environment.** Verified live: launching
+  with `ANTHROPIC_BASE_URL` exported and a profile declaring its own, the profile
+  won. So the proxy cannot be delivered by env override the way the GPT bridge
+  does it — the session's **settings overlay** is what gets pointed at the proxy.
+- **The overlay is the session's own copy.** `write_claude_launch_settings` never
+  modifies the stored profile, so `PointSettingsAt` rewrites the overlay in place
+  and every other key in it — the API key the proxy forwards but never holds, the
+  picked model, the declared window, the image deny rules — travels untouched.
+  The stored profile keeps naming the real endpoint, so `ConfigReady`, the
+  budget sweep and the modal all keep working on the truth.
+- **`FlushInterval: -1` is load-bearing.** Buffering the response would swallow
+  the `: keep-alive` comments Featherless sends while awaiting its first token,
+  which is the whole reason the byte watchdog stays armed for this provider.
+- **Nothing here may cost a session.** An overlay that cannot be read, declares
+  no endpoint, or already points at loopback runs the child exactly as it would
+  have run anyway.
+- **A model that refuses to call tools is the model, not the proxy.** Verified
+  end to end: `zai-org/GLM-5.3-Flash` through this proxy called Read and quoted
+  the file back, while `moonshotai/Kimi-K3` on the same setup insisted "tool use
+  has been temporarily disabled for this turn" with all 29 tools present in the
+  request.
+
+Guarded by `internal/rolefix/*_test.go`,
+`cmd/wisp-deck-tui/claude_rolefix_test.go`, and
+`test/bash/claude_rolefix_launch_test.go`.
+
 ### That proxy also repairs the response, because a JSON schema is only advice here
 
 `/goal`, a prompt hook, memory selection and auto-mode setup all ask the model

@@ -100,3 +100,119 @@ It is now armed by interaction, which also makes it *fresher* than a 2s timer.
   contract that a click never waits on or starts a refresh
   (`TestLedgerOpenClickStartsPopupOffInputLoopOnCacheMiss`). The hover that
   necessarily preceded the click is what armed it.
+
+### An image preview decodes in Go first, and falls back to macOS ImageIO
+
+Clicking an image in the ledger opens a PREVIEW popup instead of the useless
+"Binary files differ" diff. Which files that covers is one list kept in two
+places — `previewableImageExts` (`internal/tui/imageformats.go`) and the
+`is_image_file` case glob (`lib/compact-view.sh`) — because a pane picks its
+renderer by binary capability, so a format added to one and not the other
+previews for half the users. `TestIsImageFile_matches_the_Go_renderers_list`
+pins them together, and `TestPreviewableImageExtensions_all_decode` refuses an
+extension that has no fixture in `internal/tui/testdata/img` proving it decodes.
+
+`decodeImage` (`internal/tui/imagedecode.go`) tries the registered Go decoders
+first — stdlib PNG/JPEG/GIF plus `x/image`'s WebP/BMP/TIFF — so the formats a
+repo is mostly made of cost nothing but the decode. AVIF, HEIC/HEIF, ICO/ICNS
+and SVG have no pure-Go decoder here, and each shells out to `sips`, which is
+ImageIO and reads all of them. Rules that fell out of building it:
+
+- **The extension travels with the bytes.** ImageIO sniffs every container from
+  its magic number except SVG, which is plain text and is recognized only by the
+  scratch file's extension. `NewImageView` takes it from the title (the path).
+- **Convert at `previewRasterMaxSide`, but only downward.** A 24-megapixel phone
+  photo converted at full size cost **9 seconds** of popup-open latency for
+  pixels nothing keeps (the cap is `kittyMaxSide`); converting at the ceiling is
+  1.4s. `--resampleHeightWidthMax` resizes in BOTH directions, so a cheap
+  `sips -g pixelWidth` probe (~30ms) gates it — passing it unconditionally would
+  blow an 8px icon up to 2048 and sneak a blurry enlargement past the renderer's
+  deliberate no-upscale rule.
+- **A vector is the one thing to enlarge.** An SVG has no pixels of its own, so
+  it is rasterized AT the ceiling rather than at its declared size — otherwise a
+  16px icon previews as a speck.
+- **An SVG previews but is not a byte-delta row.** git tracks it as text: it has
+  real line counts and no hydrated byte size, so `is_binary_image_file` (and, on
+  the Go side, `row.Binary`) keeps it on the `+N −N` row while `is_image_file`
+  still routes its click to the preview. Sizing it would print "±0" on every
+  edit.
+- **The gate is extension + presence, not `NewBytes`.** `opensImagePreview`
+  stats the file, exactly like the shell's `[ -f ]`: byte sizes exist only for
+  binary changes, and a deleted image must still fall back to the diff rather
+  than cat a path that is gone.
+
+### The ledger's account pill is re-resolved every refresh, never once
+
+The ledger pane always races its own relaunch context. tmux `new-session`
+stamps `WISP_DECK_RELAUNCH_FILE` into the pane's env and creates the pane in
+the same batch, while `wrapper.sh` writes the file itself in the launch tail —
+and it **must stay there**: `test/bash/launch_post_pick_path_test.go` keeps
+every millisecond of tail work behind `new-session` so the agent's boot
+overlaps it. Whether the pane wins the race is decided by how warm the TUI
+binary is, which is why the symptom was "the pill sometimes doesn't show".
+
+So the pill's context is **state that becomes valid later**, and the ledger
+must treat it that way:
+
+- `LedgerModel` reloads the session context on **every refresh tick**
+  (`internal/tui/ledger.go`). A one-shot load in `Init()` turned any transient
+  miss — absent file, partial read, tmux hiccup — into a pane with no pill for
+  its entire life.
+- The shell fallback renderer re-reads the context each build tick until it
+  resolves (`lib/compact-view.sh`). It recomputed the pill per tick but read the
+  context *once* before the loop, so a pane that won the race kept empty account
+  paths forever. **Both renderers must self-heal** — the pane picks between them
+  by binary capability, so a fix in one is a fix for half the users.
+- A failed reload **keeps the last good context**. Blanking it makes the pill
+  drop out of the footer until the next tick.
+- `write_relaunch_context` publishes by **rename** (`lib/account-switch.sh`).
+  A truncated prefix parses cleanly into a context with no accounts —
+  indistinguishable from "nothing to switch to" — so a mid-write reader would
+  silently drop the pill instead of failing and being retried. The mid-session
+  switch rewrites this same file under a live pane, so the window is not
+  confined to launch.
+- An action error **shares** the footer with the pill rather than replacing it.
+  `actionError` is sticky until some later action succeeds, so taking the row
+  over hid the pane's identity — and its only switch affordance — indefinitely.
+
+Guarded end-to-end by `test/bash/ledger_pill_race_test.go` and
+`test/bash/compact_view_pill_late_context_test.go` (both drive a real renderer
+over a pty with the context published late), plus the model-level tests in
+`internal/tui/ledger_session_reload_test.go` and the atomic-publish test in
+`test/bash/relaunch_context_ready_test.go`.
+
+### The ledger polls Git for a repository that is almost never changing
+
+Sampling every repository a live ledger was watching, at the ledger's own 2s
+cadence, for two minutes while agents were working: **320 polls, 3 of which found
+anything changed — 99.1% waste**. Five concurrent git processes each time, which
+came to **~63% of one core continuously**, on a machine where all 17 Claude
+agents together used 59%. The ledger cost more than the agents it was watching.
+
+So an unchanged load slows the next one (2s → 4s → 8s) and anything that moves
+resets it to 2s: a changed snapshot, or the user touching the pane. Measured over
+a dormant 600s: 76 loads instead of 300.
+
+- **The tick keeps firing at the base interval; only the LOAD backs off.** A
+  timer is free and five git processes are not, so resetting the cadence takes
+  effect within one tick rather than waiting out the long one.
+- **The Git load backs off. The session context does NOT.** It is the account
+  pill's only source, `wrapper.sh` writes it *after* the tmux batch that spawns
+  the pane, and a mid-session switch rewrites it under a live pane. The first
+  draft skipped it on a backed-off tick and broke
+  `TestLedgerAccountPillRecoversWhenSessionContextArrivesLate` — see the pill
+  section above, which is the same class of bug.
+- **`SameContent` must ignore `Generation`.** It counts loads, so including it
+  makes every comparison unequal and the backoff dead code. It must NOT ignore
+  line counts: a file edited twice stays "modified" while only its numbers move.
+- **Both renderers, as always.** `lib/compact-view.sh` carries the same backoff
+  (skip 0 → 1 → 3 timeouts, the same 4x ratio). There, `need_build` is the trap:
+  nothing on the timer path ever cleared it, so the loop rebuilt on every pass
+  and the first draft bought exactly nothing — the skip must clear it.
+- **The shell guard is RELATIVE, deliberately.** It runs a dormant and a busy
+  repository concurrently and compares their poll counts, because a shell build
+  tick is essentially pure fork cost and an absolute polls-per-second assertion
+  measures the machine, not the code. Without the backoff the arms are level (12
+  vs 11); with it the dormant arm runs at ~0.68 of the busy one.
+- **A pty test of `compact_view` exercises the GO renderer** unless
+  `WISP_DECK_LEDGER_SHELL_FALLBACK=1` is set — `[ -t 0 ]` makes it native-eligible.

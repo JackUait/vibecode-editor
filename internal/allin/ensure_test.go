@@ -65,9 +65,9 @@ func TestEnsureProfileIfEligible_writes_a_profile_at_two_sources(t *testing.T) {
 // A profile born here has no other creation path to catch up on: it never
 // goes through bin/wisp-deck's ensure-watchdog sweep at all, so the event-tier
 // stream watchdog must be disarmed at the moment of creation or it is armed
-// for the profile's whole life. See root CLAUDE.md's "keepalive buys 30
-// pings" section for what an armed watchdog does to a gateway/self-hosted
-// stream.
+// for the profile's whole life. See internal/claudeconfig/CLAUDE.md's
+// "keepalive buys 30 pings" section for what an armed watchdog does to a
+// gateway/self-hosted stream.
 func TestEnsureProfileIfEligible_disarms_the_stream_watchdog_on_a_freshly_created_profile(t *testing.T) {
 	env := ensureFixture(t, "Personal:personal\n") // two sources: creates
 	if err := EnsureProfileIfEligible(env); err != nil {

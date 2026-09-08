@@ -39,7 +39,7 @@ render_subagent_rows() {
   # (lib/account-switch.sh) — the exact mechanism the main status line already
   # uses (templates/statusline-wrapper.sh's gt_config_color/
   # gt_claude_account_label). Read with a file redirect, not a here-string —
-  # a here-string over ~512 bytes deadlocks bash 5.3 (see root CLAUDE.md).
+  # a here-string over ~512 bytes deadlocks bash 5.3 (see lib/CLAUDE.md).
   local _wisp_settings_raw=""
   if [ -n "${WISP_DECK_CLAUDE_CONFIG:-}" ]; then
     local _wisp_settings_path="${XDG_CONFIG_HOME:-$HOME/.config}/wisp-deck/claude-configs/${WISP_DECK_CLAUDE_CONFIG}"
