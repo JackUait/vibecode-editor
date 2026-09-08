@@ -302,6 +302,38 @@ func TestRenameSubscriptionLogin_refreshes_an_existing_allin_profile(t *testing.
 	}
 }
 
+// Renaming the Default login itself (idx 0) — not one of the managed
+// logins — is what Defect 1 makes matter: before this fix the implicit
+// login's row never carried a user-set label at all, so there was nothing to
+// refresh. renameSubscriptionLogin's Default branch and its non-default
+// branch share one tail (m.ensureAllIn() runs after the if/else either way),
+// but nothing pinned that for row 0 until now.
+func TestRenameSubscriptionLogin_default_login_refreshes_the_roster(t *testing.T) {
+	m := newBareSubscriptionMenu(t)
+	m.addSubscriptionLogin("Work") // two sources: creates the profile
+	file := allin.ProfileFile(m.claudeConfigsList)
+	if file == "" {
+		t.Fatal("setup: All-In profile was not created")
+	}
+
+	m.subscriptionModal.profileCursor = m.subscriptionLoginRowStart() // Default (idx 0)
+	m.renameSubscriptionLogin("Primary")
+
+	if m.subscriptionModal.err != nil {
+		t.Fatalf("renameSubscriptionLogin failed: %v", m.subscriptionModal.err)
+	}
+	data, err := os.ReadFile(filepath.Join(m.claudeConfigsDir, file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "Default ·") {
+		t.Fatalf("stale Default label survived the rename: %s", data)
+	}
+	if !strings.Contains(string(data), "Primary ·") {
+		t.Fatalf("renamed Default login label missing from the refreshed profile: %s", data)
+	}
+}
+
 // Renaming a subscription profile changes the display name roster.go's
 // configRows embeds in every one of its rows for that profile. A stale name
 // survives in an already-existing All-In profile until something refreshes

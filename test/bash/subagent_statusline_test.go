@@ -561,6 +561,9 @@ func TestSubagentStatusline_wisp_id_resolves_with_no_effort(t *testing.T) {
 	out, code := renderRowsWithEnv(t, in, env...)
 	assertExitCode(t, code, 0)
 	rows := parseSubagentRows(t, out)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d: %q", len(rows), out)
+	}
 	got := stripANSI(rows[0].Content)
 	if !strings.Contains(got, "Zhipu GLM · glm-4.7") {
 		t.Errorf("wisp id should resolve to the picker label: %q", got)
@@ -613,6 +616,9 @@ func TestSubagentStatusline_wisp_id_falls_back_when_modelPicker_is_missing(t *te
 	out, code := renderRowsWithEnv(t, in, env...)
 	assertExitCode(t, code, 0)
 	rows := parseSubagentRows(t, out)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d: %q", len(rows), out)
+	}
 	got := stripANSI(rows[0].Content)
 	if !strings.Contains(got, "wisp/acct.default/claude-opus-5") {
 		t.Errorf("should fall back to the raw id: %q", got)
@@ -630,6 +636,9 @@ func TestSubagentStatusline_wisp_id_falls_back_when_no_row_matches(t *testing.T)
 	out, code := renderRowsWithEnv(t, in, env...)
 	assertExitCode(t, code, 0)
 	rows := parseSubagentRows(t, out)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d: %q", len(rows), out)
+	}
 	got := stripANSI(rows[0].Content)
 	if !strings.Contains(got, "wisp/acct.default/claude-opus-5") {
 		t.Errorf("should fall back to the raw id when no row matches: %q", got)
