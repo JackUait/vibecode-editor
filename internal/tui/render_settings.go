@@ -189,10 +189,10 @@ func (m *MainMenuModel) renderSettingsBox() string {
 		cfgStyle := lipgloss.NewStyle().Foreground(cfgColor)
 		cfgFile := m.CurrentClaudeConfigFile()
 		state := "[" + cfgName + "]"
-		if cfgFile != "" {
-			indicator := configAPIKeyIndicator(m.claudeConfigsDir, cfgFile, cfgName)
-			dimIndicator := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" " + indicator)
-			state = state + dimIndicator
+		// The state is right-aligned, so an empty indicator must take its
+		// separator with it or the name sits a column off.
+		if indicator := configAPIKeyIndicator(m.claudeConfigsDir, cfgFile, cfgName); indicator != "" {
+			state += lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" " + indicator)
 		}
 		itemLines[rowSubscription] = []string{m.renderSettingsItem(rowSubscription, "Subscription", state, cfgStyle, primaryBoldStyle, leftBorder, rightBorder)}
 	}
