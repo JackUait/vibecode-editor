@@ -2,8 +2,6 @@ package main
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/jackuait/wisp-deck/internal/subusage"
@@ -48,44 +46,10 @@ func runSubscriptionUsage(cmd *cobra.Command, args []string) error {
 	if subUsageConfig == "" || subUsageCache == "" || subUsageConfigsDir == "" {
 		return nil
 	}
-	now := time.Now().Unix()
-	prev, prevErr := subusage.ReadCache(subUsageCache)
-	if prevErr == nil && now-prev.CheckedAt < int64(subUsageMinInterval) {
-		return nil
-	}
-
-	// Single-flight across concurrent statusline ticks: O_EXCL lock next to
-	// the cache; a lock older than 2 minutes is a crashed run's leftover.
-	// The cache's directory must exist before the lock can.
-	if err := os.MkdirAll(filepath.Dir(subUsageCache), 0o700); err != nil {
-		return nil
-	}
-	lock := subUsageCache + ".lock"
-	if info, err := os.Stat(lock); err == nil {
-		if time.Since(info.ModTime()) < 2*time.Minute {
-			return nil
-		}
-		_ = os.Remove(lock)
-	}
-	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil
-	}
-	_ = f.Close()
-	defer func() { _ = os.Remove(lock) }()
-
 	client := &http.Client{Timeout: 15 * time.Second}
-	snap, _, fetchErr := subusage.Fetch(client, subUsageConfigsDir, subUsageList, subUsageConfig, subUsageCodexAuth)
-	snap.CheckedAt = time.Now().Unix()
-	if fetchErr != nil {
-		// Keep the last good data; only the attempt stamp advances.
-		if prevErr == nil {
-			snap.RateLimits = prev.RateLimits
-			snap.FetchedAt = prev.FetchedAt
-		}
-	} else {
-		snap.FetchedAt = snap.CheckedAt
-	}
-	_ = subusage.WriteCache(subUsageCache, snap)
+	refreshUsageCache(subUsageCache, subUsageMinInterval, func() (subusage.Snapshot, error) {
+		snap, _, err := subusage.Fetch(client, subUsageConfigsDir, subUsageList, subUsageConfig, subUsageCodexAuth)
+		return snap, err
+	})
 	return nil
 }

@@ -3,6 +3,7 @@ package allin
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -173,4 +174,57 @@ func pickerModels(t *testing.T, path string) []string {
 		out = append(out, model)
 	}
 	return out
+}
+
+// The hidden file predates the "[1m]" marker and holds unmarked ids, so every
+// lookup into it strips the marker first. Without that, marking the Claude rows
+// silently un-hides every Claude row a user had already hidden.
+func TestEnsureProfile_omits_a_marked_row_the_file_lists_unmarked(t *testing.T) {
+	env := rosterEnv(t)
+	var marked string
+	for _, row := range Roster(env) {
+		if Route(row.Model).Kind == KindAccount {
+			marked = row.Model
+			break
+		}
+	}
+	if marked == "" || !strings.HasSuffix(marked, "[1m]") {
+		t.Fatalf("setup: no marked Claude row in the roster, got %q", marked)
+	}
+	bare := strings.TrimSuffix(marked, "[1m]")
+	if err := os.WriteFile(HiddenFile(env.ConfigsList), []byte(bare+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	listFile := filepath.Join(t.TempDir(), "claude-configs.list")
+	file, err := EnsureProfile(env, listFile, env.ConfigsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options := pickerModels(t, filepath.Join(env.ConfigsDir, file)); has(options, marked) {
+		t.Fatalf("row hidden as %q came back as %q: %v", bare, marked, options)
+	}
+}
+
+// One id per row on disk, whatever the roster marks it: a file holding both
+// spellings of one row would hide it once and show it the next time.
+func TestToggleHidden_stores_a_marked_row_unmarked(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "claude-allin.hidden")
+	if _, err := ToggleHidden(path, "wisp/acct.default/claude-opus-5[1m]"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "wisp/acct.default/claude-opus-5" {
+		t.Fatalf("stored %q, want the unmarked id", got)
+	}
+	nowHidden, err := ToggleHidden(path, "wisp/acct.default/claude-opus-5[1m]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nowHidden {
+		t.Fatal("toggling the same marked row twice must show it again")
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackuait/wisp-deck/internal/claudeconfig"
 )
@@ -19,10 +20,12 @@ const ProfileName = "All-In"
 // rows every call — logins and providers come and go, and a stale roster offers
 // models the machine can no longer reach.
 //
-// Only modelPicker and the three env keys routerEnv names are written; they are
+// Only modelPicker and the env keys routerEnv names are written; they are
 // rewritten every call because each one is load-bearing (see routerEnv) and a
-// profile missing any of them fails silently. Every other key in the file is
-// the user's, and the launch overlay copies the whole object.
+// profile missing any of them fails silently. A key routerEnv maps to "" is
+// deleted, so a window from an older profile cannot survive a refresh. Every
+// other key in the file is the user's, and the launch overlay copies the whole
+// object.
 func EnsureProfile(env Env, listFile, configsDir string) (string, error) {
 	file := ProfileFile(listFile)
 	if file == "" {
@@ -50,18 +53,39 @@ func EnsureProfile(env Env, listFile, configsDir string) (string, error) {
 		settingsEnv = map[string]any{}
 	}
 	for key, value := range routerEnv() {
+		if value == "" {
+			delete(settingsEnv, key)
+			continue
+		}
 		settingsEnv[key] = value
 	}
 	settings["env"] = settingsEnv
 
-	rows := Roster(env)
+	usage := Usage(env, time.Now())
+	rows := AnnotateUsage(Roster(env), usage)
 	hidden := LoadHidden(HiddenFile(env.ConfigsList))
 	options := make([]Row, 0, len(rows))
 	for _, row := range rows {
-		if hidden[row.Model] {
+		if hidden[BareModel(row.Model)] {
 			continue
 		}
 		options = append(options, row)
+	}
+	// A subscription with nothing left answers every turn with a limit error,
+	// so those rows are dropped unless the user turned the setting off. The
+	// filter is applied on top of the hidden set and only when something
+	// survives it: a deck whose subscriptions are all spent still needs a
+	// picker it can pick from.
+	if LoadHideExhausted(HideExhaustedFile(env.ConfigsList)) {
+		live := make([]Row, 0, len(options))
+		for _, row := range options {
+			if !usage[SourceKey(row.Model)].Exhausted() {
+				live = append(live, row)
+			}
+		}
+		if len(live) > 0 {
+			options = live
+		}
 	}
 	// replaceBuiltInOptions leaves no built-in row to fall back on, so an empty
 	// options list is a picker with nothing to pick, in a session that has no
@@ -143,30 +167,27 @@ func EnsureProfileIfEligible(env Env) error {
 //     wisp/… id is sent verbatim to the session's own upstream. The value is
 //     the real endpoint; the launch rewrites the session's OVERLAY, never this
 //     file, so the stored profile keeps naming the truth.
-//   - The four window keys are the session's 1M guard, and they have to be
-//     declared here: this is the one sub-1M profile stampContextBudget cannot
-//     write for, because All-In has no model mappings for it to size a window
-//     from. Every roster row is 200k, but the session's STARTING model comes
-//     from the user's global settings, and a "[1m]" in that raw string grants
-//     the whole session 1M. One key does not cover it — CLAUDE_CODE_DISABLE_1M
-//     _CONTEXT is read only by the string-marker branch of the window choice,
-//     while the beta and native-1M branches reach 1e6 ungated, so
-//     CLAUDE_CODE_AUTO_COMPACT_WINDOW is the direct cap on current versions.
+//   - The window keys are the session's 1M declaration, and they have to be
+//     declared here: this is the one profile stampContextBudget cannot size on
+//     its own, because All-In has no model mappings to compute a window from.
 //
-// The window set must equal what the ensure-budget sweep would compute for
-// rosterWindow, or every install rewrites this file;
-// TestEnsureProfile_survives_the_context_budget_sweep is what holds the two
-// together. The reserve is outputReserve(200000) — a quarter of the window,
-// capped at the 32000 Claude Code would have asked for unprompted.
-func routerEnv() map[string]any {
-	window := strconv.Itoa(rosterWindow)
-	return map[string]any{
+// A 1M window is ONE key. The sub-1M trio has to be actively deleted, not just
+// left unwritten: CLAUDE_CODE_DISABLE_1M_CONTEXT makes Claude Code ignore the
+// row marker outright, and CLAUDE_CODE_AUTO_COMPACT_WINDOW caps the window
+// directly, so either one surviving from an older profile silently puts the
+// session back at 200k. An empty value here means delete.
+//
+// The set must equal what contextWindowEnv computes for rosterWindow, or every
+// install rewrites this file; TestEnsureProfile_survives_the_context_budget
+// _sweep is what holds the two together.
+func routerEnv() map[string]string {
+	return map[string]string{
 		"WISP_DECK_SUBSCRIPTION_PROVIDER": claudeconfig.AllInProvider.Key,
 		"ANTHROPIC_BASE_URL":              claudeconfig.AllInProvider.BaseURL,
-		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  window,
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": window,
-		"CLAUDE_CODE_DISABLE_1M_CONTEXT":  "1",
-		"CLAUDE_CODE_MAX_OUTPUT_TOKENS":   "32000",
+		claudeconfig.ContextBudgetKey:     strconv.Itoa(rosterWindow),
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
+		"CLAUDE_CODE_DISABLE_1M_CONTEXT":  "",
+		claudeconfig.OutputReserveKey:     "",
 	}
 }
 

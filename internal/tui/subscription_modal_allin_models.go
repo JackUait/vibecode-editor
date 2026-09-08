@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jackuait/wisp-deck/internal/allin"
@@ -22,12 +23,19 @@ import (
 // the two-cell cursor marker plus the four-cell checkbox.
 const subscriptionAllInRowIndent = 6
 
-// subscriptionAllInState is the roster the checklist renders, plus which of its
-// rows are hidden. Reloaded on selection and on every toggle — the roster
-// follows the logins and providers on the machine, never the draft.
+// subscriptionAllInHideSpentLabel names the filter row. The renderer and the
+// mouse hit test both use it, so the two can never search for different text.
+const subscriptionAllInHideSpentLabel = "Hide subscriptions with no limits left"
+
+// subscriptionAllInState is the roster the checklist renders, which of its rows
+// are hidden, what each source has left, and whether spent sources are filtered
+// out. Reloaded on selection and on every toggle — all four follow the machine,
+// never the draft.
 type subscriptionAllInState struct {
-	rows   []allin.Row
-	hidden map[string]bool
+	rows      []allin.Row
+	hidden    map[string]bool
+	usage     map[string]allin.Quota
+	hideSpent bool
 }
 
 func (m *MainMenuModel) allInEnv() allin.Env {
@@ -57,16 +65,19 @@ func (m *MainMenuModel) loadAllInChecklist() {
 		m.subscriptionModal.allIn = subscriptionAllInState{}
 		return
 	}
+	env := m.allInEnv()
 	m.subscriptionModal.allIn = subscriptionAllInState{
-		rows:   allin.Roster(m.allInEnv()),
-		hidden: allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList)),
+		rows:      allin.Roster(env),
+		hidden:    allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList)),
+		usage:     allin.Usage(env, time.Now()),
+		hideSpent: allin.LoadHideExhausted(allin.HideExhaustedFile(m.claudeConfigsList)),
 	}
 }
 
 func (m *MainMenuModel) allInVisibleRows() int {
 	visible := 0
 	for _, row := range m.subscriptionModal.allIn.rows {
-		if !m.subscriptionModal.allIn.hidden[row.Model] {
+		if !m.subscriptionModal.allIn.hidden[allin.BareModel(row.Model)] {
 			visible++
 		}
 	}
@@ -82,7 +93,7 @@ func (m *MainMenuModel) toggleAllInRow(index int) {
 		return
 	}
 	row := rows[index]
-	if !m.subscriptionModal.allIn.hidden[row.Model] && m.allInVisibleRows() <= 1 {
+	if !m.subscriptionModal.allIn.hidden[allin.BareModel(row.Model)] && m.allInVisibleRows() <= 1 {
 		m.subscriptionModal.err = errors.New("At least one model must stay in the picker")
 		return
 	}
@@ -93,6 +104,34 @@ func (m *MainMenuModel) toggleAllInRow(index int) {
 	m.subscriptionModal.err = nil
 	m.ensureAllIn()
 	m.loadAllInChecklist()
+}
+
+// toggleAllInHideSpent flips whether a subscription with nothing left is left
+// out of the picker, and rewrites the profile. Unlike a hidden row this needs
+// no last-row guard: EnsureProfile keeps the filter off whenever it would empty
+// the picker, so a deck whose subscriptions are all spent still has rows.
+func (m *MainMenuModel) toggleAllInHideSpent() {
+	if m.claudeConfigsList == "" {
+		return
+	}
+	if _, err := allin.ToggleHideExhausted(allin.HideExhaustedFile(m.claudeConfigsList)); err != nil {
+		m.subscriptionModal.err = err
+		return
+	}
+	m.subscriptionModal.err = nil
+	m.ensureAllIn()
+	m.loadAllInChecklist()
+}
+
+// subscriptionAllInRowLabel is one row's label with what its subscription has
+// left. Quotas come from the same caches the generated picker is annotated
+// from, so the pane and /model always read the same number.
+func (m *MainMenuModel) subscriptionAllInRowLabel(row allin.Row) string {
+	text := m.subscriptionModal.allIn.usage[allin.SourceKey(row.Model)].Text()
+	if text == "" {
+		return row.Label
+	}
+	return row.Label + " · " + text
 }
 
 // subscriptionAllInRowText shapes one row's label to the pane. The renderer and
@@ -109,7 +148,20 @@ func subscriptionAllInRowText(label string, width int) string {
 
 func (m *MainMenuModel) subscriptionAllInChecklistLines(width int, accent, dim, green lipgloss.Style) []string {
 	state := m.subscriptionModal.allIn
-	lines := make([]string, 0, len(state.rows)+1)
+	lines := make([]string, 0, len(state.rows)+2)
+
+	marker, box, style := "  ", "[ ] ", dim
+	if m.subscriptionModal.mode == subscriptionBrowse &&
+		m.subscriptionModal.pane == subscriptionDetailsPane &&
+		m.subscriptionModal.detailCursor == subscriptionDetailAllInHideSpent {
+		marker = accent.Render("▌") + " "
+	}
+	if state.hideSpent {
+		box, style = "[x] ", green
+	}
+	lines = append(lines, marker+style.Render(box+
+		subscriptionAllInRowText(subscriptionAllInHideSpentLabel, width)))
+
 	for i, row := range state.rows {
 		marker := "  "
 		if m.subscriptionModal.mode == subscriptionBrowse &&
@@ -118,10 +170,11 @@ func (m *MainMenuModel) subscriptionAllInChecklistLines(width int, accent, dim, 
 			marker = accent.Render("▌") + " "
 		}
 		box, style := "[x] ", green
-		if state.hidden[row.Model] {
+		if state.hidden[allin.BareModel(row.Model)] {
 			box, style = "[ ] ", dim
 		}
-		lines = append(lines, marker+style.Render(box+subscriptionAllInRowText(row.Label, width)))
+		lines = append(lines, marker+style.Render(box+
+			subscriptionAllInRowText(m.subscriptionAllInRowLabel(row), width)))
 	}
 	return append(lines, dim.Render(modalTruncate("Enter or Space shows or hides a row in /model.", width)))
 }

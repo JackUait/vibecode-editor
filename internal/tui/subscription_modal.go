@@ -49,6 +49,9 @@ const (
 	// Rename to Save as the action row, so a value inserted above Rename would
 	// drag the action buttons into the field list.
 	subscriptionDetailImages
+	// All-In's own filter row. It has to sit below Images and above the
+	// checklist base, which is the only gap left.
+	subscriptionDetailAllInHideSpent
 	// The All-In checklist is a SPAN, not one row: its cursor values run from
 	// this base to base+len(roster)-1. It must stay last for the same reason
 	// Images does, and nothing may be appended after it.
@@ -717,9 +720,12 @@ func (m *MainMenuModel) updateSubscriptionModal(msg tea.KeyMsg) (tea.Model, tea.
 	case tea.KeySpace:
 		// bubbletea sends space as its own key type, never as a rune, so it
 		// cannot be handled beside the letter shortcuts below.
-		if m.subscriptionModal.pane == subscriptionDetailsPane &&
-			m.subscriptionModal.detailCursor >= subscriptionDetailAllInBase {
-			m.toggleAllInRow(m.subscriptionModal.detailCursor - subscriptionDetailAllInBase)
+		if m.subscriptionModal.pane == subscriptionDetailsPane {
+			if m.subscriptionModal.detailCursor == subscriptionDetailAllInHideSpent {
+				m.toggleAllInHideSpent()
+			} else if m.subscriptionModal.detailCursor >= subscriptionDetailAllInBase {
+				m.toggleAllInRow(m.subscriptionModal.detailCursor - subscriptionDetailAllInBase)
+			}
 		}
 	case tea.KeyRunes:
 		if len(msg.Runes) == 1 {
@@ -877,6 +883,7 @@ func (m *MainMenuModel) subscriptionDetailRows() []int {
 		// The router picks by picker row, so the four alias mappings are inert
 		// here: cycleSubscriptionMapping returns early on an empty model list.
 		rows = nil
+		rows = append(rows, subscriptionDetailAllInHideSpent)
 		for i := range m.subscriptionModal.allIn.rows {
 			rows = append(rows, subscriptionDetailAllInBase+i)
 		}
@@ -1350,6 +1357,8 @@ func (m *MainMenuModel) activateSubscriptionDetail() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.subscriptionModal.detailCursor {
+	case subscriptionDetailAllInHideSpent:
+		m.toggleAllInHideSpent()
 	case subscriptionDetailOpus, subscriptionDetailSonnet, subscriptionDetailHaiku, subscriptionDetailFable:
 		m.cycleSubscriptionMapping("next")
 	case subscriptionDetailModel:
@@ -1908,11 +1917,14 @@ func (m *MainMenuModel) subscriptionDetailCursorLine() int {
 	const routingTop = 8 // first line of the MODEL ROUTING block
 	line := routingTop + 4
 	if m.subscriptionModalOnAllIn() {
-		// The checklist replaces the four mappings, so the block is as tall as
-		// the roster plus its hint line.
-		line = routingTop + len(m.subscriptionModal.allIn.rows) + 1
+		// The checklist replaces the four mappings, so the block is the filter
+		// row, the roster, and the hint line.
+		line = routingTop + len(m.subscriptionModal.allIn.rows) + 2
+		if cursor == subscriptionDetailAllInHideSpent {
+			return routingTop
+		}
 		if cursor >= subscriptionDetailAllInBase {
-			return routingTop + cursor - subscriptionDetailAllInBase
+			return routingTop + 1 + cursor - subscriptionDetailAllInBase
 		}
 	} else if cursor >= subscriptionDetailOpus && cursor <= subscriptionDetailFable {
 		return routingTop + cursor
@@ -2614,8 +2626,14 @@ func (m *MainMenuModel) subscriptionModalTarget(cardX, cardY int) subscriptionHi
 
 	if m.subscriptionModalOnAllIn() {
 		paneWidth := m.subscriptionDetailPaneWidth()
+		if hitText(modalTruncate(subscriptionAllInHideSpentLabel, paneWidth-subscriptionAllInRowIndent)) {
+			return subscriptionHitTarget{
+				kind:  subscriptionHitField,
+				index: subscriptionDetailAllInHideSpent,
+			}
+		}
 		for i, row := range m.subscriptionModal.allIn.rows {
-			if hitText(subscriptionAllInRowText(row.Label, paneWidth)) {
+			if hitText(subscriptionAllInRowText(m.subscriptionAllInRowLabel(row), paneWidth)) {
 				return subscriptionHitTarget{
 					kind:  subscriptionHitField,
 					index: subscriptionDetailAllInBase + i,
@@ -2792,6 +2810,10 @@ func (m *MainMenuModel) handleSubscriptionModalMouse(msg tea.MouseMsg) (tea.Mode
 			m.subscriptionModal.detailCursor = target.index
 			if target.index >= subscriptionDetailAllInBase {
 				m.toggleAllInRow(target.index - subscriptionDetailAllInBase)
+				return m, nil
+			}
+			if target.index == subscriptionDetailAllInHideSpent {
+				m.toggleAllInHideSpent()
 				return m, nil
 			}
 			if target.index == subscriptionDetailImages {

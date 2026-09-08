@@ -29,6 +29,22 @@ func KeychainService(configDir string) string {
 	return base + "-" + hex.EncodeToString(sum[:])[:8]
 }
 
+// AccountConfigDir is the CLAUDE_CONFIG_DIR one login runs under. The implicit
+// login has none, which is what gives it the unsuffixed Keychain service.
+func AccountConfigDir(accountsDir, login string) string {
+	if login == "" || login == "default" {
+		return ""
+	}
+	return filepath.Join(accountsDir, login)
+}
+
+// AccountToken reads one login's OAuth token out of the Keychain. Resolve uses
+// the same read to route a turn; the usage refresher uses it to ask the
+// endpoint what that login has left.
+func AccountToken(accountsDir, login string) (string, error) {
+	return keychainToken(AccountConfigDir(accountsDir, login))
+}
+
 // ErrStaleAccount marks a login whose token could not be read. It is
 // deterministic, so the router must surface it as 400: Claude Code retries a
 // 401 about eleven times before giving up.
@@ -83,11 +99,7 @@ func (r *FileResolver) Resolve(target Target) (Credential, error) {
 	}
 	switch target.Kind {
 	case KindAccount:
-		configDir := ""
-		if target.Source != "default" {
-			configDir = filepath.Join(r.Env.AccountsDir, target.Source)
-		}
-		token, err := r.Token(configDir)
+		token, err := r.Token(AccountConfigDir(r.Env.AccountsDir, target.Source))
 		if err != nil || token == "" {
 			return Credential{}, fmt.Errorf("%w: %s", ErrStaleAccount, target.Source)
 		}

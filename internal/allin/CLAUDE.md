@@ -17,54 +17,65 @@ this build cannot place — wrong prefix, empty source, empty model — returns
 own credential. Guarded by `TestRoute_keeps_slashes_inside_the_model_id` and
 `TestRoute_treats_an_unparseable_prefix_as_the_session`.
 
-### Every row is 200k, and the roster emits no `[1m]` — on purpose
+### Every Claude row carries `[1m]`, and a provider row never may
 
 Measured live through `/context`: a `wisp/…` row carrying `behavesAs:
 claude-opus-5` gets the flat 200k window, so `behavesAs` does not carry a window
 across the router. The literal `[1m]` suffix on the raw model string does,
-because Claude Code reads that marker off the string itself.
+because Claude Code reads that marker off the string itself. Decoded from
+2.1.263, the marker branch is the FIRST thing the model-window resolver checks,
+and the whole chain below it is unreachable once it hits.
 
-**`roster.go` no longer writes it.** A 1M window granted off the model string is
-granted to the whole *session*, and nothing narrows it again when the user picks
-a 200k row later in the same conversation: by then the transcript is already
-past the new endpoint's cap, and `/compact` cannot escape it — it sends that
-same oversized transcript plus a summarization prompt, so it is larger than the
-turn that already failed. This is the unrecoverable class the root `CLAUDE.md`
-documents, and `_guard_subscription_context` — which catches it on a
-subscription *switch* — does not run on a `/model` pick. A uniform 200k across
-every row is the one shape no pick can wedge, so the capability was traded away
-rather than shipped as a trap.
+`accountRows` appends `OneMillionMarker` to every Claude id, and `configRows`
+appends it to none. A provider row must stay unmarked: no configured provider
+serves 1M, and the marker would tell the session it has room the endpoint
+refuses. `strip1M` (`route.go`) removes it before an id reaches `Resolve` or the
+upstream, `Want1M` carries the fact forward, and `proxy.go` turns it into the
+`context-1m-2025-08-07` beta header. Guarded by
+`TestRoster_marks_every_claude_row_1m_and_no_provider_row` and
+`TestRoster_never_marks_a_chatgpt_row_1m`.
 
-The machinery it needed is intact and still tested: `strip1M` (`route.go`)
-removes the marker before an id reaches `Resolve` or the upstream, `Want1M`
-carries the fact forward, and `proxy.go` adds the `context-1m-2025-08-07` beta
-header. 1M returns by putting a size guard in front of that, never by
-re-emitting the suffix from the roster. Guarded by
-`TestRoster_never_offers_a_1m_row`.
+**The trade this accepts.** The window is granted to the whole *session*, and
+nothing narrows it again when the user picks a provider row later in the same
+conversation: by then the transcript may be past that endpoint's cap, and
+`/compact` cannot escape it — it sends the same oversized transcript plus a
+summarization prompt, so it is larger than the turn that already failed. This is
+the unrecoverable class the root `CLAUDE.md` documents, and
+`_guard_subscription_context` — which catches it on a subscription *switch* —
+does not run on a `/model` pick. The alternative was a uniform 200k across every
+row, which no pick can wedge; 1M on the Claude rows was chosen over it
+deliberately, with that failure understood.
 
-The generated profile therefore declares its own window, because the rows are
-not the only model string in play: the session's *starting* model comes from the
-user's global settings, and a global `opus[1m]` would grant 1M before any row is
-picked. Every other sub-1M profile gets that from `stampContextBudget`, which
-returns early here — All-In has no model mappings for it to size a window from —
-so this is the one profile that must declare the set itself.
+The generated profile still declares its own window, because the rows are not
+the only model string in play: the session's *starting* model comes from the
+user's global settings. Every other profile gets its window from
+`stampContextBudget`, which returns early here — All-In has no model mappings
+for it to size a window from — so this is the one profile that must declare the
+set itself.
 
-It is a set of **four** keys, not one. `CLAUDE_CODE_DISABLE_1M_CONTEXT` alone is
-not the guard: the decoded `sae()` is read by `Ov()` only, so it gates the
-string-marker branch of the window choice while
-`betas.includes(1m) && EW(model)` and `L2(model)` reach 1e6 ungated —
-`CLAUDE_CODE_AUTO_COMPACT_WINDOW` is the direct cap on current versions and
-`DISABLE_1M_CONTEXT` covers older ones. `routerEnv` writes
-`CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000`,
-`CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000`, `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` and
-`CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000` — exactly what `contextWindowEnv` computes
-for a 200000 window, because `bin/wisp-deck` runs `ensure-budget` over this file
-on every install and a set that disagrees is rewritten every time.
-`TestEnsureProfile_survives_the_context_budget_sweep` is what holds the two
-together, and it pins the two window values in both directions; the reserve is
-pinned by `TestEnsureProfile_declares_every_key_a_200k_window_implies` instead,
-because the sweep deliberately keeps any declared reserve below the window as
-the user's own figure.
+At 1M that set is **one** key. `routerEnv` writes
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000` and maps
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `CLAUDE_CODE_DISABLE_1M_CONTEXT` and
+`CLAUDE_CODE_MAX_OUTPUT_TOKENS` to `""`, which `EnsureProfile` reads as
+**delete**. Deleting is the load-bearing half: every profile written before this
+change carries those three at their 200k values, and either of the first two
+alone puts the session back at 200k. `DISABLE_1M_CONTEXT` makes the decoded
+`tc(model)` return false whatever the id ends with, so the marker stops working
+on every row at once, and `AUTO_COMPACT_WINDOW` caps the window directly. That
+is exactly what `contextWindowEnv` computes for a 1000000 window, which matters
+because `bin/wisp-deck` runs `ensure-budget` over this file on every install and
+a set that disagrees is rewritten every time.
+`TestEnsureProfile_survives_the_context_budget_sweep`,
+`TestEnsureProfile_clears_a_sub_1m_windows_leftover_keys` and
+`TestEnsureProfile_leaves_the_1m_model_marker_armed` hold the three facts apart.
+
+The hidden-rows file predates the marker and stores ids **unmarked**, so every
+lookup into it goes through `BareModel` and `ToggleHidden` strips before it
+writes. Without that, marking the Claude rows would silently un-hide every
+Claude row a user had already hidden, and the file would collect two spellings
+of one row. Guarded by
+`TestEnsureProfile_omits_a_marked_row_the_file_lists_unmarked` and
+`TestToggleHidden_stores_a_marked_row_unmarked`.
 
 ### `Row` declares no `behavesAs`, and re-adding one costs the pane its effort control
 
@@ -683,3 +694,59 @@ that loop searches for as a substring), and the renderer and the hit test must
 shape a label through the one `subscriptionAllInRowText` — the hit test locates a
 row by searching the rendered line for that exact string, so a label truncated
 one way and searched for the other never matches.
+
+### A row says what its subscription has left, and a spent one is left out
+
+Every row's description ends with what the credential it spends has left
+(`Zhipu / GLM · 75% left`), and by default a source with nothing left contributes
+no row at all. Both are read from the usage caches the statusline already
+maintains, so the picker never reaches for a network on a path that writes a
+settings file. `usageFreshFor` is the same 2h `gt_sub_usage_fresh` uses
+(`lib/statusline.sh`), so the two surfaces can never disagree about whether a
+number is real.
+
+**Claude Code snapshots `modelPicker` ONCE, at launch** — verified live: editing
+a profile under a running pane left `/model` showing the old rows, and a row
+added after launch never appeared. Everything else here follows from that:
+
+- **Unknown is never exhausted.** `Quota.Known` is false for a source with no
+  cache, an unreadable one, a stale one, or a provider reporting no windows, and
+  `Exhausted()` requires it. A wrong hide cannot be undone until the next
+  launch, so offering a spent row costs one failed turn while hiding a working
+  subscription costs the whole session.
+- **The filter never empties the picker.** `replaceBuiltInOptions` leaves no
+  built-in row to fall back on, so `EnsureProfile` keeps the unfiltered options
+  whenever the filter would leave nothing — a deck whose subscriptions are all
+  spent still has rows. That is also why the TUI toggle needs no last-row guard,
+  unlike `toggleAllInRow`.
+- **`Resolve` never reads usage**, exactly like a hidden row: a session whose
+  saved picker default ran out mid-conversation must still finish its turn.
+  `Usage` is called from `profile.go` alone.
+- **A quota belongs to a SOURCE, not a row.** `SourceKey` reduces a row to the
+  credential it spends, so one login's rows all carry the same number and all
+  vanish together.
+- **The refresh is armed at launch and never waited on** (`claude_allin.go`). A
+  reading landing after that point cannot reach this session's picker anyway, so
+  blocking would spend a round trip of launch time on the *next* tab's numbers.
+- **`account-usage` refreshes every login on the machine**, not the session's
+  own. Claude Code puts only the running session's rate limits in its statusline
+  payload, and the picker offers a row per login — including logins no pane is
+  running, which only that endpoint can answer.
+
+The behavior is a checkbox in the modal's All-In block, stored beside the
+configs list as `claude-allin.hide-exhausted` — the same sidecar shape as
+`claude-allin.hidden`. **Absent means on**, and an unreadable file reads as on
+too. Like a hidden row it writes immediately and refreshes the profile, never
+going through the draft: it is a property of the machine, not of the profile
+being edited.
+
+`subscriptionDetailAllInHideSpent` (`internal/tui/subscription_modal.go`) had
+exactly one legal slot — after `subscriptionDetailImages` and before
+`subscriptionDetailAllInBase`, which is a span nothing may follow. It renders as
+the first line of the block, so every checklist row moved down one line and
+`subscriptionDetailCursorLine` moved with it.
+
+Guarded by `internal/allin/usage_test.go`,
+`internal/tui/subscription_modal_allin_hidespent_test.go`,
+`cmd/wisp-deck-tui/allin_usage_test.go` and
+`cmd/wisp-deck-tui/account_usage_cmd_test.go`.

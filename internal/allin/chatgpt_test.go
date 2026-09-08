@@ -68,16 +68,19 @@ func TestRoster_admits_a_chatgpt_profile(t *testing.T) {
 	}
 }
 
-// The whole 5.6/6 tier is 272000 tokens, and the roster deliberately writes no
-// "[1m]" suffix for any row — a 1M window granted off the model string is
-// granted to the SESSION, and no later pick narrows it again.
-func TestRoster_never_offers_a_1m_chatgpt_row(t *testing.T) {
+// The whole 5.6/6 tier is 272000 tokens. Only a Claude row carries the marker:
+// a marked ChatGPT row would tell the session it has 1M against an endpoint
+// that refuses anything past 272k.
+func TestRoster_never_marks_a_chatgpt_row_1m(t *testing.T) {
 	env := rosterEnv(t)
 	chatGPTProfile(t, env)
 
-	for _, id := range models(Roster(env)) {
-		if strings.Contains(strings.ToLower(id), "[1m]") {
-			t.Fatalf("roster offered a 1M row: %s", id)
+	for _, row := range Roster(env) {
+		if Route(row.Model).Kind != KindConfig {
+			continue
+		}
+		if strings.Contains(strings.ToLower(row.Model), "[1m]") {
+			t.Fatalf("roster offered a 1M provider row: %s", row.Model)
 		}
 	}
 }

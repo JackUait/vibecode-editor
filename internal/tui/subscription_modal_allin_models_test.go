@@ -93,30 +93,6 @@ func TestSubscriptionModal_allInPaneListsEveryPickerRowAsACheckbox(t *testing.T)
 	}
 }
 
-func TestSubscriptionDetailRows_allInCoversTheChecklistAndRename(t *testing.T) {
-	m, rows := allInSubscriptionMenu(t)
-
-	want := make([]int, 0, len(rows)+1)
-	for i := range rows {
-		want = append(want, subscriptionDetailAllInBase+i)
-	}
-	want = append(want, subscriptionDetailRename)
-
-	got := m.subscriptionDetailRows()
-	if len(got) != len(want) {
-		t.Fatalf("detail rows = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("detail rows = %v, want %v", got, want)
-		}
-	}
-	if m.subscriptionModal.detailCursor != subscriptionDetailAllInBase {
-		t.Fatalf("cursor opened on %d, want the first checklist row %d",
-			m.subscriptionModal.detailCursor, subscriptionDetailAllInBase)
-	}
-}
-
 func TestSubscriptionModal_togglingAnAllInRowHidesItFromThePicker(t *testing.T) {
 	m, rows := allInSubscriptionMenu(t)
 	gone := rows[0]
@@ -127,7 +103,7 @@ func TestSubscriptionModal_togglingAnAllInRowHidesItFromThePicker(t *testing.T) 
 	if m.subscriptionModal.err != nil {
 		t.Fatalf("toggling the first row failed: %v", m.subscriptionModal.err)
 	}
-	if !allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[gone.Model] {
+	if !allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[allin.BareModel(gone.Model)] {
 		t.Fatalf("row %q was not written to the hidden file", gone.Model)
 	}
 	for _, model := range allInPickerModels(t, m) {
@@ -151,7 +127,7 @@ func TestSubscriptionModal_togglingAnAllInRowBackRestoresIt(t *testing.T) {
 	if m.subscriptionModal.err != nil {
 		t.Fatalf("toggling back failed: %v", m.subscriptionModal.err)
 	}
-	if allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[back.Model] {
+	if allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[allin.BareModel(back.Model)] {
 		t.Fatalf("row %q is still hidden after being toggled back", back.Model)
 	}
 	found := false
@@ -185,7 +161,7 @@ func TestSubscriptionModal_refusesToHideTheLastVisibleAllInRow(t *testing.T) {
 	if m.subscriptionModal.err == nil {
 		t.Fatal("hiding the last visible row was allowed")
 	}
-	if allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[last.Model] {
+	if allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[allin.BareModel(last.Model)] {
 		t.Fatalf("the last row %q was hidden anyway", last.Model)
 	}
 	if models := allInPickerModels(t, m); len(models) != 1 || models[0] != last.Model {
@@ -200,7 +176,7 @@ func TestSubscriptionModal_spaceTogglesAnAllInRow(t *testing.T) {
 
 	m = subscriptionModalKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
 
-	if !allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[rows[0].Model] {
+	if !allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[allin.BareModel(rows[0].Model)] {
 		t.Fatalf("space did not hide %q", rows[0].Model)
 	}
 }
@@ -222,7 +198,7 @@ func TestSubscriptionModal_clickingAnAllInRowTogglesIt(t *testing.T) {
 	}
 	m = next
 
-	if !allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[row.Model] {
+	if !allin.LoadHidden(allin.HiddenFile(m.claudeConfigsList))[allin.BareModel(row.Model)] {
 		t.Fatalf("clicking %q did not hide it", row.Label)
 	}
 }
@@ -232,15 +208,20 @@ func TestSubscriptionModal_clickingAnAllInRowTogglesIt(t *testing.T) {
 func TestSubscriptionDetailCursorLine_followsTheAllInChecklist(t *testing.T) {
 	m, rows := allInSubscriptionMenu(t)
 
+	m.subscriptionModal.detailCursor = subscriptionDetailAllInHideSpent
+	if got, want := m.subscriptionDetailCursorLine(), 8; got != want {
+		t.Fatalf("the filter row sits on line %d, want %d", got, want)
+	}
+
 	for i := range rows {
 		m.subscriptionModal.detailCursor = subscriptionDetailAllInBase + i
-		if got, want := m.subscriptionDetailCursorLine(), 8+i; got != want {
+		if got, want := m.subscriptionDetailCursorLine(), 9+i; got != want {
 			t.Fatalf("row %d sits on line %d, want %d", i, got, want)
 		}
 	}
 
 	m.subscriptionModal.detailCursor = subscriptionDetailRename
-	if got, want := m.subscriptionDetailCursorLine(), 8+len(rows); got <= want {
+	if got, want := m.subscriptionDetailCursorLine(), 9+len(rows); got <= want {
 		t.Fatalf("the action row is on line %d, want it below the %d-row checklist", got, len(rows))
 	}
 }

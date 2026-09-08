@@ -228,44 +228,22 @@ func TestEnsureProfile_carries_its_own_provider_identity(t *testing.T) {
 	}
 }
 
-// Every row is 200k (the roster no longer emits [1m]), but the session's
-// STARTING model is the user's global one — and Claude Code reads a "[1m]" off
-// that raw string alone. Nothing else narrows it here: stampContextBudget
-// returns early for a profile with no model mappings, so this profile would be
-// the one with no 1M guard at all.
-func TestEnsureProfile_disarms_an_inherited_1m_model_marker(t *testing.T) {
+// CLAUDE_CODE_DISABLE_1M_CONTEXT gates the string-marker branch of Claude
+// Code's window choice, and that branch is the ONLY thing giving a Claude row
+// its 1M window: the decoded `tc(model)` returns false outright when the key is
+// set, whatever the id ends with. One inherited "1" from an older profile puts
+// every row back at 200k, silently.
+func TestEnsureProfile_leaves_the_1m_model_marker_armed(t *testing.T) {
 	_, _, path := generatedProfile(t)
-	if got := readEnv(t, path)["CLAUDE_CODE_DISABLE_1M_CONTEXT"]; got != "1" {
-		t.Fatalf("CLAUDE_CODE_DISABLE_1M_CONTEXT = %q, want \"1\"", got)
+	if got, ok := readEnv(t, path)["CLAUDE_CODE_DISABLE_1M_CONTEXT"]; ok {
+		t.Fatalf("CLAUDE_CODE_DISABLE_1M_CONTEXT = %q, which neutralises every row's marker", got)
 	}
 }
 
-// A sub-1M profile carries FOUR keys, not one. CLAUDE_CODE_DISABLE_1M_CONTEXT
-// gates only the string-marker branch of Claude Code's window choice — the
-// decoded `sae()` is read by `Ov()` alone, while the beta path
-// (`betas.includes(1m) && EW(model)`) and the native path (`L2(model)`) reach
-// 1e6 ungated — and CLAUDE_CODE_AUTO_COMPACT_WINDOW is the direct cap on
-// current versions. This is the one sub-1M profile stampContextBudget cannot
-// write for (it has no model mappings to size a window from), so it declares
-// the set itself.
-func TestEnsureProfile_declares_every_key_a_200k_window_implies(t *testing.T) {
-	_, _, path := generatedProfile(t)
-	env := readEnv(t, path)
-	for key, want := range map[string]string{
-		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "200000",
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000",
-		"CLAUDE_CODE_DISABLE_1M_CONTEXT":  "1",
-		"CLAUDE_CODE_MAX_OUTPUT_TOKENS":   "32000",
-	} {
-		if env[key] != want {
-			t.Errorf("%s = %q, want %q", key, env[key], want)
-		}
-	}
-}
-
-// bin/wisp-deck runs ensure-budget over every profile on every install. Once a
-// window is declared this stops being vacuous: the sweep recomputes all four
-// keys from it, and reports no change only if the declared set matches exactly.
+// The declared window must equal what contextWindowEnv would compute for
+// rosterWindow, or every install rewrites this file. At 1M that means ONE key:
+// the sub-1M trio is deleted, and CLAUDE_CODE_AUTO_COMPACT_WINDOW surviving at
+// any value would cap the session straight back down.
 func TestEnsureProfile_survives_the_context_budget_sweep(t *testing.T) {
 	env, file, path := generatedProfile(t)
 	changed, err := claudeconfig.EnsureContextBudget(env.ConfigsDir, file)
@@ -276,12 +254,57 @@ func TestEnsureProfile_survives_the_context_budget_sweep(t *testing.T) {
 		t.Fatal("the context-budget sweep rewrote the All-In profile")
 	}
 	env2 := readEnv(t, path)
+	if env2["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "1000000" {
+		t.Errorf("declared window = %q, want 1000000", env2["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
+	}
 	for _, key := range []string{
-		"CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
-		"CLAUDE_CODE_DISABLE_1M_CONTEXT", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+		"CLAUDE_CODE_DISABLE_1M_CONTEXT",
+		"CLAUDE_CODE_MAX_OUTPUT_TOKENS",
 	} {
-		if env2[key] == "" {
-			t.Errorf("the sweep dropped %s", key)
+		if value, ok := env2[key]; ok {
+			t.Errorf("%s survived at %q and caps the session below 1M", key, value)
 		}
+	}
+}
+
+// Every profile written before the 1M rows carries the 200k quartet. Merging
+// routerEnv over it is not enough: DISABLE_1M_CONTEXT alone makes Claude Code
+// ignore the marker, and AUTO_COMPACT_WINDOW alone caps the window. A refresh
+// has to DELETE the keys routerEnv no longer declares.
+func TestEnsureProfile_clears_a_sub_1m_windows_leftover_keys(t *testing.T) {
+	env := rosterEnv(t)
+	listFile := filepath.Join(t.TempDir(), "claude-configs.list")
+	file, err := EnsureProfile(env, listFile, env.ConfigsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(env.ConfigsDir, file)
+	if err := os.WriteFile(path, []byte(`{"env":{
+"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"200000",
+"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"200000",
+"CLAUDE_CODE_DISABLE_1M_CONTEXT":"1",
+"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"32000",
+"ANTHROPIC_AUTH_TOKEN":"the user's own key"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnsureProfile(env, listFile, env.ConfigsDir); err != nil {
+		t.Fatal(err)
+	}
+	got := readEnv(t, path)
+	for _, key := range []string{
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+		"CLAUDE_CODE_DISABLE_1M_CONTEXT",
+		"CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+	} {
+		if value, ok := got[key]; ok {
+			t.Errorf("%s left at %q, which caps the session below 1M", key, value)
+		}
+	}
+	if got["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "1000000" {
+		t.Errorf("declared window = %q, want 1000000", got["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
+	}
+	if got["ANTHROPIC_AUTH_TOKEN"] != "the user's own key" {
+		t.Error("the refresh dropped a key that is the user's own")
 	}
 }

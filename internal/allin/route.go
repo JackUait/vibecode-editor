@@ -27,6 +27,10 @@ const (
 	rowPrefix     = "wisp/"
 	accountPrefix = "acct."
 	configPrefix  = "cfg."
+	// OneMillionMarker is what Claude Code reads off the raw model string to
+	// grant the session a 1M window. It has to be the very LAST characters of
+	// the id, so it is appended after the model, not inside it.
+	OneMillionMarker = "[1m]"
 )
 
 // Route parses a picker row. A row this build does not recognise is the
@@ -53,8 +57,18 @@ func Route(model string) Target {
 // strip1M removes the marker Claude Code reads off the raw model string to
 // grant a 1M window. The upstream never sees it; the beta header carries it.
 func strip1M(model string) (string, bool) {
-	if len(model) >= 4 && strings.EqualFold(model[len(model)-4:], "[1m]") {
-		return model[:len(model)-4], true
+	n := len(OneMillionMarker)
+	if len(model) >= n && strings.EqualFold(model[len(model)-n:], OneMillionMarker) {
+		return model[:len(model)-n], true
 	}
 	return model, false
+}
+
+// BareModel is the id with the marker removed. The hidden-rows file stores ids
+// unmarked, so every lookup into it goes through this: a marked row and its
+// stored id are one row, and mixing the two spellings hides a row on one pass
+// and shows it on the next.
+func BareModel(model string) string {
+	bare, _ := strip1M(model)
+	return bare
 }

@@ -45,6 +45,10 @@ func LoadHidden(path string) map[string]bool {
 // ToggleHidden flips a picker row's membership in the hidden-rows file and
 // rewrites it. Returns the row's new hidden state.
 func ToggleHidden(path, model string) (bool, error) {
+	// Stored unmarked, so a row keeps one spelling on disk however the roster
+	// marks it. Two spellings of one row would hide it on one pass and show it
+	// on the next.
+	model = BareModel(model)
 	hidden := LoadHidden(path)
 	nowHidden := !hidden[model]
 	if nowHidden {

@@ -13,22 +13,17 @@ import (
 // minRosterContext is the narrowest window worth offering. Claude Code's own
 // floor is ~20k tokens before a conversation starts, and a profile reserves a
 // quarter of the window for the reply, so anything tighter cannot finish a task.
-//
-// It is also the window every row gets. No row carries the "[1m]" marker, even
-// where the model has a 1M window: the marker is read off the raw model string
-// and grants the whole SESSION 1M, and nothing narrows it again when the user
-// picks a 200k row mid-conversation — the transcript is already past the new
-// endpoint's cap, and /compact sends the same oversized transcript plus a
-// summarization prompt, so it fails the same way. A uniform window is the one
-// shape no pick can wedge. Route still strips and reports the marker, and
-// proxy.go still sends the beta header, so 1M can return behind a size guard.
 const minRosterContext = 200000
 
-// rosterWindow is the window an All-In session actually runs at, declared by
-// routerEnv. It equals minRosterContext because that is the trade above: with
-// no row carrying "[1m]", the narrowest window worth offering is also the
-// widest any row gets.
-const rosterWindow = minRosterContext
+// rosterWindow is the window an All-In session runs at, declared by routerEnv.
+// It is 1M because every Claude row carries OneMillionMarker, which grants the
+// whole SESSION 1M off the raw model string.
+//
+// The trade this accepts: a provider row is narrower than the session believes,
+// so picking one after the transcript has grown past that endpoint's own cap
+// fails, and /compact cannot recover — it resends the same oversized transcript
+// plus a summarization prompt. Chosen deliberately over a uniform 200k.
+const rosterWindow = 1000000
 
 // Env names the files the roster is built from. AccountsList, AccountsDir,
 // ConfigsList and ConfigsDir are the same four files the account switcher and
@@ -121,8 +116,10 @@ func accountRows(env Env) []Row {
 	var rows []Row
 	for _, account := range accounts {
 		for _, model := range claudeLineup {
+			// The marker must trail the whole id: Claude Code matches it at the
+			// end of the raw model string, and Route strips it there too.
 			rows = append(rows, Row{
-				Model:       fmt.Sprintf("wisp/acct.%s/%s", account.dir, model.id),
+				Model:       fmt.Sprintf("wisp/acct.%s/%s%s", account.dir, model.id, OneMillionMarker),
 				Label:       account.label + " · " + model.label,
 				Description: "Claude subscription: " + account.label,
 			})

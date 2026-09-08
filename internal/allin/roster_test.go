@@ -69,24 +69,34 @@ func labelFor(rows []Row, model string) string {
 
 func TestRoster_lists_the_default_login_and_every_registered_account(t *testing.T) {
 	got := models(Roster(rosterEnv(t)))
-	if !has(got, "wisp/acct.default/claude-opus-5") {
+	if !has(got, "wisp/acct.default/claude-opus-5[1m]") {
 		t.Fatalf("no default opus row in %v", got)
 	}
-	if !has(got, "wisp/acct.personal/claude-opus-5") {
+	if !has(got, "wisp/acct.personal/claude-opus-5[1m]") {
 		t.Fatalf("no personal opus row in %v", got)
 	}
 }
 
-// The suffix is the only thing that grants a row a 1M window, and nothing
-// narrows the window again when the user picks a 200k row later in the same
-// conversation: the transcript is already past the new endpoint's cap, and
-// /compact is larger than the turn that just failed. Every row is uniformly
-// 200k so no pick can wedge the session. Route keeps stripping and reporting
-// the marker — 1M returns behind a size guard, not by re-adding this.
-func TestRoster_never_offers_a_1m_row(t *testing.T) {
-	for _, id := range models(Roster(rosterEnv(t))) {
-		if strings.HasSuffix(id, "[1m]") {
-			t.Fatalf("a row promises a 1M window nothing can narrow again: %s", id)
+// Claude Code reads "[1m]" off the RAW model string and grants the session a
+// 1M window, so the marker is the only thing that lifts a Claude row above
+// 200k. Route strips it before the id reaches Resolve or the upstream, and
+// proxy.go turns it into the context-1m-2025-08-07 beta header.
+//
+// A provider row must never carry it. No configured provider serves 1M, and a
+// marked row would let the transcript grow past that endpoint's own cap, where
+// /compact cannot recover: it resends the same oversized transcript.
+func TestRoster_marks_every_claude_row_1m_and_no_provider_row(t *testing.T) {
+	for _, row := range Roster(rosterEnv(t)) {
+		marked := strings.HasSuffix(row.Model, "[1m]")
+		switch Route(row.Model).Kind {
+		case KindAccount:
+			if !marked {
+				t.Errorf("Claude row is capped at 200k without the marker: %s", row.Model)
+			}
+		case KindConfig:
+			if marked {
+				t.Errorf("provider row promises a window its endpoint refuses: %s", row.Model)
+			}
 		}
 	}
 }
@@ -169,7 +179,7 @@ func TestRoster_omits_a_featherless_model_below_the_context_floor(t *testing.T) 
 
 func TestRoster_labels_a_row_with_its_source(t *testing.T) {
 	for _, row := range Roster(rosterEnv(t)) {
-		if row.Model == "wisp/acct.personal/claude-opus-5" && !strings.Contains(row.Label, "Personal") {
+		if row.Model == "wisp/acct.personal/claude-opus-5[1m]" && !strings.Contains(row.Label, "Personal") {
 			t.Fatalf("label %q does not name the account", row.Label)
 		}
 	}
@@ -315,7 +325,7 @@ func TestRoster_labels_the_default_login_with_the_users_tag(t *testing.T) {
 	if err := os.WriteFile(env.DefaultLabelFile, []byte("Work\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5")
+	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5[1m]")
 	if got != "Work · Opus 5" {
 		t.Fatalf("label = %q, want %q", got, "Work · Opus 5")
 	}
@@ -326,7 +336,7 @@ func TestRoster_labels_the_default_login_with_the_users_tag(t *testing.T) {
 func TestRoster_default_label_falls_back_when_the_file_is_absent(t *testing.T) {
 	env := rosterEnv(t)
 	env.DefaultLabelFile = filepath.Join(t.TempDir(), "does-not-exist")
-	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5")
+	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5[1m]")
 	if got != "Default · Opus 5" {
 		t.Fatalf("label = %q, want %q", got, "Default · Opus 5")
 	}
@@ -338,7 +348,7 @@ func TestRoster_default_label_falls_back_when_the_file_is_empty(t *testing.T) {
 	if err := os.WriteFile(env.DefaultLabelFile, []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5")
+	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5[1m]")
 	if got != "Default · Opus 5" {
 		t.Fatalf("label = %q, want %q", got, "Default · Opus 5")
 	}
@@ -354,7 +364,7 @@ func TestRoster_row_ids_are_unchanged_by_the_default_label(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := models(Roster(env))
-	if !has(got, "wisp/acct.default/claude-opus-5") {
+	if !has(got, "wisp/acct.default/claude-opus-5[1m]") {
 		t.Fatalf("labeling the login changed its row id: %v", got)
 	}
 }
