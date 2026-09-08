@@ -28,12 +28,32 @@ render_subagent_rows() {
   # keeps its default `name · description · token count` rendering.
   command -v jq >/dev/null 2>&1 || return 0
 
+  # An All-In pane routes a subagent through wisp/acct.*/wisp/cfg.* ids
+  # (internal/allin/roster.go). The main status bar shows the picker's own
+  # LABEL for those, because Claude Code resolves display_name for the whole
+  # conversation itself — but a subagent task carries only the raw routed id
+  # (see display_model below), so this hook is the only place that can
+  # translate it. The mapping lives in modelPicker.options of THIS pane's
+  # active subscription file: WISP_DECK_CLAUDE_CONFIG names it, exported into
+  # the pane's env at launch (wrapper.sh) and restamped on every switch
+  # (lib/account-switch.sh) — the exact mechanism the main status line already
+  # uses (templates/statusline-wrapper.sh's gt_config_color/
+  # gt_claude_account_label). Read with a file redirect, not a here-string —
+  # a here-string over ~512 bytes deadlocks bash 5.3 (see root CLAUDE.md).
+  local _wisp_settings_raw=""
+  if [ -n "${WISP_DECK_CLAUDE_CONFIG:-}" ]; then
+    local _wisp_settings_path="${XDG_CONFIG_HOME:-$HOME/.config}/wisp-deck/claude-configs/${WISP_DECK_CLAUDE_CONFIG}"
+    if [ -f "$_wisp_settings_path" ]; then
+      IFS= read -r -d '' _wisp_settings_raw < "$_wisp_settings_path" || true
+    fi
+  fi
+
   # A single jq program builds every override line. jq owns the JSON escaping of
   # `content`, so the emitted lines are always valid. The ESC byte for ANSI
   # colors is produced with `[27]|implode` to keep raw control characters out of
   # this source file. Invalid/empty input degrades to no output (|| true) rather
   # than erroring the whole agent panel.
-  jq -c '
+  jq -c --arg settings_raw "$_wisp_settings_raw" '
     def esc: ([27] | implode);
     # Wrap text in an ANSI SGR color so each row reads at a glance.
     def paint($code; $text): esc + "[" + $code + "m" + $text + esc + "[0m";
@@ -57,8 +77,26 @@ render_subagent_rows() {
     # "claude-opus-4-5-20260101" → "Opus 4.5". Split on "-" rather than matched
     # with a regex so the program still runs on a jq built without oniguruma; a
     # `sub` there would throw and blank out EVERY row, not just this one.
-    def display_model($m; $effort):
+    #
+    # $options is the All-In modelPicker.options list, or null when there is
+    # no config, no file, or no modelPicker key. A "wisp/..." routed id
+    # resolves against it BEFORE the claude- fallback below, since a router id
+    # never starts with "claude-" and would otherwise print verbatim.
+    # $options[]? absorbs a null (or any non-array) $options on its own —
+    # iterating null throws, and the trailing ? on the iteration itself, not a
+    # // [] default beforehand, is what turns that into zero elements rather
+    # than aborting the program. Every lookup step past that tolerates a
+    # malformed entry too ($m? / $label?), so the row falls back to the raw
+    # id, never blank, on any of: no config, no file, no modelPicker key, a
+    # malformed row, or no matching row.
+    def display_model($m; $effort; $options):
       if $m == null or $m == "" then ""
+      elif ($m | startswith("wisp/")) then
+        ( [$options[]? | select(.model? == $m) | .label?]
+          | map(select(type == "string" and . != ""))
+          | .[0] // $m ) as $name
+        | (if $effort != null and $effort != ""
+           then $name + " [" + $effort + "]" else $name end)
       # Only Anthropic ids carry a friendly display_name; every other provider
       # id reaches the bar verbatim. Rebuilding a title-cased name here renders
       # "Gpt 5.6 Sol" beside a bar reading "gpt-5.6-sol" — a translation the
@@ -88,13 +126,20 @@ render_subagent_rows() {
            | (($t / 10) | floor | tostring) + "." + (($t % 10) | tostring) + "%"
       end;
 
-    (.columns // 80) as $cols
+    # $settings_raw is the active subscription file for this pane, read whole
+    # in bash (empty string when unavailable). try/catch means an absent,
+    # unreadable, or corrupted file degrades to {} instead of aborting the
+    # WHOLE program — which would blank every row in the panel, not just the
+    # one wisp/... task that triggered it.
+    ($settings_raw | try fromjson catch {}) as $settings
+    | ($settings.modelPicker.options?) as $options
+    | (.columns // 80) as $cols
     | .tasks[]?
     # Only the real name labels the row — no type fallback, so unnamed local
     # agents render description-first instead of a repeated "local_agent".
     | (.name // "") as $name
     | (.description // "") as $desc
-    | display_model(.model; .effort) as $model
+    | display_model(.model; .effort; $options) as $model
     | fmt_pct(.tokenCount; .contextWindowSize) as $pct
     | fmt_tokens(.tokenCount) as $tok
     # Width spent by every segment other than the description (each joined by

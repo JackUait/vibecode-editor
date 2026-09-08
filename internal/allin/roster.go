@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackuait/wisp-deck/internal/claudeaccount"
 	"github.com/jackuait/wisp-deck/internal/claudeconfig"
 )
 
@@ -29,13 +30,24 @@ const minRosterContext = 200000
 // widest any row gets.
 const rosterWindow = minRosterContext
 
-// Env names the four files the roster is built from. They are the same files
-// the account switcher and the subscription modal already own.
+// Env names the files the roster is built from. AccountsList, AccountsDir,
+// ConfigsList and ConfigsDir are the same four files the account switcher and
+// the subscription modal already own, and EnsureProfileIfEligible refuses an
+// Env missing any of them.
+//
+// DefaultLabelFile is OPTIONAL — deliberately not part of that required-field
+// gate. claudeaccount.GetDefaultLabel already falls back to "Default" for an
+// empty path, a missing file, or an empty one, so a construction site that
+// forgets to plumb this field degrades to today's hardcoded label instead of
+// breaking: EnsureProfileIfEligible would otherwise refuse every unplumbed
+// call site's Env outright, silently stopping it from ever maintaining the
+// profile again (see the four-field comment on EnsureProfileIfEligible).
 type Env struct {
-	AccountsList string
-	AccountsDir  string
-	ConfigsList  string
-	ConfigsDir   string
+	AccountsList     string
+	AccountsDir      string
+	ConfigsList      string
+	ConfigsDir       string
+	DefaultLabelFile string
 }
 
 // Row is one entry of the settings key `modelPicker.options`.
@@ -91,7 +103,14 @@ func Roster(env Env) []Row {
 }
 
 func accountRows(env Env) []Row {
-	accounts := []struct{ label, dir string }{{"Default", "default"}}
+	// The implicit login can be tagged by the user (Subscriptions modal's
+	// LOGINS section); GetDefaultLabel returns that tag, or "Default" when
+	// none was ever set. The row id below still names the directory
+	// ("acct.default"), never the label, so a saved picker default survives
+	// a later relabel untouched.
+	accounts := []struct{ label, dir string }{
+		{claudeaccount.GetDefaultLabel(env.DefaultLabelFile), "default"},
+	}
 	for _, line := range readLines(env.AccountsList) {
 		label, dir, ok := strings.Cut(line, ":")
 		if !ok || label == "" || dir == "" {

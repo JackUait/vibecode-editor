@@ -52,6 +52,13 @@ func renderRows(t *testing.T, stdin string) (string, int) {
 		nil, nil, stdin)
 }
 
+func renderRowsWithEnv(t *testing.T, stdin string, extra ...string) (string, int) {
+	t.Helper()
+	env := buildEnv(t, nil, extra...)
+	return runBashFuncWithStdin(t, "lib/subagent-statusline.sh", "render_subagent_rows",
+		nil, env, stdin)
+}
+
 func TestSubagentStatusline_emits_one_override_line_per_task(t *testing.T) {
 	in := `{"columns":120,"tasks":[
 		{"id":"t1","name":"explorer","type":"Explore","status":"running","description":"scan the repo","tokenCount":1500},
@@ -495,5 +502,167 @@ func TestSubagentStatusline_provider_model_ids_match_the_status_bar(t *testing.T
 				t.Errorf("model %q should display verbatim as %q: %q", tc.id, tc.want, got)
 			}
 		})
+	}
+}
+
+// ============================================================
+// All-In routed ids (wisp/...) — the main status bar prints the picker's
+// label because Claude Code resolves display_name for the WHOLE conversation
+// itself; a subagent task carries only the raw routed id, so this hook is
+// the only place that can translate it. WISP_DECK_CLAUDE_CONFIG names this
+// pane's active subscription file (same mechanism the main statusline uses,
+// templates/statusline-wrapper.sh), and that file's own modelPicker.options
+// is where roster.go already put every row's label.
+// ============================================================
+
+// allInSettingsFixture writes a settings file under
+// <XDG_CONFIG_HOME>/wisp-deck/claude-configs/<name> holding the given
+// modelPicker options JSON, and returns the env vars that point
+// render_subagent_rows at it exactly as a real launch would.
+func allInSettingsFixture(t *testing.T, optionsJSON string) []string {
+	t.Helper()
+	xdg := t.TempDir()
+	configsDir := filepath.Join(xdg, "wisp-deck", "claude-configs")
+	if err := os.MkdirAll(configsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := fmt.Sprintf(`{"modelPicker":{"options":%s}}`, optionsJSON)
+	if err := os.WriteFile(filepath.Join(configsDir, "all-in.json"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return []string{"XDG_CONFIG_HOME=" + xdg, "WISP_DECK_CLAUDE_CONFIG=all-in.json"}
+}
+
+func TestSubagentStatusline_wisp_id_resolves_to_the_pickers_label(t *testing.T) {
+	env := allInSettingsFixture(t, `[
+		{"model":"wisp/acct.default/claude-opus-5","label":"Work · Opus 5"}
+	]`)
+	in := `{"columns":120,"tasks":[{"id":"t","name":"a","model":"wisp/acct.default/claude-opus-5","effort":"xhigh","tokenCount":10}]}`
+	out, code := renderRowsWithEnv(t, in, env...)
+	assertExitCode(t, code, 0)
+	rows := parseSubagentRows(t, out)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	got := stripANSI(rows[0].Content)
+	if !strings.Contains(got, "Work · Opus 5 [xhigh]") {
+		t.Errorf("wisp id should resolve to the picker label with effort suffix: %q", got)
+	}
+	if strings.Contains(got, "wisp/") {
+		t.Errorf("raw routed id leaked into the row: %q", got)
+	}
+}
+
+func TestSubagentStatusline_wisp_id_resolves_with_no_effort(t *testing.T) {
+	env := allInSettingsFixture(t, `[
+		{"model":"wisp/cfg.zhipu-glm/glm-4.7","label":"Zhipu GLM · glm-4.7"}
+	]`)
+	in := `{"columns":120,"tasks":[{"id":"t","name":"a","model":"wisp/cfg.zhipu-glm/glm-4.7","tokenCount":10}]}`
+	out, code := renderRowsWithEnv(t, in, env...)
+	assertExitCode(t, code, 0)
+	rows := parseSubagentRows(t, out)
+	got := stripANSI(rows[0].Content)
+	if !strings.Contains(got, "Zhipu GLM · glm-4.7") {
+		t.Errorf("wisp id should resolve to the picker label: %q", got)
+	}
+	if strings.Contains(got, "[") {
+		t.Errorf("no effort supplied, so no bracket expected: %q", got)
+	}
+}
+
+// Case 1 of 3: no settings file at all reachable from WISP_DECK_CLAUDE_CONFIG
+// (unset, or naming a file that does not exist) — the row must fall back to
+// the raw id rather than blank out or error.
+func TestSubagentStatusline_wisp_id_falls_back_when_settings_file_is_unreachable(t *testing.T) {
+	for name, env := range map[string][]string{
+		"no WISP_DECK_CLAUDE_CONFIG at all": {"XDG_CONFIG_HOME=" + t.TempDir()},
+		"WISP_DECK_CLAUDE_CONFIG names a file that does not exist": {
+			"XDG_CONFIG_HOME=" + t.TempDir(), "WISP_DECK_CLAUDE_CONFIG=all-in.json",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := `{"columns":120,"tasks":[{"id":"t","name":"a","model":"wisp/acct.default/claude-opus-5","tokenCount":10}]}`
+			out, code := renderRowsWithEnv(t, in, env...)
+			assertExitCode(t, code, 0)
+			rows := parseSubagentRows(t, out)
+			if len(rows) != 1 {
+				t.Fatalf("expected 1 row, got %d", len(rows))
+			}
+			got := stripANSI(rows[0].Content)
+			if !strings.Contains(got, "wisp/acct.default/claude-opus-5") {
+				t.Errorf("should fall back to the raw id: %q", got)
+			}
+		})
+	}
+}
+
+// Case 2 of 3: the settings file exists and is valid JSON, but carries no
+// modelPicker key at all (an ordinary, non-All-In subscription profile).
+func TestSubagentStatusline_wisp_id_falls_back_when_modelPicker_is_missing(t *testing.T) {
+	xdg := t.TempDir()
+	configsDir := filepath.Join(xdg, "wisp-deck", "claude-configs")
+	if err := os.MkdirAll(configsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configsDir, "zhipu-glm.json"),
+		[]byte(`{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"XDG_CONFIG_HOME=" + xdg, "WISP_DECK_CLAUDE_CONFIG=zhipu-glm.json"}
+	in := `{"columns":120,"tasks":[{"id":"t","name":"a","model":"wisp/acct.default/claude-opus-5","tokenCount":10}]}`
+	out, code := renderRowsWithEnv(t, in, env...)
+	assertExitCode(t, code, 0)
+	rows := parseSubagentRows(t, out)
+	got := stripANSI(rows[0].Content)
+	if !strings.Contains(got, "wisp/acct.default/claude-opus-5") {
+		t.Errorf("should fall back to the raw id: %q", got)
+	}
+}
+
+// Case 3 of 3: modelPicker.options exists but names no row matching this
+// subagent's model — an id hand-typed into /model, or saved by an older
+// roster that no longer offers it.
+func TestSubagentStatusline_wisp_id_falls_back_when_no_row_matches(t *testing.T) {
+	env := allInSettingsFixture(t, `[
+		{"model":"wisp/acct.personal/claude-opus-5","label":"Personal · Opus 5"}
+	]`)
+	in := `{"columns":120,"tasks":[{"id":"t","name":"a","model":"wisp/acct.default/claude-opus-5","tokenCount":10}]}`
+	out, code := renderRowsWithEnv(t, in, env...)
+	assertExitCode(t, code, 0)
+	rows := parseSubagentRows(t, out)
+	got := stripANSI(rows[0].Content)
+	if !strings.Contains(got, "wisp/acct.default/claude-opus-5") {
+		t.Errorf("should fall back to the raw id when no row matches: %q", got)
+	}
+}
+
+// An invalid settings file (corrupted JSON) must never abort the whole jq
+// program — that would blank EVERY row in the panel, not just this one.
+func TestSubagentStatusline_wisp_id_falls_back_when_settings_json_is_invalid(t *testing.T) {
+	xdg := t.TempDir()
+	configsDir := filepath.Join(xdg, "wisp-deck", "claude-configs")
+	if err := os.MkdirAll(configsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configsDir, "all-in.json"),
+		[]byte(`{not valid json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"XDG_CONFIG_HOME=" + xdg, "WISP_DECK_CLAUDE_CONFIG=all-in.json"}
+	in := `{"columns":120,"tasks":[
+		{"id":"a","name":"one","model":"wisp/acct.default/claude-opus-5","tokenCount":10},
+		{"id":"b","name":"two","model":"claude-opus-5","tokenCount":20}
+	]}`
+	out, code := renderRowsWithEnv(t, in, env...)
+	assertExitCode(t, code, 0)
+	rows := parseSubagentRows(t, out)
+	if len(rows) != 2 {
+		t.Fatalf("invalid settings JSON blanked the whole panel: got %d rows, %q", len(rows), out)
+	}
+	if !strings.Contains(stripANSI(rows[0].Content), "wisp/acct.default/claude-opus-5") {
+		t.Errorf("row a should fall back to the raw id: %q", rows[0].Content)
+	}
+	if !strings.Contains(stripANSI(rows[1].Content), "Opus 5") {
+		t.Errorf("row b (unrelated claude- id) should still render: %q", rows[1].Content)
 	}
 }

@@ -26,6 +26,10 @@ manage_claude_configs_interactive() {
   # Subscription modal uses, instead of only ever seeing provider profiles.
   local accounts_list="$config_dir/claude-accounts.list"
   local accounts_dir="$config_dir/claude-accounts"
+  # Same file bin/wisp-deck's own ensure-allin sweep reads: the implicit
+  # login's user-set tag, so a machine mutated only through this legacy menu
+  # still labels its Default row by the Subscriptions modal's own tag.
+  local default_label_file="$config_dir/claude-account-default-label"
 
   while true; do
     local result action file name
@@ -34,7 +38,7 @@ manage_claude_configs_interactive() {
     case "$action" in
       add)
         name="$(echo "$result" | jq -r '.name' 2>/dev/null)"
-        [ -n "$name" ] && [ "$name" != "null" ] && wisp-deck-tui claude-config add --list "$list_file" --dir "$configs_dir" --pointer "$pointer_file" --name "$name" --accounts-list "$accounts_list" --accounts-dir "$accounts_dir" >/dev/null
+        [ -n "$name" ] && [ "$name" != "null" ] && wisp-deck-tui claude-config add --list "$list_file" --dir "$configs_dir" --pointer "$pointer_file" --name "$name" --accounts-list "$accounts_list" --accounts-dir "$accounts_dir" --default-label-file "$default_label_file" >/dev/null
         ;;
       rename)
         file="$(echo "$result" | jq -r '.file' 2>/dev/null)"
@@ -43,7 +47,7 @@ manage_claude_configs_interactive() {
         ;;
       delete)
         file="$(echo "$result" | jq -r '.file' 2>/dev/null)"
-        [ -n "$file" ] && [ "$file" != "null" ] && wisp-deck-tui claude-config delete --list "$list_file" --dir "$configs_dir" --pointer "$pointer_file" --file "$file" --accounts-list "$accounts_list" --accounts-dir "$accounts_dir"
+        [ -n "$file" ] && [ "$file" != "null" ] && wisp-deck-tui claude-config delete --list "$list_file" --dir "$configs_dir" --pointer "$pointer_file" --file "$file" --accounts-list "$accounts_list" --accounts-dir "$accounts_dir" --default-label-file "$default_label_file"
         ;;
       quit|""|null)
         return 0

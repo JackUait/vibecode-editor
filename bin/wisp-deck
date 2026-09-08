@@ -233,7 +233,8 @@ if [ -d "$CONFIGS_DIR/claude-configs" ] && command -v wisp-deck-tui >/dev/null 2
   wisp-deck-tui claude-config ensure-allin --configs-dir "$CONFIGS_DIR/claude-configs" \
     --configs-list "$CONFIGS_DIR/claude-configs.list" \
     --accounts-list "$CONFIGS_DIR/claude-accounts.list" \
-    --accounts-dir "$CONFIGS_DIR/claude-accounts" >/dev/null 2>&1 || true
+    --accounts-dir "$CONFIGS_DIR/claude-accounts" \
+    --default-label-file "$CONFIGS_DIR/claude-account-default-label" >/dev/null 2>&1 || true
 fi
 
 # ---------- Projects ----------

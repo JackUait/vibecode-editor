@@ -11,13 +11,14 @@ import (
 )
 
 var (
-	ccList         string
-	ccDir          string
-	ccPointer      string
-	ccFile         string
-	ccName         string
-	ccAccountsList string
-	ccAccountsDir  string
+	ccList             string
+	ccDir              string
+	ccPointer          string
+	ccFile             string
+	ccName             string
+	ccAccountsList     string
+	ccAccountsDir      string
+	ccDefaultLabelFile string
 )
 
 // ensureAllInFromCLI refreshes the All-In profile for add/delete, the two
@@ -28,10 +29,11 @@ var (
 // bin/wisp-deck already runs with `|| true`.
 func ensureAllInFromCLI() {
 	_ = allin.EnsureProfileIfEligible(allin.Env{
-		AccountsList: ccAccountsList,
-		AccountsDir:  ccAccountsDir,
-		ConfigsList:  ccList,
-		ConfigsDir:   ccDir,
+		AccountsList:     ccAccountsList,
+		AccountsDir:      ccAccountsDir,
+		ConfigsList:      ccList,
+		ConfigsDir:       ccDir,
+		DefaultLabelFile: ccDefaultLabelFile,
 	})
 }
 
@@ -170,6 +172,8 @@ func newEnsureAllInCommand() *cobra.Command {
 	flags.StringVar(&env.ConfigsList, "configs-list", "", "name:file list of subscription profiles")
 	flags.StringVar(&env.AccountsList, "accounts-list", "", "name:dir list of Claude logins")
 	flags.StringVar(&env.AccountsDir, "accounts-dir", "", "directory holding each login's config dir")
+	flags.StringVar(&env.DefaultLabelFile, "default-label-file", "",
+		"file holding the implicit Default login's custom tag (optional)")
 	return command
 }
 
@@ -180,6 +184,8 @@ func init() {
 	claudeConfigAddCmd.Flags().StringVar(&ccPointer, "pointer", "", "Path to active config pointer file")
 	claudeConfigAddCmd.Flags().StringVar(&ccAccountsList, "accounts-list", "", "name:dir list of Claude logins (for the All-In gate)")
 	claudeConfigAddCmd.Flags().StringVar(&ccAccountsDir, "accounts-dir", "", "directory holding each login's config dir (for the All-In gate)")
+	claudeConfigAddCmd.Flags().StringVar(&ccDefaultLabelFile, "default-label-file", "",
+		"file holding the implicit Default login's custom tag (for the All-In gate, optional)")
 
 	claudeConfigRenameCmd.Flags().StringVar(&ccList, "list", "", "Path to configs list (name:file)")
 	claudeConfigRenameCmd.Flags().StringVar(&ccFile, "file", "", "Filename of the config to rename")
@@ -193,6 +199,8 @@ func init() {
 	claudeConfigDeleteCmd.Flags().StringVar(&ccFile, "file", "", "Filename of the config to delete")
 	claudeConfigDeleteCmd.Flags().StringVar(&ccAccountsList, "accounts-list", "", "name:dir list of Claude logins (for the All-In gate)")
 	claudeConfigDeleteCmd.Flags().StringVar(&ccAccountsDir, "accounts-dir", "", "directory holding each login's config dir (for the All-In gate)")
+	claudeConfigDeleteCmd.Flags().StringVar(&ccDefaultLabelFile, "default-label-file", "",
+		"file holding the implicit Default login's custom tag (for the All-In gate, optional)")
 
 	claudeConfigEnsureBudgetCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
 	claudeConfigEnsureWatchdogCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")

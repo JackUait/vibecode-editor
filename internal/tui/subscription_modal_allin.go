@@ -18,9 +18,10 @@ import "github.com/jackuait/wisp-deck/internal/allin"
 // (ensure-budget, ensure-watchdog, ensure-allin) keep with `|| true`.
 func (m *MainMenuModel) ensureAllIn() {
 	_ = allin.EnsureProfileIfEligible(allin.Env{
-		AccountsList: m.claudeAccountsList,
-		AccountsDir:  m.claudeAccountsDir,
-		ConfigsList:  m.claudeConfigsList,
-		ConfigsDir:   m.claudeConfigsDir,
+		AccountsList:     m.claudeAccountsList,
+		AccountsDir:      m.claudeAccountsDir,
+		ConfigsList:      m.claudeConfigsList,
+		ConfigsDir:       m.claudeConfigsDir,
+		DefaultLabelFile: m.claudeDefaultLabelFile,
 	})
 }

@@ -157,3 +157,29 @@ func TestEnsureAllIn_refreshes_an_existing_profile_after_its_sources_shrink(t *t
 		t.Fatalf("rows for the removed login survived: %s", data)
 	}
 }
+
+// The implicit login's tag has to reach the roster through the CLI too, or a
+// user who only ever mutates configs through the legacy config menu
+// (lib/config-tui.sh) or the ensure-allin sweep (bin/wisp-deck) never sees
+// their own label.
+func TestEnsureAllIn_wires_the_default_label_file_into_the_roster(t *testing.T) {
+	configs, list, accountsList, accounts := allInFixture(t, "Personal:personal\n")
+	labelFile := filepath.Join(t.TempDir(), "claude-account-default-label")
+	if err := os.WriteFile(labelFile, []byte("Work"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	execRoot(t, "claude-config", "ensure-allin", "--configs-dir", configs, "--configs-list", list,
+		"--accounts-list", accountsList, "--accounts-dir", accounts, "--default-label-file", labelFile)
+
+	data, err := os.ReadFile(filepath.Join(configs, "all-in.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "Work ·") {
+		t.Fatalf("Default login's tag did not reach the roster: %s", data)
+	}
+	if !strings.Contains(string(data), "acct.default/") {
+		t.Fatalf("row id should still name the directory, not the label: %s", data)
+	}
+}

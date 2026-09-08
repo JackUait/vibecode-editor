@@ -78,6 +78,25 @@ func TestClaudeAllIn_runs_the_child_when_the_overlay_cannot_be_read(t *testing.T
 	}
 }
 
+// Resolve never reads DefaultLabelFile — the login's tag is display-only, and
+// this command only addresses credentials — but the flag is still wired here
+// so this Env is shaped the same as every other construction site
+// (ensure-allin, the TUI's own mutations). This just proves the flag exists
+// and does not break the launch.
+func TestClaudeAllIn_accepts_a_default_label_file_flag(t *testing.T) {
+	ran := false
+	command := newClaudeAllInCommand(func([]string) error { ran = true; return nil })
+	command.SetArgs([]string{"--settings", filepath.Join(t.TempDir(), "absent.json"),
+		"--default-label-file", filepath.Join(t.TempDir(), "claude-account-default-label"),
+		"--", "true"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !ran {
+		t.Fatal("child never ran")
+	}
+}
+
 func hasLoopbackPrefix(url string) bool {
 	return len(url) > 17 && url[:17] == "http://127.0.0.1:"
 }

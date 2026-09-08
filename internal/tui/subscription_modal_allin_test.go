@@ -46,6 +46,33 @@ func newBareSubscriptionMenu(t *testing.T) *MainMenuModel {
 	return m
 }
 
+// The Default login's own tag (Subscriptions modal's LOGINS section) has to
+// reach the roster through this construction site too, or a user who only
+// ever mutates subscriptions from the modal never sees their own label.
+func TestEnsureAllIn_uses_the_default_label_file(t *testing.T) {
+	m := newBareSubscriptionMenu(t)
+	if err := os.WriteFile(m.claudeDefaultLabelFile, []byte("Work"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	m.addSubscriptionLogin("Personal") // two sources: creates the profile
+
+	file := allin.ProfileFile(m.claudeConfigsList)
+	if file == "" {
+		t.Fatal("setup: All-In profile was not created")
+	}
+	data, err := os.ReadFile(filepath.Join(m.claudeConfigsDir, file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "Work ·") {
+		t.Fatalf("Default login's tag did not reach the roster: %s", data)
+	}
+	if !strings.Contains(string(data), "acct.default/") {
+		t.Fatalf("row id should still name the directory, not the label: %s", data)
+	}
+}
+
 // This is the gap the feature closes: a machine that adds its second Claude
 // login through the modal (never touching bin/wisp-deck's installer sweep)
 // must get the All-In profile without a relaunch of setup.

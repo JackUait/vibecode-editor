@@ -210,6 +210,20 @@ func TestEnsureProfileIfEligible_refuses_an_incomplete_env(t *testing.T) {
 	}
 }
 
+// DefaultLabelFile is deliberately NOT one of the four required paths: a
+// construction site that never learned about it must keep maintaining the
+// profile (with the login labeled "Default") rather than have every one of
+// its calls start failing the moment this field is added to roster.go.
+func TestEnsureProfileIfEligible_succeeds_with_no_default_label_file(t *testing.T) {
+	env := ensureFixture(t, "Personal:personal\n") // two sources, DefaultLabelFile left unset
+	if err := EnsureProfileIfEligible(env); err != nil {
+		t.Fatalf("EnsureProfileIfEligible with no DefaultLabelFile: %v", err)
+	}
+	if file := ProfileFile(env.ConfigsList); file == "" {
+		t.Fatal("no profile written")
+	}
+}
+
 func BenchmarkEnsureProfileIfEligible(b *testing.B) {
 	dir := b.TempDir()
 	accounts := filepath.Join(dir, "claude-accounts")

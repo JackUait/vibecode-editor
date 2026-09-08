@@ -604,3 +604,37 @@ ways depending on which half of the fix is missing: no allowlist entry means
 `get_claude_config_provider` reports no marker at all, while no `allin` branch
 in `_subscription_choice_ready` means the marker resolves correctly but the
 switch is still refused on the missing token.
+
+### The implicit login's row is labeled by the user's tag, and `DefaultLabelFile` is optional on purpose
+
+`accountRows` used to hardcode `{"Default", "default"}` for the implicit
+login, so a user who tagged their Keychain login "Work" (the Subscriptions
+modal's LOGINS section, persisted at
+`claude-account-default-label`) still saw "Default · Opus 5" in Claude Code's
+own status bar — the picker's `label` field is what that bar prints verbatim,
+so the router disagreed with the rest of the product about the login's name.
+`accountRows` now reads `claudeaccount.GetDefaultLabel(env.DefaultLabelFile)`
+for that row's label instead.
+
+- **The row id is untouched.** It still names the directory (`acct.default`),
+  never the label — a saved picker default must survive a later relabel.
+  Guarded by `TestRoster_row_ids_are_unchanged_by_the_default_label`.
+- **`DefaultLabelFile` is deliberately NOT one of the four required `Env`
+  paths `EnsureProfileIfEligible` refuses on.** `GetDefaultLabel` already
+  degrades an empty path, a missing file, or an empty file to `"Default"`, so
+  a construction site that never learned about the field keeps working
+  exactly as before rather than silently failing every call. Making it
+  required and forgetting to plumb even one of the (currently five) call
+  sites would have turned that site's `EnsureProfileIfEligible` into a
+  permanent no-op — see `EnsureProfileIfEligible`'s own four-path comment.
+  Guarded by `TestEnsureProfileIfEligible_succeeds_with_no_default_label_file`.
+- **Every construction site is plumbed anyway**, for consistency rather than
+  necessity: `cmd/wisp-deck-tui/claude_config.go` (`ensureAllInFromCLI`, the
+  standalone `ensure-allin` command, and the `add`/`delete` subcommands),
+  `internal/tui/subscription_modal_allin.go`, `bin/wisp-deck`'s `ensure-allin`
+  invocation, and `lib/config-tui.sh`'s `add`/`delete` calls (the legacy
+  "Manage Claude configs" menu). `cmd/wisp-deck-tui/claude_allin.go` (the
+  `claude-allin` launch wrapper) takes the flag too even though `Resolve`
+  never reads it — that command never calls `EnsureProfileIfEligible` at all,
+  only `NewResolver`, so the field is inert there; it is wired solely so this
+  `Env` stays shaped the same as every other construction site.

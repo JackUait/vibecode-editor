@@ -56,6 +56,17 @@ func has(list []string, want string) bool {
 	return false
 }
 
+// labelFor returns the Label of the row with the given Model id, or "" if no
+// row matches.
+func labelFor(rows []Row, model string) string {
+	for _, r := range rows {
+		if r.Model == model {
+			return r.Label
+		}
+	}
+	return ""
+}
+
 func TestRoster_lists_the_default_login_and_every_registered_account(t *testing.T) {
 	got := models(Roster(rosterEnv(t)))
 	if !has(got, "wisp/acct.default/claude-opus-5") {
@@ -292,5 +303,58 @@ func TestRoster_omits_an_adopted_profile_that_still_looks_routable(t *testing.T)
 		if strings.Contains(id, "cfg.all-in/") {
 			t.Fatalf("All-In offers a row pointing at itself: %s", id)
 		}
+	}
+}
+
+// The implicit Default login can be tagged by the user (Subscriptions modal's
+// LOGINS section), and the picker must show that tag instead of the literal
+// word "Default" — Claude Code renders Row.Label verbatim in the status bar.
+func TestRoster_labels_the_default_login_with_the_users_tag(t *testing.T) {
+	env := rosterEnv(t)
+	env.DefaultLabelFile = filepath.Join(t.TempDir(), "claude-account-default-label")
+	if err := os.WriteFile(env.DefaultLabelFile, []byte("Work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5")
+	if got != "Work · Opus 5" {
+		t.Fatalf("label = %q, want %q", got, "Work · Opus 5")
+	}
+}
+
+// No tag has ever been set: GetDefaultLabel's own fallback ("Default") must
+// carry through unchanged, whether the file is simply absent or exists empty.
+func TestRoster_default_label_falls_back_when_the_file_is_absent(t *testing.T) {
+	env := rosterEnv(t)
+	env.DefaultLabelFile = filepath.Join(t.TempDir(), "does-not-exist")
+	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5")
+	if got != "Default · Opus 5" {
+		t.Fatalf("label = %q, want %q", got, "Default · Opus 5")
+	}
+}
+
+func TestRoster_default_label_falls_back_when_the_file_is_empty(t *testing.T) {
+	env := rosterEnv(t)
+	env.DefaultLabelFile = filepath.Join(t.TempDir(), "claude-account-default-label")
+	if err := os.WriteFile(env.DefaultLabelFile, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := labelFor(Roster(env), "wisp/acct.default/claude-opus-5")
+	if got != "Default · Opus 5" {
+		t.Fatalf("label = %q, want %q", got, "Default · Opus 5")
+	}
+}
+
+// The row id encodes the account DIRECTORY ("acct.default"), never its label.
+// A saved picker default must survive a label change untouched, so the id must
+// stay "acct.default" regardless of what the user tags the login.
+func TestRoster_row_ids_are_unchanged_by_the_default_label(t *testing.T) {
+	env := rosterEnv(t)
+	env.DefaultLabelFile = filepath.Join(t.TempDir(), "claude-account-default-label")
+	if err := os.WriteFile(env.DefaultLabelFile, []byte("Work"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := models(Roster(env))
+	if !has(got, "wisp/acct.default/claude-opus-5") {
+		t.Fatalf("labeling the login changed its row id: %v", got)
 	}
 }
