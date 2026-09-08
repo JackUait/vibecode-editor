@@ -750,3 +750,24 @@ Guarded by `internal/allin/usage_test.go`,
 `internal/tui/subscription_modal_allin_hidespent_test.go`,
 `cmd/wisp-deck-tui/allin_usage_test.go` and
 `cmd/wisp-deck-tui/account_usage_cmd_test.go`.
+
+### Two rows in `/model` belong to Claude Code, not to the roster
+
+`replaceBuiltInOptions` curates the lineup; it does not own the list. Two rows
+come back whatever `EnsureProfile` writes, and both have been read as bugs once.
+
+- **`Default (recommended)` cannot be removed.** With `replaceBuiltInOptions`
+  true, the curation returns `[...e.filter((C)=>C.value===null), ..._]`, and the
+  built-in row it keeps is the one whose `value` is `null` — the Default row.
+  No setting drops it; the schema text is explicit that the picker then "shows
+  only the Default row and these options". It carries no `wisp/` id, so `Route`
+  reads a turn picked there as `KindSession` and it spends the pane's own login
+  rather than a chosen subscription.
+- **The session's current model is re-added as its own row when it equals no
+  option's `value`.** The comparison is verbatim, and the appended row is
+  labelled from the model family, so it names no source and shows no quota.
+  Neither the hidden set nor the spent filter reaches it: both shape the options
+  list, and this row is pushed after that list is curated. It still routes,
+  because `Route` accepts an id with no marker, but a Claude row saved before
+  `OneMillionMarker` existed now reaches the upstream without the 1M beta
+  header. Picking any row rewrites the stored value and the extra row goes.
