@@ -55,8 +55,21 @@ func EnsureProfile(env Env, listFile, configsDir string) (string, error) {
 	settings["env"] = settingsEnv
 
 	rows := Roster(env)
+	hidden := LoadHidden(HiddenFile(env.ConfigsList))
 	options := make([]Row, 0, len(rows))
-	options = append(options, rows...)
+	for _, row := range rows {
+		if hidden[row.Model] {
+			continue
+		}
+		options = append(options, row)
+	}
+	// replaceBuiltInOptions leaves no built-in row to fall back on, so an empty
+	// options list is a picker with nothing to pick, in a session that has no
+	// other way to change model. The modal refuses to hide the last row; a
+	// hand-edited file still reaches here.
+	if len(options) == 0 {
+		options = append(options, rows...)
+	}
 	settings["modelPicker"] = map[string]any{
 		// Every row names its account explicitly, so the built-in lineup would
 		// only add rows whose credential is ambiguous.

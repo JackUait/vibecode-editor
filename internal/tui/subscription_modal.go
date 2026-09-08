@@ -49,6 +49,10 @@ const (
 	// Rename to Save as the action row, so a value inserted above Rename would
 	// drag the action buttons into the field list.
 	subscriptionDetailImages
+	// The All-In checklist is a SPAN, not one row: its cursor values run from
+	// this base to base+len(roster)-1. It must stay last for the same reason
+	// Images does, and nothing may be appended after it.
+	subscriptionDetailAllInBase
 )
 
 type subscriptionPane int
@@ -195,6 +199,9 @@ type subscriptionModalState struct {
 	hover        subscriptionHitTarget
 	err          error
 	auth         subscriptionAuthState
+	// The All-In profile's picker checklist, reloaded on selection and on
+	// every toggle. Empty for every other profile.
+	allIn subscriptionAllInState
 }
 
 type subscriptionProfile struct {
@@ -707,6 +714,13 @@ func (m *MainMenuModel) updateSubscriptionModal(msg tea.KeyMsg) (tea.Model, tea.
 		} else if m.subscriptionModal.pane == subscriptionDetailsPane {
 			return m.activateSubscriptionDetail()
 		}
+	case tea.KeySpace:
+		// bubbletea sends space as its own key type, never as a rune, so it
+		// cannot be handled beside the letter shortcuts below.
+		if m.subscriptionModal.pane == subscriptionDetailsPane &&
+			m.subscriptionModal.detailCursor >= subscriptionDetailAllInBase {
+			m.toggleAllInRow(m.subscriptionModal.detailCursor - subscriptionDetailAllInBase)
+		}
 	case tea.KeyRunes:
 		if len(msg.Runes) == 1 {
 			switch TranslateRune(msg.Runes[0]) {
@@ -859,7 +873,14 @@ func (m *MainMenuModel) subscriptionDetailRows() []int {
 		subscriptionDetailHaiku,
 		subscriptionDetailFable,
 	}
-	if profile.Provider.SuppliesOwnModel() {
+	if m.subscriptionModalOnAllIn() {
+		// The router picks by picker row, so the four alias mappings are inert
+		// here: cycleSubscriptionMapping returns early on an empty model list.
+		rows = nil
+		for i := range m.subscriptionModal.allIn.rows {
+			rows = append(rows, subscriptionDetailAllInBase+i)
+		}
+	} else if profile.Provider.SuppliesOwnModel() {
 		rows = nil
 		if profile.Provider.UserConfigured {
 			rows = append(rows, subscriptionDetailEndpoint)
@@ -975,6 +996,9 @@ func (m *MainMenuModel) loadSubscriptionDraft(profile subscriptionProfile) {
 		}
 	}
 	m.subscriptionModal.draft = draft
+	// Before the cursor is placed: subscriptionDetailRows builds the All-In
+	// span from this checklist, so an empty one leaves the pane with no rows.
+	m.loadAllInChecklist()
 	if profile.Standard {
 		m.subscriptionModal.detailCursor = subscriptionDetailNone
 	} else if rows := m.subscriptionDetailRows(); len(rows) > 0 {
@@ -1320,6 +1344,11 @@ func (m *MainMenuModel) updateSubscriptionKeyInput(msg tea.KeyMsg) (tea.Model, t
 }
 
 func (m *MainMenuModel) activateSubscriptionDetail() (tea.Model, tea.Cmd) {
+	// The checklist is a span past every fixed constant, so it cannot be a case.
+	if m.subscriptionModal.detailCursor >= subscriptionDetailAllInBase {
+		m.toggleAllInRow(m.subscriptionModal.detailCursor - subscriptionDetailAllInBase)
+		return m, nil
+	}
 	switch m.subscriptionModal.detailCursor {
 	case subscriptionDetailOpus, subscriptionDetailSonnet, subscriptionDetailHaiku, subscriptionDetailFable:
 		m.cycleSubscriptionMapping("next")
@@ -1876,11 +1905,19 @@ func (m *MainMenuModel) subscriptionDetailCursorLine() int {
 		return 0
 	}
 	cursor := m.subscriptionModal.detailCursor
-	if cursor >= subscriptionDetailOpus && cursor <= subscriptionDetailFable {
-		return 8 + cursor
+	const routingTop = 8 // first line of the MODEL ROUTING block
+	line := routingTop + 4
+	if m.subscriptionModalOnAllIn() {
+		// The checklist replaces the four mappings, so the block is as tall as
+		// the roster plus its hint line.
+		line = routingTop + len(m.subscriptionModal.allIn.rows) + 1
+		if cursor >= subscriptionDetailAllInBase {
+			return routingTop + cursor - subscriptionDetailAllInBase
+		}
+	} else if cursor >= subscriptionDetailOpus && cursor <= subscriptionDetailFable {
+		return routingTop + cursor
 	}
 
-	line := 12 // first line after the four model mappings
 	if profile.Provider.Auth == claudeconfig.AuthAPIKey {
 		if cursor == subscriptionDetailAuth {
 			return line
@@ -2305,7 +2342,9 @@ func (m *MainMenuModel) subscriptionDetailLines(width, height int) []string {
 		"",
 	)
 
-	if profile.Provider.SuppliesOwnModel() {
+	if m.subscriptionModalOnAllIn() {
+		lines = append(lines, m.subscriptionAllInChecklistLines(width, accent, dim, green)...)
+	} else if profile.Provider.SuppliesOwnModel() {
 		for _, row := range []int{subscriptionDetailModel, subscriptionDetailContext} {
 			name, _, value, ok := m.subscriptionFieldSpec(row)
 			if !ok {
@@ -2573,6 +2612,17 @@ func (m *MainMenuModel) subscriptionModalTarget(cardX, cardY int) subscriptionHi
 		return subscriptionHitTarget{}
 	}
 
+	if m.subscriptionModalOnAllIn() {
+		paneWidth := m.subscriptionDetailPaneWidth()
+		for i, row := range m.subscriptionModal.allIn.rows {
+			if hitText(subscriptionAllInRowText(row.Label, paneWidth)) {
+				return subscriptionHitTarget{
+					kind:  subscriptionHitField,
+					index: subscriptionDetailAllInBase + i,
+				}
+			}
+		}
+	}
 	if m.subscriptionModalProfile().Provider.SuppliesOwnModel() {
 		for _, row := range []int{
 			subscriptionDetailEndpoint, subscriptionDetailModel, subscriptionDetailContext,
@@ -2585,10 +2635,14 @@ func (m *MainMenuModel) subscriptionModalTarget(cardX, cardY int) subscriptionHi
 			return subscriptionHitTarget{kind: subscriptionHitField, index: subscriptionDetailImages}
 		}
 	}
-	for i, alias := range claudeconfig.AnthropicAliases {
-		display := strings.ToUpper(alias[:1]) + alias[1:]
-		if hitText(display) {
-			return subscriptionHitTarget{kind: subscriptionHitMapping, index: i}
+	// Skipped for All-In: an alias name is a substring of a picker row's label
+	// ("Default · Opus 5"), so this loop would claim the checklist's clicks.
+	if !m.subscriptionModalOnAllIn() {
+		for i, alias := range claudeconfig.AnthropicAliases {
+			display := strings.ToUpper(alias[:1]) + alias[1:]
+			if hitText(display) {
+				return subscriptionHitTarget{kind: subscriptionHitMapping, index: i}
+			}
 		}
 	}
 	if hitText("API key") ||
@@ -2736,6 +2790,10 @@ func (m *MainMenuModel) handleSubscriptionModalMouse(msg tea.MouseMsg) (tea.Mode
 		case subscriptionHitField:
 			m.subscriptionModal.pane = subscriptionDetailsPane
 			m.subscriptionModal.detailCursor = target.index
+			if target.index >= subscriptionDetailAllInBase {
+				m.toggleAllInRow(target.index - subscriptionDetailAllInBase)
+				return m, nil
+			}
 			if target.index == subscriptionDetailImages {
 				m.toggleSubscriptionImages()
 				return m, nil

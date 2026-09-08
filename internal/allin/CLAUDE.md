@@ -638,3 +638,48 @@ for that row's label instead.
   never reads it — that command never calls `EnsureProfileIfEligible` at all,
   only `NewResolver`, so the field is inert there; it is wired solely so this
   `Env` stays shaped the same as every other construction site.
+
+### A hidden row is left out of the picker, and nowhere else
+
+The Subscriptions modal's MODEL ROUTING block is a checklist for this profile:
+one checkbox per picker row, toggled with Enter, Space or a click. The four
+Opus/Sonnet/Haiku/Fable mappings every other provider shows are inert here —
+`cycleSubscriptionMapping` returns early on the empty model list an All-In
+profile has — so the pane offered four rows reading "(none)" that nothing could
+change. A machine with several logins and providers produces well over a dozen
+picker rows, and a user wants only some of them in `/model`.
+
+State is a sidecar beside the configs list, `claude-allin.hidden`, one picker
+model id per line — the same shape, and the same load/toggle pattern, as
+`claude-configs.disabled`. `hidden.go` reads it as **whole lines**: a Featherless
+model id carries its own slashes, for the same reason `Route` cuts on the first
+two only.
+
+- **The filter lives in `EnsureProfile`, at the one line that builds
+  `options`.** Not in `Roster`: the modal's checklist renders from the roster,
+  so a hidden row must still appear there to be un-hidden, and `SourceCount` is
+  derived from `Roster` — filtering there would move the `< 2 sources` gate that
+  decides whether the profile is created at all. Guarded by
+  `TestRoster_still_reports_a_hidden_row` and `TestSourceCount_ignores_hidden_rows`.
+- **`Resolve` never reads the file.** Hiding is a display preference, never a
+  revocation: a session whose saved picker default was hidden after the fact
+  must still finish its turn.
+- **The empty picker is guarded twice.** `replaceBuiltInOptions` leaves no
+  built-in row to fall back on, so a zero-option picker is a session with no way
+  to change model at all and no escape from inside it. The modal refuses to
+  uncheck the last visible row and says why; `EnsureProfile` independently
+  writes the full roster when the file would leave nothing, which is what
+  catches a hand-edited file.
+- **A toggle writes immediately and refreshes the profile**, the way `x` already
+  disables a subscription. It never goes through the draft or "Save changes":
+  it is a property of the machine, not of the profile being edited.
+
+On the TUI side (`internal/tui/subscription_modal_allin_models.go`) the checklist
+is a **span** of cursor values, `subscriptionDetailAllInBase + index`, appended
+past every fixed `subscriptionDetail*` constant. Two things fall out of that:
+the mouse hit test must run the checklist branch first and skip the alias loop
+entirely for All-In (a row label like "Default · Opus 5" contains "Opus", which
+that loop searches for as a substring), and the renderer and the hit test must
+shape a label through the one `subscriptionAllInRowText` — the hit test locates a
+row by searching the rendered line for that exact string, so a label truncated
+one way and searched for the other never matches.
