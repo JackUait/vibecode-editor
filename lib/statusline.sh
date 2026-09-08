@@ -436,3 +436,34 @@ gt_ccstatusline_cmd() {
   fi
   printf '%s\n' "npx ccstatusline"
 }
+
+# Pull the All-In router's picker-row source out of a raw model id, mirroring
+# internal/allin/route.go's own Route() grammar: wisp/acct.<dir>/<model> or
+# wisp/cfg.<file>/<model>, cut on the FIRST two "/"s only (never every "/" —
+# a Featherless model id carries its own slash). Echoes "acct.<dir>" or
+# "cfg.<file-without-.json>"; a model id this build cannot place — no wisp/
+# prefix, no second "/", an empty source or id, or a source naming neither
+# family — echoes nothing, the same "session" fallback Route uses. The All-In
+# roster never emits an empty name after the "acct."/"cfg." prefix, but the id
+# comes off the wire (hand-typed into /model), so the pattern requires at
+# least one character there too.
+# Usage: gt_allin_source "wisp/cfg.zhipu-glm/glm-5.2"  =>  "cfg.zhipu-glm"
+gt_allin_source() {
+  local model="$1" rest source id
+  case "$model" in
+    wisp/*) rest="${model#wisp/}" ;;
+    *) return 0 ;;
+  esac
+  case "$rest" in
+    */*)
+      source="${rest%%/*}"
+      id="${rest#*/}"
+      ;;
+    *) return 0 ;;
+  esac
+  [ -n "$id" ] || return 0
+  case "$source" in
+    acct.?*|cfg.?*) printf '%s\n' "$source" ;;
+    *) return 0 ;;
+  esac
+}

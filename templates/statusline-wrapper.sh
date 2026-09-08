@@ -90,14 +90,34 @@ if [ -n "${WISP_DECK_CLAUDE_CONFIG:-}" ] && type gt_config_color &>/dev/null; th
   [ -n "$config_color" ] && account_color="$config_color"
 fi
 
+# The All-In router's picker row names the login or profile actually serving
+# this turn in the model id itself (wisp/acct.<dir>/<model> or
+# wisp/cfg.<file>/<model> — internal/allin/route.go's own grammar). Parsed
+# once here so both the native-bar eligibility widening right below and the
+# subscription-usage block further down share one read of $input.
+_gt_allin_source=""
+if type gt_allin_source &>/dev/null; then
+  _gt_model_id=$(echo "$input" | sed -n 's/.*"model":{"id":"\([^"]*\)".*/\1/p')
+  _gt_allin_source=$(gt_allin_source "$_gt_model_id")
+fi
+_gt_allin_acct_row=""
+case "$_gt_allin_source" in
+  acct.*) _gt_allin_acct_row=1 ;;
+esac
+
 # Usage pills for the active login: the 7-day (weekly) and 5-hour (rolling
 # session) windows, each a bar painted in the account's own profile color (the
 # fill vs. empty cells carry the amount; the color ties it to the login). Only
 # present for subscribers after the first API response, so they stay empty
-# otherwise, and only while the account segment is eligible (2+ logins).
+# otherwise, and only while the account segment is eligible (2+ logins) — OR
+# the All-In router is actively forwarding this turn to a specific login
+# (wisp/acct. row), which is eligible regardless of how many logins the
+# machine has: an All-In profile needs only two SOURCES total, so the common
+# shape is one native login plus subscriptions, where claude-accounts.list has
+# no managed entries and $account_label is empty even mid-turn.
 weekly_bar=""
 five_hour_bar=""
-if [ -n "$account_label" ]; then
+if [ -n "$account_label" ] || [ -n "$_gt_allin_acct_row" ]; then
   if type gt_weekly_used_pct &>/dev/null; then
     weekly_pct=$(gt_weekly_used_pct "$input")
     [ -n "$weekly_pct" ] && weekly_bar=$(gt_usage_bar "$weekly_pct")
@@ -131,31 +151,63 @@ fi
 # native figures. Ordering matters: this sits AFTER the auto-switch trigger,
 # which must keep reading the NATIVE pcts (it rotates Claude logins;
 # subscription quota must never bounce the account).
+#
+# An All-In pane's own config file (WISP_DECK_CLAUDE_CONFIG=all-in.json) names
+# the ROUTER, which has no quota of its own — it is a switchboard, not a
+# subscription. The picker row actually serving this turn is encoded in the
+# model id itself (wisp/acct.<dir>/<model> or wisp/cfg.<file>/<model>; see
+# internal/allin/route.go and gt_allin_source above), so usage follows that
+# row instead of the router's own file:
+#   - wisp/acct.… : the router forwards that login's own response headers
+#     unchanged, so Claude's native rate_limits (computed above from $input)
+#     already describe it correctly. Stand aside entirely — no fetch, and the
+#     native bars computed above are left untouched.
+#   - wisp/cfg.<profile> : fetch and cache THAT profile's usage, not the
+#     router's. The cache is keyed on the profile's own filename — the exact
+#     path a dedicated pane on that same profile already reads and writes —
+#     which is deliberate sharing, not a collision: it is the same account's
+#     real quota either way, so two panes hitting the same profile split one
+#     throttled fetch instead of doubling it.
+#   - anything else (a non-All-In pane's own real model id, or an All-In pane
+#     before any /model pick, still on the session's own credential) keeps
+#     today's behavior unchanged: fetch keyed on WISP_DECK_CLAUDE_CONFIG
+#     itself. For the pre-pick All-In case that names the router's own file,
+#     which subusage.Fetch does not know how to fetch — the "no fetcher"
+#     branch below already shows nothing rather than fabricate a number.
 if [ -n "${WISP_DECK_CLAUDE_CONFIG:-}" ]; then
-  _gt_sub_cache="$_gt_accounts_root/subscription-usage/$WISP_DECK_CLAUDE_CONFIG"
-  if [ -n "$_gt_tui_bin" ]; then
-    "$_gt_tui_bin" subscription-usage \
-      --configs-dir "$_gt_accounts_root/claude-configs" \
-      --list "$_gt_accounts_root/claude-configs.list" \
-      --config "$WISP_DECK_CLAUDE_CONFIG" \
-      --cache "$_gt_sub_cache" >/dev/null 2>&1 &
-    disown 2>/dev/null || true
-  fi
-  weekly_pct=""; five_hour_pct=""; weekly_bar=""; five_hour_bar=""
-  _gt_sub_json=""
-  [ -f "$_gt_sub_cache" ] && _gt_sub_json="$(cat "$_gt_sub_cache" 2>/dev/null)"
-  if [ -n "$_gt_sub_json" ] && type gt_sub_usage_fresh &>/dev/null \
-     && gt_sub_usage_fresh "$_gt_sub_json" "$(date +%s)"; then
-    # A fresh snapshot is the provider's answer, so a window still empty below
-    # is one the provider does not publish rather than one still being fetched.
-    _gt_sub_answered=1
-    if type gt_weekly_used_pct &>/dev/null; then
-      weekly_pct=$(gt_weekly_used_pct "$_gt_sub_json")
-      [ -n "$weekly_pct" ] && weekly_bar=$(gt_usage_bar "$weekly_pct")
+  # $_gt_allin_source was already parsed above, ahead of the native-bar
+  # eligibility widening — one read of $input shared by both.
+  _gt_sub_config="$WISP_DECK_CLAUDE_CONFIG"
+  case "$_gt_allin_source" in
+    acct.*) _gt_sub_config="" ;;
+    cfg.*) _gt_sub_config="${_gt_allin_source#cfg.}.json" ;;
+  esac
+  if [ -n "$_gt_sub_config" ]; then
+    _gt_sub_cache="$_gt_accounts_root/subscription-usage/$_gt_sub_config"
+    if [ -n "$_gt_tui_bin" ]; then
+      "$_gt_tui_bin" subscription-usage \
+        --configs-dir "$_gt_accounts_root/claude-configs" \
+        --list "$_gt_accounts_root/claude-configs.list" \
+        --config "$_gt_sub_config" \
+        --cache "$_gt_sub_cache" >/dev/null 2>&1 &
+      disown 2>/dev/null || true
     fi
-    if type gt_five_hour_used_pct &>/dev/null; then
-      five_hour_pct=$(gt_five_hour_used_pct "$_gt_sub_json")
-      [ -n "$five_hour_pct" ] && five_hour_bar=$(gt_usage_bar "$five_hour_pct")
+    weekly_pct=""; five_hour_pct=""; weekly_bar=""; five_hour_bar=""
+    _gt_sub_json=""
+    [ -f "$_gt_sub_cache" ] && _gt_sub_json="$(cat "$_gt_sub_cache" 2>/dev/null)"
+    if [ -n "$_gt_sub_json" ] && type gt_sub_usage_fresh &>/dev/null \
+       && gt_sub_usage_fresh "$_gt_sub_json" "$(date +%s)"; then
+      # A fresh snapshot is the provider's answer, so a window still empty below
+      # is one the provider does not publish rather than one still being fetched.
+      _gt_sub_answered=1
+      if type gt_weekly_used_pct &>/dev/null; then
+        weekly_pct=$(gt_weekly_used_pct "$_gt_sub_json")
+        [ -n "$weekly_pct" ] && weekly_bar=$(gt_usage_bar "$weekly_pct")
+      fi
+      if type gt_five_hour_used_pct &>/dev/null; then
+        five_hour_pct=$(gt_five_hour_used_pct "$_gt_sub_json")
+        [ -n "$five_hour_pct" ] && five_hour_bar=$(gt_usage_bar "$five_hour_pct")
+      fi
     fi
   fi
 fi
