@@ -404,6 +404,14 @@ func TestCompactView_hover_highlight_does_not_blink_on_scroll(t *testing.T) {
 		_, _ = ptmx.Write([]byte("\x1b[<65;12;5M")) // wheel down
 		time.Sleep(25 * time.Millisecond)
 	}
+	// Quiet output is not settled work: the pane coalesces a burst into ONE
+	// repaint, so it deliberately paints nothing while reports keep arriving and
+	// the byte-count poll below reads that silence as settled. It then fired
+	// Ctrl-C before the first repaint, and the pane quit having drawn no
+	// highlight at all.
+	for i := 0; i < 100 && !contains("48;5;238"); i++ {
+		time.Sleep(50 * time.Millisecond)
+	}
 	// Wait for the WHOLE burst to settle (output goes quiet) before quitting.
 	// Ctrl-C must NOT land mid-burst: SIGINT interrupts an in-flight mouse-report
 	// read, which truncates that report and blanks its hover — a test-only

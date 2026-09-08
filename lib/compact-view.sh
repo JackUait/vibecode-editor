@@ -1988,6 +1988,11 @@ compact_view_shell() {
       # The newline and erase codes live in variables: zsh does not expand a
       # $'...' literal in the replacement half of ${var//pat/repl} (see
       # highlight_body_line), so an inline escape there would leak as text.
+      # A quit request is only a flag a trap raised, so this render ran on — with
+      # every $() stage of it killed underneath. An emptied clamp_scroll slices
+      # the body from the top while the bar still reports the offset it was built
+      # with, and nothing repaints after this to correct it.
+      [ "$_quit" = 1 ] && break
       printf '\033[H%s\033[K\033[J' "${frame//${nl}/${rowend}}"
       need_draw=0
     fi
