@@ -69,7 +69,7 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 			}
 			base = credential.BaseURL
 			needsRepair = credential.NeedsRepair
-			rewritten, err := rewriteModel(payload, target.Model)
+			rewritten, err := rewriteModel(payload, target.Model, credential.DropTools)
 			if err != nil {
 				writeRoutingError(w, target, err)
 				return
@@ -130,11 +130,12 @@ func NewHandler(resolver Resolver, sessionUpstream string) http.Handler {
 // re-encodes. Failing open would swap the credential in while leaving the
 // wisp/… id in the body, so a third-party endpoint would receive a routing id
 // it cannot answer, carrying someone else's real credential.
-func rewriteModel(payload map[string]any, model string) ([]byte, error) {
+func rewriteModel(payload map[string]any, model string, drop []string) ([]byte, error) {
 	if payload == nil {
 		return nil, errors.New("allin: request body is not a JSON object")
 	}
 	payload["model"] = model
+	dropTools(payload, drop)
 	rewritten, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("allin: re-encoding the routed request: %w", err)
@@ -204,4 +205,34 @@ func writeRoutingError(w http.ResponseWriter, target Target, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
 	_, _ = w.Write(body)
+}
+
+// dropTools removes the named tools from an already-parsed body, so an endpoint
+// that rejects one tool's schema is never sent it. Claude Code advertises the
+// whole tool set on every turn, and a schema the endpoint refuses 400s the turn
+// before the model reads a word.
+//
+// A turn that carries no `tools` key at all (the title generator) keeps none:
+// inventing an empty array there would change what the endpoint is asked for.
+func dropTools(payload map[string]any, drop []string) {
+	if len(drop) == 0 {
+		return
+	}
+	tools, ok := payload["tools"].([]any)
+	if !ok {
+		return
+	}
+	unwanted := make(map[string]bool, len(drop))
+	for _, name := range drop {
+		unwanted[name] = true
+	}
+	kept := make([]any, 0, len(tools))
+	for _, tool := range tools {
+		entry, _ := tool.(map[string]any)
+		if name, _ := entry["name"].(string); unwanted[name] {
+			continue
+		}
+		kept = append(kept, tool)
+	}
+	payload["tools"] = kept
 }

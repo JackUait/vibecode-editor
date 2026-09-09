@@ -385,3 +385,47 @@ backfill of a window-current profile, whose change-check is the trap above, and
 a check that every shipped sub-1M default declares the reserve its window
 implies) and
 `TestApplyPendingSubscriptionModel_reserves_output_room_for_a_small_window`.
+
+### One tool schema z.ai will not validate kills every turn on the profile
+
+Claude Code advertises its whole tool set on every request, so a gateway that
+rejects ONE tool's `input_schema` rejects every turn on that profile, before the
+model reads a word. z.ai answers `400 [1210][Invalid API parameter, please check
+the documentation.]`, which names nothing.
+
+Measured on 2026-09-09 by putting a recording proxy in front of `api.z.ai` and
+reproducing a live interactive pane on an isolated tmux server, then bisecting
+the captured body:
+
+- **The trigger is a Unicode property escape inside a `pattern`.** A schema
+  carrying `^\p{Cc}$` and nothing else reproduces the 400. The same pattern with
+  the escape removed passes, and so does a negative lookahead — RE2 rejects a
+  lookahead, so whatever validates these is not RE2, and it is the `\p{...}`
+  class alone that it refuses.
+- **`Artifact` is the one tool Claude Code ships that carries one**, in its
+  `field` property. Bisecting 33 tools reduced to it, and its 49 properties to
+  that one.
+- **It is not about the models.** Every GLM id fails identically, `glm-4.7` and
+  `glm-4.5-air` included, so a profile that worked before only worked because
+  that pane's tool set had no `Artifact` in it. Nor is it about size: a 40KB
+  filler description passes.
+- **A non-streaming request 400s; a streaming one answers 200 and then carries
+  the same error as an event.** A bisect that only reads the HTTP status will
+  call the streaming case a pass and chase the wrong variable.
+
+`Provider.UnsupportedTools` names what an endpoint cannot be sent, and there are
+two delivery points because there are two launch shapes. A plain gateway pane
+gets a `permissions.deny` entry in its profile, which drops the tool from the
+request outright (verified live — the pane then answers normally); `permissions`
+travels through the launch overlay untouched, exactly like the image denials.
+An **All-In** pane cannot use that: it runs on the router profile, whose picker
+also carries Claude rows that want the tool, so `Credential.DropTools` carries
+the list and `internal/allin`'s `dropTools` removes them per request instead.
+
+A profile already on disk is never re-copied from defaults, so
+`claude-config ensure-tools` sweeps existing ones and `bin/wisp-deck` runs it
+beside `ensure-budget` and `ensure-watchdog`.
+
+Guarded by `internal/claudeconfig/unsupportedtools_test.go` (including a check
+that every shipped default denies what its provider declares) and
+`internal/allin/droptools_test.go`.

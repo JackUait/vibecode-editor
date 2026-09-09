@@ -50,6 +50,10 @@ type Provider struct {
 	// model list at runtime instead of declaring one here. The modal offers a
 	// searchable picker rather than the cycler, for the same reason.
 	RemoteCatalog bool
+	// UnsupportedTools names the Claude Code tools this endpoint rejects the
+	// SCHEMA of, so the whole turn 400s before the model reads a word. A
+	// profile denies them, and the All-In router drops them from a routed body.
+	UnsupportedTools []string
 }
 
 // SuppliesOwnModel reports whether the profile's model id, context window, and
@@ -73,6 +77,14 @@ var Providers = []Provider{
 		Auth:           AuthAPIKey,
 		MirrorOpenCode: true,
 		DefaultModels:  [4]string{"glm-5.3", "glm-5.3", "glm-5.3-flash", "glm-5.3-flash"},
+		// Measured through this base URL: z.ai answers any tool whose
+		// input_schema carries a `pattern` containing a Unicode property escape
+		// with 400 `[1210][Invalid API parameter]`, and the turn dies before
+		// the model reads a word. `^\p{Cc}$` alone reproduces it; the same
+		// pattern with the escape removed passes, and so does a lookahead. The
+		// Artifact tool's `field` property is the one schema Claude Code ships
+		// that carries one, and it fails on every GLM model, 4.5-air included.
+		UnsupportedTools: []string{"Artifact"},
 		Models: []Model{
 			// The Coding Plan retired its lineup onto these two: measured
 			// through this base URL on 2026-09-09, the response's own `model`

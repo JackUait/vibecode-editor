@@ -387,11 +387,11 @@ func TestHandler_asks_the_upstream_for_an_undecoded_body(t *testing.T) {
 // third-party endpoint receives a routing id it cannot answer — carrying
 // someone's real credential.
 func TestRewriteModel_refuses_a_body_it_cannot_re_address(t *testing.T) {
-	if _, err := rewriteModel(nil, "claude-opus-5"); err == nil {
+	if _, err := rewriteModel(nil, "claude-opus-5", nil); err == nil {
 		t.Fatal("a nil payload was accepted; assigning into it panics")
 	}
 	// A channel has no JSON encoding, so Marshal fails on the whole object.
-	if _, err := rewriteModel(map[string]any{"x": make(chan int)}, "claude-opus-5"); err == nil {
+	if _, err := rewriteModel(map[string]any{"x": make(chan int)}, "claude-opus-5", nil); err == nil {
 		t.Fatal("an unencodable payload was accepted")
 	}
 }
@@ -399,7 +399,7 @@ func TestRewriteModel_refuses_a_body_it_cannot_re_address(t *testing.T) {
 func TestRewriteModel_replaces_the_routed_id(t *testing.T) {
 	got, err := rewriteModel(map[string]any{
 		"model": "wisp/acct.personal/claude-opus-5", "max_tokens": float64(8),
-	}, "claude-opus-5")
+	}, "claude-opus-5", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

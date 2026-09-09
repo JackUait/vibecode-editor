@@ -60,6 +60,11 @@ type Credential struct {
 	// proxy, or it 400s on Claude Code's role:"system" messages and silently
 	// stops parsing tool calls once a request carries `thinking`.
 	NeedsRepair bool
+	// DropTools names the tools this endpoint rejects the schema of, from the
+	// target provider's own catalog entry. The profile-level deny cannot serve
+	// this pane: All-In runs on the router profile, whose picker also carries
+	// Claude rows that want the tool, so the drop is per request.
+	DropTools []string
 }
 
 // Resolver answers what a parsed picker row should be sent with.
@@ -126,6 +131,7 @@ func (r *FileResolver) Resolve(target Target) (Credential, error) {
 			Header:      "Authorization",
 			Value:       "Bearer " + key,
 			NeedsRepair: provider.RemoteCatalog,
+			DropTools:   provider.UnsupportedTools,
 		}, nil
 	}
 	return Credential{}, errors.New("allin: session target needs no credential")

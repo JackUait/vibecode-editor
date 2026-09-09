@@ -149,6 +149,22 @@ var claudeConfigEnsureWatchdogCmd = &cobra.Command{
 	},
 }
 
+// A tool schema the endpoint refuses kills every turn on the profile, and a
+// profile already on disk is never re-copied from defaults — so a profile
+// written before its provider declared the denial can only be repaired here.
+var claudeConfigEnsureToolsCmd = &cobra.Command{
+	Use:   "ensure-tools",
+	Short: "Deny the tools each provider's endpoint rejects and print how many changed",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		changed, err := claudeconfig.EnsureUnsupportedToolsAll(ccDir)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), changed)
+		return nil
+	},
+}
+
 // The All-In profile's picker rows name a login or a provider config, both of
 // which come and go — so unlike add/rename/delete, this rebuilds the picker on
 // every call rather than mutating once. Same repair story as ensure-budget:
@@ -204,8 +220,10 @@ func init() {
 
 	claudeConfigEnsureBudgetCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
 	claudeConfigEnsureWatchdogCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
+	claudeConfigEnsureToolsCmd.Flags().StringVar(&ccDir, "dir", "", "Path to configs directory")
 
 	claudeConfigCmd.AddCommand(claudeConfigAddCmd, claudeConfigRenameCmd, claudeConfigDeleteCmd,
-		claudeConfigEnsureBudgetCmd, claudeConfigEnsureWatchdogCmd, newEnsureAllInCommand())
+		claudeConfigEnsureBudgetCmd, claudeConfigEnsureWatchdogCmd, claudeConfigEnsureToolsCmd,
+		newEnsureAllInCommand())
 	rootCmd.AddCommand(claudeConfigCmd)
 }

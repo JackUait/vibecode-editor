@@ -8,5 +8,10 @@
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "1000000",
     "CLAUDE_ENABLE_STREAM_WATCHDOG": "0"
+  },
+  "permissions": {
+    "deny": [
+      "Artifact"
+    ]
   }
 }
