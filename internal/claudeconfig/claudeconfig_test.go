@@ -514,15 +514,27 @@ func TestReadModelMappings_returns_indices(t *testing.T) {
 	os.WriteFile(filepath.Join(cfgDir, "zhipu.json"), []byte(`{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"glm-5.2","ANTHROPIC_DEFAULT_HAIKU_MODEL":"glm-4.5-air"}}`), 0644)
 
 	models := ProviderModels["zhipu"]
+	// Derived, not hardcoded: adding a model to the catalog shifts every index
+	// after it, and a literal here fails on the catalog rather than on the code
+	// under test.
+	indexOf := func(id string) int {
+		for i, m := range models {
+			if m == id {
+				return i
+			}
+		}
+		t.Fatalf("zhipu catalog has no %q", id)
+		return -1
+	}
 	got := ReadModelMappings(cfgDir, "zhipu.json", models)
-	if got[0] != 0 {
-		t.Fatalf("opus = %d, want 0", got[0])
+	if want := indexOf("glm-5.2"); got[0] != want {
+		t.Fatalf("opus = %d, want %d", got[0], want)
 	}
 	if got[1] != -1 {
 		t.Fatalf("sonnet = %d, want -1", got[1])
 	}
-	if got[2] != 5 {
-		t.Fatalf("haiku = %d, want 5", got[2])
+	if want := indexOf("glm-4.5-air"); got[2] != want {
+		t.Fatalf("haiku = %d, want %d", got[2], want)
 	}
 	if got[3] != -1 {
 		t.Fatalf("fable = %d, want -1", got[3])
@@ -610,11 +622,11 @@ func TestWriteModelMappings_preserves_other_env_vars(t *testing.T) {
 
 func TestModelsForConfig_zhipu(t *testing.T) {
 	models := ModelsForConfig("Zhipu GLM")
-	if len(models) != 6 {
-		t.Fatalf("expected 6 zhipu models, got %d", len(models))
+	if len(models) != 8 {
+		t.Fatalf("expected 8 zhipu models, got %d", len(models))
 	}
-	if models[0] != "glm-5.2" {
-		t.Fatalf("expected glm-5.2, got %s", models[0])
+	if models[0] != "glm-5.3" {
+		t.Fatalf("expected glm-5.3, got %s", models[0])
 	}
 }
 

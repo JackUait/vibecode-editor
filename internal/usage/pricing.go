@@ -123,7 +123,8 @@ var modelRates = map[string]modelRate{
 	"kimi-for-coding-highspeed": {1.9, 8},
 
 	// Z.ai GLM base model kept as a prefix fallback for historical usage; the
-	// offered glm-5/5.1/5.2/4.6/4.7/4.5-air come from the catalog (folded in init).
+	// offered glm-5.3/5.3-flash/5.2/5.1/5/4.7/4.6/4.5-air come from the catalog
+	// (folded in init).
 	"glm-4.5": {0.6, 2.2},
 
 	// Mistral (coding models)

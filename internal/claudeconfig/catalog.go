@@ -72,8 +72,22 @@ var Providers = []Provider{
 		BaseURL:        "https://api.z.ai/api/anthropic",
 		Auth:           AuthAPIKey,
 		MirrorOpenCode: true,
-		DefaultModels:  [4]string{"glm-4.7", "glm-4.7", "glm-4.5-air", "glm-4.5-air"},
+		DefaultModels:  [4]string{"glm-5.3", "glm-5.3", "glm-5.3-flash", "glm-5.3-flash"},
 		Models: []Model{
+			// The Coding Plan retired its lineup onto these two: measured
+			// through this base URL on 2026-09-09, the response's own `model`
+			// field reports glm-5.2/5.1/5 answered by glm-5.3, and
+			// glm-4.7/4.6/4.5-air answered by glm-5.3-flash. The rows below
+			// them stay because they still answer 200, so a profile that
+			// stored one keeps resolving it — but only these two describe the
+			// model that runs, which is why all four aliases name them.
+			//
+			// The window is measured, not published: both accepted a
+			// 1,020,017-token prompt. The output limit is the range the
+			// endpoint names in its own 400 for max_tokens=131073, which is
+			// why it is 131072 here and a rounded 128000 on the older rows.
+			{"glm-5.3", 1.40, 4.40, 1000000, 131072},
+			{"glm-5.3-flash", 0.075, 0.25, 1000000, 131072},
 			{"glm-5.2", 1.40, 4.40, 1000000, 128000},
 			{"glm-5.1", 1.40, 4.40, 202752, 128000},
 			{"glm-5", 1.00, 3.20, 202752, 128000},
