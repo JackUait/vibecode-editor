@@ -30,11 +30,14 @@ func EnsureUnsupportedTools(configsDir, file string) (bool, error) {
 		return false, err
 	}
 
+	// The marker is the truth. Its stand-in must be a real alias match, never
+	// providerFor's Providers[0] catch-all: that is zhipu, so an unmarked
+	// profile for any other endpoint would have a working tool denied.
 	provider, ok := providerByKey(ReadProviderMarker(configsDir, file))
 	if !ok {
-		provider = providerFor(strings.TrimSuffix(file, ".json"))
+		provider, ok = providerMatching(strings.TrimSuffix(file, ".json"))
 	}
-	if len(provider.UnsupportedTools) == 0 {
+	if !ok || len(provider.UnsupportedTools) == 0 {
 		return false, nil
 	}
 

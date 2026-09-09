@@ -306,6 +306,27 @@ func providerFor(configName string) Provider {
 	return Providers[best]
 }
 
+// providerMatching is providerFor without its fallback: it reports whether an
+// alias actually matched. Providers[0] is zhipu, so a caller that would ACT on
+// the answer — rather than merely display a model list — must be able to tell a
+// real match from the catch-all, or every unmarked profile on the machine reads
+// as GLM.
+func providerMatching(configName string) (Provider, bool) {
+	lower := strings.ToLower(configName)
+	best, bestLen := -1, 0
+	for i, p := range Providers {
+		for _, a := range p.Aliases {
+			if len(a) > bestLen && strings.Contains(lower, a) {
+				best, bestLen = i, len(a)
+			}
+		}
+	}
+	if best < 0 {
+		return Provider{}, false
+	}
+	return Providers[best], true
+}
+
 // ProviderForName returns the provider selected by legacy display-name
 // matching. Unknown names retain the historical Zhipu fallback.
 func ProviderForName(configName string) Provider {

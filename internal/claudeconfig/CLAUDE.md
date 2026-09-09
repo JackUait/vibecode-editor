@@ -424,7 +424,10 @@ the list and `internal/allin`'s `dropTools` removes them per request instead.
 
 A profile already on disk is never re-copied from defaults, so
 `claude-config ensure-tools` sweeps existing ones and `bin/wisp-deck` runs it
-beside `ensure-budget` and `ensure-watchdog`.
+beside `ensure-budget` and `ensure-watchdog`. That sweep reads the provider from
+the marker, and its stand-in is `providerMatching` — a real alias match — never
+`providerFor`, whose fallback is `Providers[0]`, which IS zhipu: an unmarked
+profile for any other endpoint would otherwise have a working tool denied.
 
 Guarded by `internal/claudeconfig/unsupportedtools_test.go` (including a check
 that every shipped default denies what its provider declares) and

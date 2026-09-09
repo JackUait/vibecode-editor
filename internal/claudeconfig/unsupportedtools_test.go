@@ -196,3 +196,23 @@ func TestImagesToggle_keeps_the_tool_denial(t *testing.T) {
 		}
 	}
 }
+
+// providerFor answers Providers[0] — which IS zhipu — for a name matching no
+// alias, so a bare name fallback would deny Artifact on an unmarked profile
+// that has nothing to do with GLM, removing a working tool from it. Only a real
+// alias match may stand in for a missing marker. Same trap the byte watchdog
+// records for its own provider read.
+func TestEnsureUnsupportedTools_does_not_deny_on_the_zhipu_name_fallback(t *testing.T) {
+	dir := t.TempDir()
+	writeProfile(t, dir, "myllm.json", map[string]any{"env": map[string]any{}})
+	changed, err := EnsureUnsupportedTools(dir, "myllm.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Error("sweep stamped a profile that matched no provider alias")
+	}
+	if deny := readDenyList(filepath.Join(dir, "myllm.json")); len(deny) != 0 {
+		t.Errorf("deny = %v, want none", deny)
+	}
+}
