@@ -90,10 +90,11 @@ var modelRates = map[string]modelRate{
 	// xAI (grok-4 family currently all input 1.25 / output 2.5)
 	"grok-4": {1.25, 2.5},
 
-	// DeepSeek (input is the standard/cache-miss rate)
+	// DeepSeek (input is the standard/cache-miss rate). The offered
+	// deepseek-flash/v4-pro come from the catalog (folded in init); these are
+	// retired ids that historical usage still names.
 	"deepseek-chat":     {0.14, 0.28},
 	"deepseek-reasoner": {0.14, 0.28},
-	"deepseek-v4-pro":   {0.435, 0.87},
 	"deepseek-v4-flash": {0.14, 0.28},
 
 	// Alibaba Qwen

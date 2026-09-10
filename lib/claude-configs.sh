@@ -98,7 +98,7 @@ get_claude_config_provider() {
     # featherless — it exists so _subscription_choice_ready can judge the
     # router profile's readiness by marker instead of the token check it has
     # none of.
-    zhipu|mimo|moonshot|moonshot-coding|openai-chatgpt|featherless|allin) printf '%s\n' "$provider" ;;
+    zhipu|mimo|moonshot|moonshot-coding|deepseek|openai-chatgpt|featherless|allin) printf '%s\n' "$provider" ;;
   esac
 }
 

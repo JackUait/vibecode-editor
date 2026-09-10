@@ -182,6 +182,27 @@ var Providers = []Provider{
 		RemoteCatalog:  true,
 	},
 	{
+		// A metered API key, not a flat plan. Past index 2, because modal tests
+		// hardcode MiMo=1 and ChatGPT=2, and before the Kimi entries, because
+		// TestMoonshotProvider_catalogEntry pins moonshot as the last gateway.
+		Key:            "deepseek",
+		Name:           "DeepSeek",
+		Aliases:        []string{"deepseek"},
+		BaseURL:        "https://api.deepseek.com/anthropic",
+		Auth:           AuthAPIKey,
+		MirrorOpenCode: true,
+		// deepseek-v4-pro has no vision, and DeepSeek routes it to Flash from
+		// 2026-09-14, so every alias names Flash.
+		DefaultModels: [4]string{"deepseek-flash", "deepseek-flash", "deepseek-flash", "deepseek-flash"},
+		// Published, not measured (api-docs.deepseek.com, 2026-09-10): "1M"
+		// context and "384K" max output. Prices are the PEAK cache-miss input
+		// and output rates; off-peak is exactly half.
+		Models: []Model{
+			{"deepseek-flash", 0.30, 1.20, 1000000, 384000},
+			{"deepseek-v4-pro", 1.32, 3.96, 1000000, 384000},
+		},
+	},
+	{
 		// Moonshot's flat-rate Kimi For Coding subscription is a different
 		// service from the open platform below: a different host, a different
 		// model namespace, and credentials (sk-kimi-…) each gateway rejects
