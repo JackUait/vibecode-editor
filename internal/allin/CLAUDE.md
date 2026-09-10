@@ -585,12 +585,54 @@ profile is what every session reads. Measured end to end with one Explore
 subagent per run, key absent then present: without it the subagent's first
 request carried `claude-opus-5`, with it `wisp/cfg.deepseek/deepseek-flash`.
 
-Residual, not fixed here: a family model named on the Agent call itself, or in
-an agent's own frontmatter (`statusline-setup` ships `model:"sonnet"`, plugins
-ship their own), resolves the same way — measured: `model: sonnet` on the call
-carried `claude-sonnet-5` into the router.
+Residual, not fixed by the cap alone: a family model named on the Agent call
+itself, or in an agent's own frontmatter (`statusline-setup` ships
+`model:"sonnet"`, plugins ship their own), outranks inheritance and resolves the
+same way — measured: `model: sonnet` on the call carried `claude-sonnet-5` into
+the router.
 
 Guarded by `TestEnsureProfile_disarms_the_explore_inherit_cap`.
+
+### …and every other subagent only because `routerEnv` forces inheritance
+
+Inheritance is the weaker of the two sources. Decoded from 2.1.268, the
+resolver `OH(agentSpec, mainLoopModel, toolModel, …)` takes its model from the
+first of: the model named on the Agent call, the agent's own declared model,
+the env default, and only then the parent. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`
+drops the first two — `ozn` returns `undefined` for both when it is set — which
+leaves the subagent inheriting the session model, exactly like Explore above.
+Dropping them is the point, not a side effect: superpowers' own
+`subagent-driven-development` skill tells the model to *always* name one
+("An omitted model inherits your session's model — often the most capable and
+[expensive]"), so a session that follows its own instructions names `sonnet` for
+every implementer on essentially every dispatch.
+
+This profile carries none of the four `ANTHROPIC_DEFAULT_*_MODEL` aliases, and
+deliberately: the row is a per-session choice, so no static alias can name it.
+`Mp()` / `PY()` therefore fall through to the first-party ids — `sonnet` to
+`claude-sonnet-5`, `haiku` to `claude-haiku-4-5-20251001` — and `Route` reads
+each as `KindSession`, billing the session's OWN Claude subscription.
+
+Measured end to end on a real 2.1.268 pane driven by a local endpoint, one
+`Agent(model:"sonnet")` call per run, key absent then present: without it the
+subagent's first request carried `claude-sonnet-5`, with it
+`wisp/cfg.deepseek/deepseek-flash`.
+
+It pairs with `CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP` rather than replacing
+it, and the order matters: the force keeps an object-shaped spec's `inheritCap`
+(`ozn`'s `r && W5()==="inherit"` branch), so with the cap still armed Explore
+resolves to opus anyway. Both keys are pinned by
+`TestEnsureProfile_forces_subagents_onto_the_picked_row` and its neighbour.
+
+Not measured, and left alone: the small/fast alias behind Claude Code's own
+background calls (the title generator, the classifiers). `og()` returns the
+main model whenever `ANTHROPIC_SMALL_FAST_MODEL` is unset and the provider is
+not first-party — which the router's loopback endpoint guarantees — and the
+one live run above showed the title request carrying the session's `wisp/…` row
+rather than a haiku id. If a future build re-derives that alias from
+`ANTHROPIC_DEFAULT_HAIKU_MODEL` regardless of provider, those calls would leak
+to api.anthropic.com the same way; a `tcpdump`-free check is to add a `model`
+log line to the router and read it for one session.
 
 ### `ensure-allin` and `claude-allin` name the same two files the same way
 

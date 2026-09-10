@@ -176,6 +176,15 @@ func EnsureProfileIfEligible(env Env) error {
 //     family — which every wisp/… row is — and "opus" resolves to the
 //     first-party claude-opus-5. The router reads that id as an unrouted row
 //     and spends the session's own login instead (see the package gotchas).
+//   - CLAUDE_CODE_SUBAGENT_MODEL_FORCE is the same protection for every other
+//     subagent. Inheriting is not enough: a model named on the Agent call
+//     (`model: "sonnet"`) or in an agent's frontmatter outranks it, and with
+//     no ANTHROPIC_DEFAULT_*_MODEL aliases to resolve through it becomes the
+//     first-party claude-sonnet-5 / claude-haiku-4-5 — another unrouted row,
+//     billed to the session's own login. The force drops both sources, so the
+//     subagent inherits the session model and routes like any other turn.
+//     It pairs with the key above rather than replacing it: the force keeps an
+//     object-shaped spec's inheritCap, so an armed Explore cap still wins.
 //
 // A 1M window is ONE key. The sub-1M trio has to be actively deleted, not just
 // left unwritten: CLAUDE_CODE_DISABLE_1M_CONTEXT makes Claude Code ignore the
@@ -191,6 +200,7 @@ func routerEnv() map[string]string {
 		"WISP_DECK_SUBSCRIPTION_PROVIDER":         claudeconfig.AllInProvider.Key,
 		"ANTHROPIC_BASE_URL":                      claudeconfig.AllInProvider.BaseURL,
 		"CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP": "1",
+		"CLAUDE_CODE_SUBAGENT_MODEL_FORCE":        "1",
 		claudeconfig.ContextBudgetKey:             strconv.Itoa(rosterWindow),
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":         "",
 		"CLAUDE_CODE_DISABLE_1M_CONTEXT":          "",

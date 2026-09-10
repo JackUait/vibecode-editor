@@ -257,6 +257,32 @@ func TestEnsureProfile_disarms_the_explore_inherit_cap(t *testing.T) {
 	}
 }
 
+// Disarming the Explore cap only covers an agent that inherits. A model named
+// on the Agent call itself — superpowers' own skills tell the model to always
+// name one, `model: "sonnet"` for an implementer and `"haiku"` for a probe —
+// outranks inheritance, and agent frontmatter outranks it too. Resolved
+// without the four ANTHROPIC_DEFAULT_*_MODEL aliases this profile deliberately
+// does not carry, `sonnet` becomes the first-party claude-sonnet-5, `haiku`
+// claude-haiku-4-5-20251001, and Route reads either as an unrouted row: the
+// subagent bills the session's OWN Claude subscription instead of the row the
+// user picked.
+//
+// CLAUDE_CODE_SUBAGENT_MODEL_FORCE drops both of those sources, so every
+// subagent inherits the session model and carries its wisp/… id through the
+// router. Measured end to end on a real 2.1.268 pane driven by a local
+// endpoint, one Agent(model:"sonnet") call per run: without it the subagent's
+// first request carried claude-sonnet-5, with it wisp/cfg.deepseek/deepseek-flash.
+//
+// It has to ship beside CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP, not instead
+// of it: the force keeps an object-shaped spec's inheritCap, so an armed
+// Explore cap (an object) would still resolve to opus.
+func TestEnsureProfile_forces_subagents_onto_the_picked_row(t *testing.T) {
+	_, _, path := generatedProfile(t)
+	if got := readEnv(t, path)["CLAUDE_CODE_SUBAGENT_MODEL_FORCE"]; got != "1" {
+		t.Fatalf("CLAUDE_CODE_SUBAGENT_MODEL_FORCE = %q, want \"1\": a subagent then runs on claude-sonnet-5 / claude-haiku-4-5 over the session's own login", got)
+	}
+}
+
 // The declared window must equal what contextWindowEnv would compute for
 // rosterWindow, or every install rewrites this file. At 1M that means ONE key:
 // the sub-1M trio is deleted, and CLAUDE_CODE_AUTO_COMPACT_WINDOW surviving at
