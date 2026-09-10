@@ -170,6 +170,12 @@ func EnsureProfileIfEligible(env Env) error {
 //   - The window keys are the session's 1M declaration, and they have to be
 //     declared here: this is the one profile stampContextBudget cannot size on
 //     its own, because All-In has no model mappings to compute a window from.
+//   - CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP is what keeps an Explore subagent
+//     on the row the user picked. Claude Code hands the built-in Explore agent
+//     {inheritCap:"opus"} whenever the session model's id names no Claude
+//     family — which every wisp/… row is — and "opus" resolves to the
+//     first-party claude-opus-5. The router reads that id as an unrouted row
+//     and spends the session's own login instead (see the package gotchas).
 //
 // A 1M window is ONE key. The sub-1M trio has to be actively deleted, not just
 // left unwritten: CLAUDE_CODE_DISABLE_1M_CONTEXT makes Claude Code ignore the
@@ -182,12 +188,13 @@ func EnsureProfileIfEligible(env Env) error {
 // _sweep is what holds the two together.
 func routerEnv() map[string]string {
 	return map[string]string{
-		"WISP_DECK_SUBSCRIPTION_PROVIDER": claudeconfig.AllInProvider.Key,
-		"ANTHROPIC_BASE_URL":              claudeconfig.AllInProvider.BaseURL,
-		claudeconfig.ContextBudgetKey:     strconv.Itoa(rosterWindow),
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
-		"CLAUDE_CODE_DISABLE_1M_CONTEXT":  "",
-		claudeconfig.OutputReserveKey:     "",
+		"WISP_DECK_SUBSCRIPTION_PROVIDER":         claudeconfig.AllInProvider.Key,
+		"ANTHROPIC_BASE_URL":                      claudeconfig.AllInProvider.BaseURL,
+		"CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP": "1",
+		claudeconfig.ContextBudgetKey:             strconv.Itoa(rosterWindow),
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":         "",
+		"CLAUDE_CODE_DISABLE_1M_CONTEXT":          "",
+		claudeconfig.OutputReserveKey:             "",
 	}
 }
 

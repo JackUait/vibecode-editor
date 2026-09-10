@@ -560,6 +560,38 @@ already have an `env` key, which `routerEnv` guarantees the file always has by
 the time this runs. Guarded by
 `TestEnsureProfileIfEligible_disarms_the_stream_watchdog_on_a_freshly_created_profile`.
 
+### An Explore subagent stays on the picked row only because `routerEnv` disarms the cap
+
+Claude Code's built-in Explore agent is the one agent type that does not inherit
+the session model. Decoded from 2.1.267: `LX(agent, mainLoopModel)` returns
+`{inheritCap:"opus"}` whenever the mainLoopModel's id names no haiku / sonnet /
+opus family member (`edo` → `!F7t(id, ["haiku","sonnet","opus"])`), and the cap
+then resolves through the alias to the first-party `claude-opus-5`. Every
+`wisp/…` row names a provider, so its id names no family either — the cap is
+always armed in an All-In session.
+
+`Route` places that bare id as `KindSession`, so the turn leaves on the
+session's OWN login at api.anthropic.com, not the subscription the user picked.
+Measured on a live All-In pane: three Explore subagents ran on claude-opus-5 and
+died on the Claude subscription's weekly limit, while that same session's
+general-purpose subagents ran on the picked row (the roster and inheritance were
+never the problem — general-purpose inherits, and inheriting a `wisp/…` id
+routes correctly).
+
+`CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP=1` is the only switch: `LX` returns
+plain `"inherit"` when it is set, and the subagent then carries the row id
+through the router like every other turn. It lives in `routerEnv` because the
+profile is what every session reads. Measured end to end with one Explore
+subagent per run, key absent then present: without it the subagent's first
+request carried `claude-opus-5`, with it `wisp/cfg.deepseek/deepseek-flash`.
+
+Residual, not fixed here: a family model named on the Agent call itself, or in
+an agent's own frontmatter (`statusline-setup` ships `model:"sonnet"`, plugins
+ship their own), resolves the same way — measured: `model: sonnet` on the call
+carried `claude-sonnet-5` into the router.
+
+Guarded by `TestEnsureProfile_disarms_the_explore_inherit_cap`.
+
 ### `ensure-allin` and `claude-allin` name the same two files the same way
 
 Both take `--configs-list` and `--configs-dir` (plus `--accounts-list` and

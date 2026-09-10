@@ -240,6 +240,23 @@ func TestEnsureProfile_leaves_the_1m_model_marker_armed(t *testing.T) {
 	}
 }
 
+// The built-in Explore agent is the one agent type that does not inherit the
+// session model: decoded from 2.1.267, `LX()` hands it {inheritCap:"opus"}
+// whenever the session model's id names no Claude family (haiku/sonnet/opus),
+// and "opus" then resolves to the first-party `claude-opus-5`. The router
+// places that id as an unrouted row, so an Explore subagent spends the
+// session's OWN login — api.anthropic.com — instead of the row the user
+// picked. Measured on a live All-In pane: three Explore subagents ran on
+// claude-opus-5 and died on the Claude subscription's weekly limit while that
+// same session's general-purpose subagents ran on the picked row. The cap is a
+// plain env gate, and nothing else turns it off.
+func TestEnsureProfile_disarms_the_explore_inherit_cap(t *testing.T) {
+	_, _, path := generatedProfile(t)
+	if got := readEnv(t, path)["CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP"]; got != "1" {
+		t.Fatalf("CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP = %q, want \"1\": every Explore subagent then runs on claude-opus-5 over the session's own login", got)
+	}
+}
+
 // The declared window must equal what contextWindowEnv would compute for
 // rosterWindow, or every install rewrites this file. At 1M that means ONE key:
 // the sub-1M trio is deleted, and CLAUDE_CODE_AUTO_COMPACT_WINDOW surviving at
