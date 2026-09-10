@@ -49,3 +49,20 @@ func TestDeepSeekCatalog_nameResolution(t *testing.T) {
 		}
 	}
 }
+
+// Measured against the live endpoint on 2026-09-10, not published: DeepSeek
+// validates every tool's `pattern` and 400s the whole turn on the Artifact
+// tool's, naming it ("is not a \"regex\""). The construct it refuses is a bare
+// `[` inside a character class — `^[^[]$` alone reproduces it, and the same
+// Artifact pattern with that one bracket escaped answers 200. That is a
+// DIFFERENT construct from the one z.ai refuses: the `\p{...}` escapes and the
+// negative lookahead both pass here.
+func TestDeepSeekProvider_declaresTheToolItsEndpointRejects(t *testing.T) {
+	provider, ok := ProviderByKey("deepseek")
+	if !ok {
+		t.Fatal("catalog is missing the deepseek provider")
+	}
+	if got := provider.UnsupportedTools; len(got) != 1 || got[0] != "Artifact" {
+		t.Errorf("UnsupportedTools = %v, want [Artifact]", got)
+	}
+}

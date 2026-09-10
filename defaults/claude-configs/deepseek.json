@@ -9,5 +9,10 @@
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "1000000",
     "CLAUDE_ENABLE_STREAM_WATCHDOG": "0",
     "WISP_DECK_SUBSCRIPTION_PROVIDER": "deepseek"
+  },
+  "permissions": {
+    "deny": [
+      "Artifact"
+    ]
   }
 }

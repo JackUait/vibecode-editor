@@ -191,6 +191,13 @@ var Providers = []Provider{
 		BaseURL:        "https://api.deepseek.com/anthropic",
 		Auth:           AuthAPIKey,
 		MirrorOpenCode: true,
+		// DeepSeek validates every tool's JSON Schema `pattern` and 400s the
+		// whole turn on the Artifact tool's, naming the tool and the pattern.
+		// Measured live: the construct it refuses is a bare `[` inside a
+		// character class — `^[^[]$` alone reproduces it, and the same Artifact
+		// pattern with that one bracket escaped answers 200. Not the same
+		// construct z.ai refuses: `\p{...}` and a lookahead both pass here.
+		UnsupportedTools: []string{"Artifact"},
 		// deepseek-v4-pro has no vision, and DeepSeek routes it to Flash from
 		// 2026-09-14, so every alias names Flash.
 		DefaultModels: [4]string{"deepseek-flash", "deepseek-flash", "deepseek-flash", "deepseek-flash"},

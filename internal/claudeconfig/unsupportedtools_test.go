@@ -16,14 +16,17 @@ func TestZhipuProvider_declaresTheToolItsEndpointRejects(t *testing.T) {
 	if got := provider.UnsupportedTools; len(got) != 1 || got[0] != "Artifact" {
 		t.Errorf("zhipu UnsupportedTools = %v, want [Artifact]", got)
 	}
-	// Every other gateway takes the schema without complaint, and denying a
-	// tool nobody's endpoint refuses only removes a working capability.
+	// Every other gateway measured takes the schema without complaint, and
+	// denying a tool nobody's endpoint refuses only removes a working
+	// capability. A key here must be backed by a live 400, not by a guess:
+	// deepseek's is in deepseek_catalog_test.go.
+	measured := map[string]bool{"zhipu": true, "deepseek": true}
 	for _, other := range Providers {
-		if other.Key == "zhipu" {
+		if measured[other.Key] {
 			continue
 		}
 		if len(other.UnsupportedTools) != 0 {
-			t.Errorf("provider %q denies %v; only zhipu was measured to need it",
+			t.Errorf("provider %q denies %v; no live 400 was measured for it",
 				other.Key, other.UnsupportedTools)
 		}
 	}

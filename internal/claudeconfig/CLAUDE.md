@@ -386,11 +386,12 @@ a check that every shipped sub-1M default declares the reserve its window
 implies) and
 `TestApplyPendingSubscriptionModel_reserves_output_room_for_a_small_window`.
 
-### One tool schema z.ai will not validate kills every turn on the profile
+### One tool schema a gateway will not validate kills every turn on the profile
 
 Claude Code advertises its whole tool set on every request, so a gateway that
 rejects ONE tool's `input_schema` rejects every turn on that profile, before the
-model reads a word. z.ai answers `400 [1210][Invalid API parameter, please check
+model reads a word. Two gateways refuse the same tool for two different reasons,
+so a new provider must be measured rather than assumed either way. z.ai answers `400 [1210][Invalid API parameter, please check
 the documentation.]`, which names nothing.
 
 Measured on 2026-09-09 by putting a recording proxy in front of `api.z.ai` and
@@ -429,6 +430,27 @@ the marker, and its stand-in is `providerMatching` — a real alias match — ne
 `providerFor`, whose fallback is `Providers[0]`, which IS zhipu: an unmarked
 profile for any other endpoint would otherwise have a working tool denied.
 
+**DeepSeek refuses the same tool over a different construct**, and unlike z.ai it
+says so: `400 Invalid schema for function 'Artifact': "…" is not a "regex"`.
+Measured against the live endpoint on 2026-09-10 by bisecting one `pattern` down
+to a single character class:
+
+- **The trigger is a bare `[` inside a character class.** `^[^[]{1,200}$` alone
+  reproduces the 400, and the same Artifact pattern with that one bracket
+  escaped answers 200. So does `[[abc]]`, which is what a nested-class regex
+  dialect would read the bare bracket as.
+- **The z.ai triggers pass here.** `\p{...}` escapes and a negative lookahead
+  each answer 200 on their own. Bisecting the other gateway's cause first would
+  have cleared this schema and missed it.
+- The two endpoints therefore agree on WHICH tool only by coincidence: Artifact's
+  one pattern happens to carry both constructs.
+
+Verified end to end the same way as z.ai — a recording proxy in front of a live
+interactive pane on an isolated tmux server: the DeepSeek profile sends 32 tools
+with `Artifact` before the denial and 31 without it after.
+
 Guarded by `internal/claudeconfig/unsupportedtools_test.go` (including a check
-that every shipped default denies what its provider declares) and
+that every shipped default denies what its provider declares, and one that no
+provider declares a denial without a measured 400 behind it),
+`internal/claudeconfig/deepseek_catalog_test.go`, and
 `internal/allin/droptools_test.go`.
